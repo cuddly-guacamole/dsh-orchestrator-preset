@@ -39,7 +39,6 @@ if [ ! "$DSH_HOME" = "${DSH_HOME%/}" ]; then DSH_HOME="${DSH_HOME%/}"; fi
 
 say()  { printf '\n== %s\n' "$*"; }
 info() { printf '   %s\n' "$*"; }
-warn() { printf '   !! %s\n' "$*"; }
 die()  { printf '\n!! %s\n' "$*" >&2; exit 1; }
 
 # --- semver compare -------------------------------------------------------
@@ -135,7 +134,7 @@ for s in $SKILLS; do
   want=$(grep -m1 '^name:' "${REPO_ROOT}/skills/${s}/SKILL.md" | sed 's/^name:[[:space:]]*//')
   [ "$want" = "$s" ] || die "skills/${s}: frontmatter name is '$want'; the provider reads the frontmatter, not the directory."
   if [ -d "${DSH_HOME}/skills/${s}" ]; then
-    info "${s}: a stale copy is still in ${DSH_HOME}/skills — remove it, the provider is authoritative"
+    info "${s}: a copy also exists in ${DSH_HOME}/skills — redundant, the provider is authoritative"
   else
     info "${s}: served by the bundle's provider"
   fi
@@ -144,19 +143,13 @@ done
 info "manifest: ${REPO_ROOT}/skills/MANIFEST.md"
 
 # --- 4. nothing to install ------------------------------------------------
-# There used to be a companion plugin here that added the aegis- prefix and
-# localised descriptions. Both jobs now live in the bundle's own
-# extensions/dsh/aegis-prefix.js, done in a single registration pass — which is
-# what removed the race that two plugins mutating the same skills produced.
-# Copying the old plugin alongside the bundle would bring that race back, so the
-# step is gone rather than documented.
+# The aegis prefix bridge and its optional description swap live in the bundle's
+# own extensions/dsh/aegis-prefix.js, mounted by a row the generator emits. There
+# is no companion plugin, which is deliberate: the two used to be separate
+# plugins, and because both mutate the same skill registrations they raced — the
+# split produced 4 of 22 descriptions localised and two bare names leaking back.
+# One plugin doing both in a single registration pass is what removed the race.
 say "4. nothing to install — extensions/dsh/aegis-prefix.js does this inside the bundle"
-
-if [ -d "${DSH_HOME}/plugins/aegis-skill-prefix" ]; then
-  warn "a stale ${DSH_HOME}/plugins/aegis-skill-prefix exists from an older install"
-  info "it is now redundant, and running it alongside the bundle reintroduces a fixed race"
-  info "remove it, and drop its row from the profile's dsh.profile.bundles"
-fi
 
 # --- 5. what the user must do by hand ------------------------------------
 say "5. the profile wiring (deliberate — see the header of this script)"

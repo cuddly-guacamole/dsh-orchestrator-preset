@@ -192,9 +192,7 @@ test -L ~/.dsh/profiles/web/node_modules/@quill507/dsh-orchestrator-preset && ec
 # 4. nothing to install. The aegis prefix bridge ships inside the bundle as
 #    extensions/dsh/aegis-prefix.js, mounted by a generated patch row with two
 #    settings: prefixAegisSkills (default on) and describeAegisSkillsInZh
-#    (default off). If you have a plugins/aegis-skill-prefix from an older
-#    install, remove it — it is redundant, and running it alongside the bundle
-#    reintroduces a fixed race over the same skill registrations.
+#    (default off, turned on in your own layer — see below).
 ```
 
 **Nothing is copied into `~/.dsh/skills/`.** The four `orch-*` skills travel with the bundle
@@ -204,8 +202,19 @@ people's tools live; a preset that scatters copies into it inherits the mess wit
 context. [`skills/MANIFEST.md`](./skills/MANIFEST.md) is the authoritative list of what this
 bundle ships, and that file is also why the names are not enumerated anywhere else.
 
-A stale copy left over from an older install is harmless but redundant — `install.sh` step 3
-detects and reports one rather than overwriting it.
+`describeAegisSkillsInZh` defaults to off because translating a catalogue is a reader
+preference rather than a routing requirement. Turn it on in a layer you own — the home layer
+`$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins:
+
+```yaml
+- id: orch-aegis-prefix
+  config:
+    prefixAegisSkills: true
+    describeAegisSkillsInZh: true
+```
+
+Restate **both** keys. A patch replaces a row's config rather than deep-merging it, so naming
+only the one you are changing drops the other back to its default.
 
 ### 5. Wire it into a profile
 

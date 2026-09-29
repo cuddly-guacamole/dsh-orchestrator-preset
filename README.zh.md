@@ -109,8 +109,7 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 
 # 4. 什么都不用装。aegis 前缀桥随包自带（extensions/dsh/aegis-prefix.js），
 #    由生成的一行 patch 挂载，带两个设置：prefixAegisSkills（默认开）与
-#    describeAegisSkillsInZh（默认关）。若你从旧版装过 plugins/aegis-skill-prefix，
-#    请删掉它 —— 它已冗余，且与预设同时运行会让同一批技能注册重新产生一个已修复的竞态。
+#    describeAegisSkillsInZh（默认关，在你自己的层里打开 —— 见下）。
 ```
 
 **不会向 `~/.dsh/skills/` 拷贝任何东西。** 四个 `orch-*` 技能随 bundle 走，由一个限定在
@@ -119,7 +118,16 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 对应的上下文。[`skills/MANIFEST.md`](skills/MANIFEST.md) 是本包发布内容的权威清单，也正因如此，
 这些名字在别处一概不予列举。
 
-旧版安装残留的副本无害但冗余 —— `install.sh` 第 3 步会检测并**报告**，而不是覆盖它。
+`describeAegisSkillsInZh` 默认关，因为把一份目录翻译过来是**读者偏好**，不是路由需求。在你自己的层里打开它 —— home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出：
+
+```yaml
+- id: orch-aegis-prefix
+  config:
+    prefixAegisSkills: true
+    describeAegisSkillsInZh: true
+```
+
+**两个 key 都要重述。** patch 是**整行替换**某行的 config，不做深合并；只写你要改的那个，另一个会被打回默认值。
 
 ### 5. 接入 profile
 
