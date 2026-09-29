@@ -433,6 +433,28 @@ a line of its text. Its `extensions/dsh/index.js` was also the working reference
 provider mounted here — twelve lines that made the skills-in-the-bundle design obviously
 correct before it was tried.
 
+**[itamzxm](https://github.com/itamzxm)** — author of **Auto-Pilot**, a preset built for
+the same kind of work this one is. Six groups of its mechanisms are borrowed here by
+mechanism rather than by text: its memory model, its convening gate and convergence states,
+its bare-run test and delegation letter, its four scheduling rules, and its search and goal
+criteria. Auto-Pilot is not published and carries no licence, and none of its text appears
+in this repository — where a mechanism came from it, this repository's own design history
+names which one rather than restating it.
+
+**[Tacrine](https://github.com/Tacrine)** — who ported the oh-my-openagent agent set to
+DeepSeek Harness and modified it, before this repository existed. The ten personas here
+began as that port's output.
+
+**oh-my-openagent** ([code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent))
+— the upstream those personas ultimately descend from, and its author **code-yeongyu**. That
+project is not open source, and no text from it is distributed here: every persona in this
+repository has since been rewritten against an explicit threshold — under 2% n-gram overlap
+with the upstream agent sources, and no run of six consecutive matching lines.
+`tools/audit-personas.mjs` is that threshold, made runnable. Its term-probe half runs
+anywhere; the overlap half needs the upstream corpus, which is deliberately not included, so
+the rewrite is **partial evidence rather than a verified claim** — the tool reports it as
+unverified, not as a pass, because those are different things.
+
 **The authors of the packages this was tested against** — `zod`, and the DSH packages that
 supply `dsh-tools`, `dsh-skill-filesystem` and `dsh-home-paths`. Nothing here would load
 without them, and none of them are dependencies of this package: the host supplies them at
