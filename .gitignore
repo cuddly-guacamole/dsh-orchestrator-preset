@@ -97,14 +97,18 @@
 !/plugins/aegis-skill-prefix/package.json
 !/plugins/aegis-skill-prefix/src/index.ts
 
-# --- extensions/ — the bundle's own skill provider -------------------------
-# Mounted by the patch row that the generator emits, and resolved through the
-# package specifier, so it must also appear in package.json's exports map.
+# --- extensions/ — the bundle's own plugins --------------------------------
+# Both files are mounted by patch rows the generator emits and are resolved
+# through the package specifier, so each must also appear in package.json's
+# exports map. Listed one by one rather than as extensions/dsh/*.js: a plugin
+# added later should fail LOUDLY here rather than slip into the published tree,
+# which is the same default-deny reasoning as the `/*` above.
 !/extensions/
 /extensions/*
 !/extensions/dsh/
 /extensions/dsh/*
 !/extensions/dsh/index.js
+!/extensions/dsh/aegis-prefix.js
 
 # --- docs/ is NOT distributed --------------------------------------------
 # The four design documents stay on disk for the author and are held out of the

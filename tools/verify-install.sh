@@ -512,6 +512,54 @@ else
 fi
 
 # ===========================================================================
+head_ "check 9 — the routing table's aegis-* targets are actually provided"
+# ===========================================================================
+# The resident routing table names aegis skills by their PREFIXED name, while the
+# upstream pack registers them bare. The bundle's own aegis-prefix plugin is the
+# bridge, so a routing target that nothing produces is a dangling reference the
+# preset cannot reach. This connects the two halves without needing a boot: read
+# the bare names off the installed pack, apply the same prefix, and ask whether
+# every name the routing table uses is in that set.
+#
+# Falsifiable: rename a skill upstream, or stop shipping the bridge, and this goes
+# red — which is the failure that is otherwise silent, because a routing row
+# pointing at nothing simply never matches and nothing complains.
+if [ -f "$REPO_ROOT/extensions/dsh/aegis-prefix.js" ]; then
+  AEGIS_PKG="$PROFILE_DIR/node_modules/aegis/skills"
+  if [ ! -d "$AEGIS_PKG" ]; then
+    warn "check 9  aegis pack not found under the profile — routing targets unverified"
+    note "this preset depends on the aegis pack; install it, or ignore this knowingly"
+  else
+    provided="$(find "$AEGIS_PKG" -maxdepth 2 -name SKILL.md 2>/dev/null | while IFS= read -r f; do
+        n="$(grep -m1 '^name:' "$f" | sed 's/^name:[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -n "$n" ] && printf 'aegis-%s\n' "$n"
+      done | sort -u)"
+    referenced="$(grep -oE '\baegis-[a-z0-9-]+' "$REPO_ROOT/routing-sections.mjs" | sort -u)"
+    if [ -z "$referenced" ]; then
+      bad "check 9  the routing table references no aegis-* skill — the table lost its targets, or this check matches nothing"
+    else
+      missing=0
+      for r in $referenced; do
+        case " $(printf '%s ' $provided) " in
+          *" $r "*) : ;;
+          *) bad "check 9  routing target provided by nothing: $r"; missing=$((missing+1)) ;;
+        esac
+      done
+      [ "$missing" -eq 0 ] &&
+        ok "check 9  all $(printf '%s\n' $referenced | wc -l) routing targets resolve to a provided skill"
+    fi
+    # Asserted so a silently emptied pack cannot pass this check.
+    if printf '%s\n' "$provided" | grep -q .; then
+      ok "check 9  the upstream pack offers $(printf '%s\n' $provided | wc -l) skills to prefix"
+    else
+      bad "check 9  the upstream pack offers zero skills — the prefix step would produce nothing"
+    fi
+  fi
+else
+  bad "check 9  extensions/dsh/aegis-prefix.js is missing — the routing table has no bridge to the bare names"
+fi
+
+# ===========================================================================
 printf '\n========================================\n'
 printf 'SUMMARY  %d passed, %d failed  (profile: %s)\n' "$PASS" "$FAIL" "$PROFILE"
 printf '========================================\n'

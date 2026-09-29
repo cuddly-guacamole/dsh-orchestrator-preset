@@ -285,6 +285,12 @@ export function render(d, section, shellSource) {
   // 它挂载本包自己的 skill provider，让四个 orch-* 技能随包自带，不再拷进用户全局目录。
   lines.push(`    - id: ${d.providerRowId}`)
   lines.push(`      name: '${d.providerEntry}'`)
+  // aegis 前缀行：同一层的第二个挂载点。路由表按 aegis-* 点名二十个技能，而上游
+  // 按裸名注册；这一行是两者之间那座桥，带一个默认开的设置开关。
+  lines.push(`    - id: ${d.prefixRowId}`)
+  lines.push(`      name: '${d.prefixEntry}'`)
+  lines.push('      config:')
+  lines.push(`        prefixAegisSkills: ${d.prefixAegisSkills}`)
   return lines.join('\n') + '\n'
 }
 

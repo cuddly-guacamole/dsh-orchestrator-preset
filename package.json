@@ -19,6 +19,7 @@
     "./personas/wright.md": "./personas/wright.md",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./extensions/dsh/index.js": "./extensions/dsh/index.js",
+    "./extensions/dsh/aegis-prefix.js": "./extensions/dsh/aegis-prefix.js",
     "./package.json": "./package.json"
   },
   "dsh": {
