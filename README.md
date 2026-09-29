@@ -512,32 +512,13 @@ distinction between what was measured and what was assumed is marked throughout.
 
 ## Third-party attribution
 
-### DeepSeek Harness
+The formal record — what is in this repository from somewhere else, and what is deliberately
+not in it — is [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md). It is kept in its own
+file rather than appended to `LICENSE`, because an appended block makes GitHub's licence
+detector report "Other" for a file that is plainly MIT, and because a fact with two homes has
+no home.
 
-This project includes configuration rows derived from DeepSeek Harness,
-licensed under the MIT License:
-  Copyright (c) 2026 DeepSeek
-
-The `LICENSE` in this repository is **this project's own** MIT licence plus this attribution
-block. It is deliberately *not* a copy of DeepSeek Harness's own licence file, which would
-misrepresent the provenance of this repository.
-
-### aegis (upstream dependency — not vendored)
-
-The `aegis` skill pack is an **upstream dependency** consumed at runtime; it is **not
-vendored** into this repository, and no aegis text is copied here. It is licensed under the
-MIT License:
-
-- Copyright (c) 2025 Jesse Vincent
-- Copyright (c) 2025-2026 Ganyuan Ran
-
-`aegis-*` names appear in this repository only as routing-table keys and as attribution.
-
-### Skills that are not redistributed
-
-A user's skills registry normally holds more than the four this preset ships. The third-party
-skills installed on any given machine are **not** redistributed by this repository, and some
-of them carry no licence declaration at all, which makes redistributing those a licence
-violation rather than an oversight. That is why this repository names none of them and why
-`.gitignore` is a whitelist: what is installed is personal to whoever installed it, so a list
-here would describe one machine and go stale the moment it was written.
+Two points from it are worth stating here, since they affect what you may do with this code:
+the `aegis` pack is consumed at runtime and **not vendored**, and the third-party skills on
+any given machine are **not redistributed** — some carry no licence at all, which makes
+redistributing them a violation rather than an oversight.
