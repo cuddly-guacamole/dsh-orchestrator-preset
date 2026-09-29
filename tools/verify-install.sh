@@ -84,7 +84,19 @@ note "DSH home         : $DSH_HOME_ABS"
 PROFILE_DIR="$DSH_HOME_ABS/profiles/$PROFILE"
 PATCH_YML="$PROFILE_DIR/cordis.patch.yml"
 COMPOSED_CORDIS_YML="$PROFILE_DIR/cordis.yml"
-BUNDLE_LINK="$PROFILE_DIR/node_modules/@local/dsh-orchestrator-preset-bundle"
+
+# The package name is read, never written down. It is the one string in this file
+# that changes on a rename, and a hardcoded copy of it is a bug that only fires
+# after the rename — which is exactly when nobody is looking at this script.
+BUNDLE_NAME="$(node -e "
+  const fs = require('node:fs');
+  process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).name || '');
+" "$REPO_ROOT/package.json" 2>/dev/null)"
+if [ -z "$BUNDLE_NAME" ]; then
+  echo "!! cannot read the package name from $REPO_ROOT/package.json" >&2
+  exit 2
+fi
+BUNDLE_LINK="$PROFILE_DIR/node_modules/$BUNDLE_NAME"
 
 if [ ! -d "$PROFILE_DIR" ]; then
   echo "!! no such profile: $PROFILE_DIR" >&2
@@ -111,7 +123,7 @@ head_ "check 2 — the bundle link is a REAL symlink (unchanged form)"
 # passes it — and a copy freezes the bundle while every later edit to the real
 # bundle is ignored. Only `test -L` asks the question we actually mean.
 if [ -L "$BUNDLE_LINK" ]; then
-  ok "check 2  @local/dsh-orchestrator-preset-bundle is a real symlink"
+  ok "check 2  $BUNDLE_NAME is a real symlink"
   note "-> $(readlink "$BUNDLE_LINK")"
 elif [ -e "$BUNDLE_LINK" ]; then
   bad "check 2  it exists but is NOT a symlink — a copy would freeze the bundle"
@@ -127,11 +139,11 @@ head_ "check 3 — the bundle is readable THROUGH the link (unchanged form)"
 # Present is not usable. This resolves package.json by the name the patch rows
 # use, so it proves the same resolution path the host takes at boot.
 if [ -L "$BUNDLE_LINK" ] || [ -e "$BUNDLE_LINK" ]; then
-  if ( cd -- "$PROFILE_DIR" && node --input-type=module -e '
+  if ( cd -- "$PROFILE_DIR" && BUNDLE_NAME="$BUNDLE_NAME" node --input-type=module -e '
        import { createRequire } from "node:module";
        import { realpathSync } from "node:fs";
        const r = createRequire(process.cwd() + "/package.json");
-       const p = r.resolve("@local/dsh-orchestrator-preset-bundle/package.json");
+       const p = r.resolve(process.env.BUNDLE_NAME + "/package.json");
        process.stdout.write(realpathSync(p));' ) >"$TMP/resolved" 2>"$TMP/resolve.err"; then
     ok "check 3  the bundle resolves by package name and its real path is reachable"
     note "-> $(cat "$TMP/resolved")"

@@ -42,7 +42,7 @@
 
 export const presetId = 'dsh-orchestrator-preset'
 export const presetName = 'DSH Orchestrator Preset'
-export const bundlePkg = '@local/dsh-orchestrator-preset-bundle'
+export const bundlePkg = '@quill507/dsh-orchestrator-preset'
 
 // ── bundle 级 skill provider 行（与 preset 行同属顶层 `- insert:`）──────────
 // 目的：让四个 `orch-*` 技能随 bundle 自带，不再拷进用户全局 `~/.dsh/skills/`。

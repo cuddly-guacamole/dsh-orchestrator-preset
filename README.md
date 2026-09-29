@@ -182,7 +182,7 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 #    and run `pnpm install` there — pnpm creates the symlink from the `link:` dependency.
 #    Verify with test -L, never test -e: Git Bash can silently degrade a link into a
 #    copy, and a copy passes test -e while freezing every later edit to the bundle.
-test -L ~/.dsh/profiles/web/node_modules/@local/dsh-orchestrator-preset-bundle && echo "real symlink"
+test -L ~/.dsh/profiles/web/node_modules/@quill507/dsh-orchestrator-preset && echo "real symlink"
 
 # 3. the four self-authored skills need NO install step — they ship inside the
 #    bundle and are served by extensions/dsh/index.js, a filesystem skill provider
@@ -212,7 +212,7 @@ In `~/.dsh/profiles/<profile>/package.json`, add the dependency and the same str
 `dsh.profile.bundles`, keeping its position:
 
 ```json
-"@local/dsh-orchestrator-preset-bundle": "link:<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle"
+"@quill507/dsh-orchestrator-preset": "link:<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle"
 ```
 
 then run `pnpm install` in that profile directory. In
@@ -323,7 +323,7 @@ package is provided by the **host**, which is why it is neither a `dependency` n
 `peerDependency` here.
 
 The persona files are resolved by deep path at runtime
-(`createRequire(baseUrl).resolve('@local/dsh-orchestrator-preset-bundle/personas/scout.md')`).
+(`createRequire(baseUrl).resolve('@quill507/dsh-orchestrator-preset/personas/scout.md')`).
 `baseUrl` is injected by the host, so resolution is independent of where the bundle is
 installed. One fragility worth naming: `package.json` has **no `exports` field**, so those
 deep `.md` paths currently resolve through Node's legacy no-exports behaviour. An explicit
@@ -344,7 +344,7 @@ If it is wanted later:
 - **The package name** it would take is currently undecided; it must match the bundle
   directory name's tail segment, and it must stop being `@local/`-scoped.
 - **The one line that must change** is `tools/preset-declaration.mjs:45`,
-  `export const bundlePkg = '@local/dsh-orchestrator-preset-bundle'`. That single constant
+  `export const bundlePkg = '@quill507/dsh-orchestrator-preset'`. That single constant
   owns all 12 specifier references in the generated `cordis.patch.yml`; the 12 resolve to 12
   distinct files (3 `.mjs` and 9 persona `.md`). Change that one line, then run
   `node tools/gen-cordis-patch.mjs` — no other edit is needed, and no persona file is

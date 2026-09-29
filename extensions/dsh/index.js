@@ -16,7 +16,7 @@
  * business.
  *
  * Entry specifier: the bundle patch mounts this file as
- *   @local/dsh-orchestrator-preset-bundle/extensions/dsh/index.js
+ *   @quill507/dsh-orchestrator-preset/extensions/dsh/index.js
  * The full scoped form is required. A bare or short form resolves to a directory
  * that does not exist and the bundle fails to load with MODULE_NOT_FOUND, which
  * is silent from the user's side — measured on this host, see the note in

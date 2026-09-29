@@ -126,7 +126,7 @@ cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
 在 `~/.dsh/profiles/<profile>/package.json` 里加上依赖，并把同一个字符串加进 `dsh.profile.bundles`（保持原位置）：
 
 ```json
-"@local/dsh-orchestrator-preset-bundle": "link:<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle"
+"@quill507/dsh-orchestrator-preset": "link:<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle"
 ```
 
 然后在该 profile 目录跑 `pnpm install`。在 `~/.dsh/profiles/<profile>/cordis.patch.yml` 里选中本 preset：

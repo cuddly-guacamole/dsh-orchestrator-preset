@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-orchestrator-preset-bundle",
+  "name": "@quill507/dsh-orchestrator-preset",
   "version": "1.0.0",
   "private": true,
   "type": "module",
