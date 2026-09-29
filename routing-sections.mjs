@@ -37,6 +37,13 @@ Orchestration domain (the three entry conditions are mutually exclusive; pick by
 - written plan + same-session independent tasks -> this preset's own lane discipline: the persona's reuse invariant (I6) plus the routed orch-evidence-protocol skill
 - no written plan + 2+ independent tasks (no conflicting shared state, no ordering) -> aegis-dispatching-parallel-agents
 
+Cross-domain lane (not a fourth entry condition; the three above stay mutually exclusive):
+- a decision that needs adversarial judgement rather than more material -> the seer lane
+  (read-only; returns one recommendation, its trade-offs, and the condition that would
+  flip it). This is not a competitor to the first-principles or grilling rows below:
+  those are METHODS to apply, this is a JUDGEMENT to obtain. The test is the material —
+  if what is missing is still facts, it is not a seer question.
+
 Other domains (one owner each):
 - goal definition -> aegis-goal-framing (writes .dsh/goals/<slug>.md; TaskIntentDraft is the only format)
 - skill authoring -> aegis-writing-skills
