@@ -462,13 +462,16 @@ a line of its text. Its `extensions/dsh/index.js` was also the working reference
 provider mounted here — twelve lines that made the skills-in-the-bundle design obviously
 correct before it was tried.
 
-**[itamzxm](https://github.com/itamzxm)** — author of **Auto-Pilot**, a preset built for
-the same kind of work this one is. Six groups of its mechanisms are borrowed here by
-mechanism rather than by text: its memory model, its convening gate and convergence states,
-its bare-run test and delegation letter, its four scheduling rules, and its search and goal
-criteria. Auto-Pilot is not published and carries no licence, and none of its text appears
-in this repository — where a mechanism came from it, this repository's own design history
-names which one rather than restating it.
+**[itamzxm](https://github.com/itamzxm)** — author of **Auto-Pilot**, a set of seven skills
+written to work across agent environments other than this one, rather than for any single
+host. They are bare skill directories with no package manifest, which is why nothing here was
+a candidate to install: Auto-Pilot was read as a source of mechanisms, not adopted as a
+component. Six groups of its mechanisms are borrowed here by mechanism rather than by text —
+its memory model, its convening gate and convergence states, its bare-run test and delegation
+letter, its four scheduling rules, and its search and goal criteria. Auto-Pilot is not
+published and carries no licence, and none of its text appears in this repository; where a
+mechanism came from it, this repository's own design history names which one rather than
+restating it.
 
 **[Tacrine](https://github.com/Tacrine)** — who ported the oh-my-openagent agent set to
 DeepSeek Harness and modified it, before this repository existed. The ten personas here

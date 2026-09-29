@@ -195,7 +195,7 @@ MIT —— 参见 [`LICENSE`](LICENSE)。
 
 **[aegis](https://github.com/GanyuanRan/Aegis)** —— 本预设路由进入的方法论包，作者 Jesse Vincent 与 Ganyuan Ran。方法归它：路由纪律、按情境给技能的做法、压力测试与验证习惯。本项目提供的是它外围的编排层，并在运行时消费 aegis，**一行原文都没有 vendor 进来**。它的 `extensions/dsh/index.js` 同时也是这里那座 provider 的可用参照——那十二行让「技能随包自带」这个设计在被尝试之前就已经显然正确。
 
-**[itamzxm](https://github.com/itamzxm)** —— **Auto-Pilot** 的作者。那是一个与本预设做同一类工作的预设，本设计从它这里**按机制**借用了六组东西：记忆模型、召集闸与收敛三态、裸跑测试与委派函、四条调度机制、以及搜索与目标判据。Auto-Pilot 未发布、无许可证，本仓库不含它的任何文本 —— 哪个机制来自它，由本仓库自己的设计史点名，而不是把原文抄过来。
+**[itamzxm](https://github.com/itamzxm)** —— **Auto-Pilot** 的作者。那是一组**七个技能**，为**本预设之外的其它 agent 环境**而写（workbuddy、traework、opencode 等），而不是绑定某一个宿主。它们是**裸技能目录，没有 package manifest** —— 这正是它在这里**不是**一个可安装件的原因：Auto-Pilot 是被**当作机制的来源**读的，不是被当作组件引入的。本设计从它这里**按机制**借用了六组东西：记忆模型、召集闸与收敛三态、裸跑测试与委派函、四条调度机制、以及搜索与目标判据。Auto-Pilot 未发布、无许可证，本仓库不含它的任何文本 —— 哪个机制来自它，由本仓库自己的设计史点名，而不是把原文抄过来。
 
 **[Tacrine](https://github.com/Tacrine)** —— 在本次设计开始之前，把 oh-my-openagent 的 agent 集移植到 DeepSeek Harness 并做了修改。这里那十份 persona 起初就是那次移植的产物。
 
