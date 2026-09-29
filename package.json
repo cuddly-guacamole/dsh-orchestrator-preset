@@ -1,0 +1,28 @@
+{
+  "name": "@local/dsh-orchestrator-preset-bundle",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./plan-aware-persona.mjs": "./plan-aware-persona.mjs",
+    "./routing-sections.mjs": "./routing-sections.mjs",
+    "./lane-composition.mjs": "./lane-composition.mjs",
+    "./personas/analyst.md": "./personas/analyst.md",
+    "./personas/archivist.md": "./personas/archivist.md",
+    "./personas/auditor.md": "./personas/auditor.md",
+    "./personas/forge.md": "./personas/forge.md",
+    "./personas/orchestrator.md": "./personas/orchestrator.md",
+    "./personas/planner.md": "./personas/planner.md",
+    "./personas/reader.md": "./personas/reader.md",
+    "./personas/scout.md": "./personas/scout.md",
+    "./personas/seer.md": "./personas/seer.md",
+    "./personas/wright.md": "./personas/wright.md",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# Keep line endings LF in the working tree on every platform.
+#
+# Without this, a Windows clone checks text files out as CRLF, which breaks the
+# shebang on install.sh and changes the bytes of cordis.patch.yml relative to
+# what tools/gen-cordis-patch.mjs generates.
+* text=auto eol=lf
+
+# The preset patch is generated and compared byte-for-byte against the
+# generator's output; it must never be line-ending converted.
+cordis.patch.yml text eol=lf
+
+# The install script must keep a Unix shebang and LF endings to be executable.
+install.sh text eol=lf
+
+# Binary-ish assets, if any are ever added.
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.pdf binary

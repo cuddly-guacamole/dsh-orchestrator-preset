@@ -1,0 +1,9 @@
+# aegis-skill-prefix：源码与 bundle 声明同目录。行必须用绝对 file:/// URL ——
+# bundle patch 里的相对路径是按 profile 目录解析的，不是按本目录。
+# 改完 src/index.ts 后 bump ?v= 即热生效。
+#
+# 发行版里不写入任何机器本地路径：下面 name: 行里的 DSH 主目录是一个占位符，
+# 由 install.sh 在安装时替换为真实绝对路径（DSH_HOME 环境变量，或 ~/.dsh）。
+- insert:
+    - id: aegis-skill-prefix
+      name: 'file:///<DSH_HOME>/plugins/aegis-skill-prefix/src/index.ts?v=3'
