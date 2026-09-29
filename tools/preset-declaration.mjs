@@ -43,6 +43,17 @@
 export const presetId = 'dsh-orchestrator-preset'
 export const presetName = 'DSH Orchestrator Preset'
 export const bundlePkg = '@local/dsh-orchestrator-preset-bundle'
+
+// ── bundle 级 skill provider 行（与 preset 行同属顶层 `- insert:`）──────────
+// 目的：让四个 `orch-*` 技能随 bundle 自带，不再拷进用户全局 `~/.dsh/skills/`。
+// 参照实现：本机 aegis/extensions/dsh/index.js（12 行）与 hw-skills/extensions/dsh/index.js（33 行）。
+// ⛔ 入口 specifier 必须是**带 scope 的完整形式**：短形式会解析到不存在的目录，
+//    bundle 静默 MODULE_NOT_FOUND 加载失败（hw-skills cordis.patch.yml 记录了实测）。
+//    本包已有的 12 处自引用用的就是这个形式且今天可用。
+export const providerRowId = 'orch-method-pack'
+export const providerEntry = `${bundlePkg}/extensions/dsh/index.js`
+export const providerName = 'orch-method-pack'
+
 // description：默认文本（计划 T06 给定；约束：不得含被排除的上游项目文本（DESIGN.md §12.4/§12.5），不得含用户路径）
 export const description = 'A thin orchestration preset: aegis method pack for methodology, self-authored lane boundaries for delegation. Declares its full plugins[] because DSH presets have no inheritance.'
 

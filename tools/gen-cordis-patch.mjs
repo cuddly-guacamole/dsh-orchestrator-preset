@@ -281,6 +281,10 @@ export function render(d, section, shellSource) {
   ]
   for (const row of d.topRows) pushRow(lines, withSection(row, section), 10)
   for (const g of d.groups) pushRow(lines, groupEntry(g, d, section), 10)
+  // bundle 级 provider 行：与 preset 行**同层**，属顶层 `- insert:`，不嵌进 preset.config.plugins[]。
+  // 它挂载本包自己的 skill provider，让四个 orch-* 技能随包自带，不再拷进用户全局目录。
+  lines.push(`    - id: ${d.providerRowId}`)
+  lines.push(`      name: '${d.providerEntry}'`)
   return lines.join('\n') + '\n'
 }
 

@@ -103,10 +103,9 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 #    用 test -L 校验，绝不用 test -e：Git Bash 会把链接静默降级成复制，
 #    而复制品能通过 test -e，却会冻结此后对 bundle 的每一次编辑。
 
-# 3. 安装四个自研技能 —— 必须**一次一个目录**
-for s in orch-delegation-brief orch-discussion-protocol orch-evidence-protocol orch-real-path-testing; do
-  cp -r "skills/$s" ~/.dsh/skills/
-done
+# 3. 四个自研技能**不需要安装步骤** —— 它们随包自带，由 extensions/dsh/index.js
+#    这个 filesystem skill provider 提供；该 provider 由生成的 patch 挂载，且
+#    includeDefaultRoots:false。不会向 ~/.dsh/skills/ 写入任何东西。
 
 # 4. 安装 aegis-skill-prefix 插件
 cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
@@ -114,7 +113,13 @@ cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
 #    bundle patch 里的相对路径是按 PROFILE 目录解析的，所以那一行必须是绝对 file:/// URL。
 ```
 
-技能**一次一个目录**地复制，绝不要整棵复制 `~/.dsh/skills/`：那棵树里还放着刻意划在本 preset 发布边界之外的第三方技能。[`skills/MANIFEST.md`](skills/MANIFEST.md) 是权威清单。
+**不会向 `~/.dsh/skills/` 拷贝任何东西。** 四个 `orch-*` 技能随 bundle 走，由一个限定在
+本包范围内的 provider 提供：装这个 preset 不会往你的全局技能目录里加东西，卸载也不会
+留下东西。那个目录里装的是别人的工具；往里撒副本的 preset 只会继承那份混乱，却拿不到
+对应的上下文。[`skills/MANIFEST.md`](skills/MANIFEST.md) 是本包发布内容的权威清单，也正因如此，
+这些名字在别处一概不予列举。
+
+旧版安装残留的副本无害但冗余 —— `install.sh` 第 3 步会检测并**报告**，而不是覆盖它。
 
 ### 5. 接入 profile
 

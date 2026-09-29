@@ -18,6 +18,7 @@
     "./personas/seer.md": "./personas/seer.md",
     "./personas/wright.md": "./personas/wright.md",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./extensions/dsh/index.js": "./extensions/dsh/index.js",
     "./package.json": "./package.json"
   },
   "dsh": {

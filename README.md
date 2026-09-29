@@ -184,10 +184,10 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 #    copy, and a copy passes test -e while freezing every later edit to the bundle.
 test -L ~/.dsh/profiles/web/node_modules/@local/dsh-orchestrator-preset-bundle && echo "real symlink"
 
-# 3. install the four self-authored skills — ONE DIRECTORY AT A TIME
-for s in orch-delegation-brief orch-discussion-protocol orch-evidence-protocol orch-real-path-testing; do
-  cp -r "skills/$s" ~/.dsh/skills/
-done
+# 3. the four self-authored skills need NO install step — they ship inside the
+#    bundle and are served by extensions/dsh/index.js, a filesystem skill provider
+#    mounted by the generated patch with includeDefaultRoots:false. Nothing is
+#    written to ~/.dsh/skills/.
 
 # 4. install the aegis-skill-prefix plugin
 cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
@@ -196,9 +196,15 @@ cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
 #    than against its own, so that row must be an absolute file:/// URL.
 ```
 
-Copy the skills **one directory at a time**, never the whole `~/.dsh/skills/` tree: that
-tree also holds third-party skills that are deliberately outside this preset's publish
-boundary. [`skills/MANIFEST.md`](./skills/MANIFEST.md) is the authoritative list.
+**Nothing is copied into `~/.dsh/skills/`.** The four `orch-*` skills travel with the bundle
+and a provider scoped to it serves them, so installing this preset adds nothing to your
+global skills directory and removing it takes nothing away. That directory is where other
+people's tools live; a preset that scatters copies into it inherits the mess without the
+context. [`skills/MANIFEST.md`](./skills/MANIFEST.md) is the authoritative list of what this
+bundle ships, and that file is also why the names are not enumerated anywhere else.
+
+A stale copy left over from an older install is harmless but redundant — `install.sh` step 3
+detects and reports one rather than overwriting it.
 
 ### 5. Wire it into a profile
 

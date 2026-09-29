@@ -10,7 +10,8 @@
 #   0. gate   — refuse to continue unless the host is >= 0.1.7-rc.1
 #   1. stage  — copy this repository's distributable content to $DSH_HOME/plugins/
 #   2. link   — verify the per-profile @local/ symlink that `pnpm install` creates
-#   3. skills — copy the four self-authored skills, one directory at a time
+#   3. skills — verify the four bundled skills; the bundle's own provider serves
+#              them, so nothing is copied into the user's global skills directory
 #   4. plugin — copy aegis-skill-prefix and substitute its <DSH_HOME> placeholder
 #   5. report — print the profile wiring the user must apply themselves
 #
@@ -120,17 +121,23 @@ else
 fi
 
 # --- 3. the four self-authored skills ------------------------------------
-say "3. install the four self-authored skills (one directory at a time)"
-mkdir -p "${DSH_HOME}/skills"
+# Nothing to copy. The skills ship inside this bundle and are served by the
+# filesystem skill provider that extensions/dsh/index.js mounts, with
+# includeDefaultRoots:false so the user's global skills directory is left alone.
+# Copying them into $DSH_HOME/skills is what this step used to do, and removing
+# it is the point: a preset should not scatter copies through the user's home.
+say "3. verify the bundled skills (nothing to copy — the bundle's provider serves them)"
 for s in $SKILLS; do
-  [ -d "${REPO_ROOT}/skills/${s}" ] || die "skills/${s} is missing from the repository."
+  [ -f "${REPO_ROOT}/skills/${s}/SKILL.md" ] || die "skills/${s}/SKILL.md is missing from the repository."
+  want=$(grep -m1 '^name:' "${REPO_ROOT}/skills/${s}/SKILL.md" | sed 's/^name:[[:space:]]*//')
+  [ "$want" = "$s" ] || die "skills/${s}: frontmatter name is '$want'; the provider reads the frontmatter, not the directory."
   if [ -d "${DSH_HOME}/skills/${s}" ]; then
-    info "${s}: already present — left in place"
+    info "${s}: a stale copy is still in ${DSH_HOME}/skills — remove it, the provider is authoritative"
   else
-    cp -r "${REPO_ROOT}/skills/${s}" "${DSH_HOME}/skills/${s}"
-    info "${s}: installed"
+    info "${s}: served by the bundle's provider"
   fi
 done
+[ -f "${REPO_ROOT}/extensions/dsh/index.js" ] || die "extensions/dsh/index.js is missing — the bundle has no skill provider."
 info "manifest: ${REPO_ROOT}/skills/MANIFEST.md"
 
 # --- 4. the aegis-skill-prefix plugin ------------------------------------

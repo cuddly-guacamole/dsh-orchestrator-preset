@@ -246,18 +246,97 @@ else
 fi
 
 # ===========================================================================
-head_ "check 6 — the four orch-* skills, and the retired names are gone"
+head_ "check 6 — the four orch-* skills come from this bundle's own provider"
 # ===========================================================================
-# The host serves local skills from the DSH home's skills directory; there is no
-# per-profile skills directory.
+# The four skills ship INSIDE the bundle and are served by a filesystem skill
+# provider mounted from extensions/dsh/index.js. They are deliberately NOT in the
+# DSH home's skills directory any more: copying them there was the old install
+# step 3, and it is what left the user's global directory full of someone else's
+# environment. So "present" now means "reachable through our provider", and this
+# check asks the provider rather than looking at a directory.
 SKILLS_DIR="$DSH_HOME_ABS/skills"
+BUNDLE_SKILLS="$REPO_ROOT/skills"
+
 for s in orch-delegation-brief orch-discussion-protocol orch-evidence-protocol orch-real-path-testing; do
-  if [ -f "$SKILLS_DIR/$s/SKILL.md" ]; then
-    ok "check 6  skill present: $s"
+  if [ -f "$BUNDLE_SKILLS/$s/SKILL.md" ]; then
+    want=$(grep -m1 '^name:' "$BUNDLE_SKILLS/$s/SKILL.md" | sed 's/^name:[[:space:]]*//')
+    if [ "$want" = "$s" ]; then
+      ok "check 6  shipped in bundle with matching frontmatter name: $s"
+    else
+      bad "check 6  frontmatter name '$want' != directory '$s' (the provider reads the frontmatter)"
+    fi
   else
-    bad "check 6  skill missing: $s/SKILL.md in $SKILLS_DIR"
+    bad "check 6  skill missing from the bundle: $s/SKILL.md"
+  fi
+  if [ -d "$SKILLS_DIR/$s" ]; then
+    bad "check 6  $s is still copied into the global skills directory — that is what this change removed"
   fi
 done
+
+# The load-bearing half: construct the real provider and ask it what it serves.
+# A file-presence check would pass even if the provider were never mounted.
+if [ -f "$REPO_ROOT/extensions/dsh/index.js" ]; then
+  # The probe must run from the INSTALLED bundle, not from this source tree: the
+  # provider imports @deepseek-ai/dsh-skill-filesystem, which resolves by walking
+  # up to the DSH home's node_modules. A checkout in an unrelated directory has
+  # no such ancestor, and the probe would fail for a reason that says nothing
+  # about the preset.
+  installed="$(cd "$BUNDLE_LINK" 2>/dev/null && pwd -P)" || installed=""
+  if [ -z "$installed" ] || [ ! -f "$installed/extensions/dsh/index.js" ]; then
+    bad "check 6  the installed bundle has no extensions/dsh/index.js — the probe cannot run"
+  else
+  provided="$(cd "$installed" && node --input-type=module -e '
+    import * as nodefs from "node:fs";
+    let factory = null;
+    const ctx = { logger:{info(){},warn(){}}, effect:(f)=>{try{f()}catch{}}, on(){},
+                  get:(k)=> k==="fs" ? nodefs : undefined,
+                  skills:{ registerProvider:(f)=>{factory=f;return ()=>{}},
+                           register:()=>()=>{}, list:async()=>[], get:async()=>null } };
+    const mod = await import("./extensions/dsh/index.js");
+    mod.apply(ctx);
+    if (!factory) { console.log("NO_PROVIDER_REGISTERED"); process.exit(0); }
+    const p = factory({ signal: new AbortController().signal });
+    const l = await p.list({ cwd: process.cwd() });
+    const arr = Array.isArray(l) ? l : (l && l.skills) || [];
+    console.log(arr.map(s => s && (s.name || s)).filter(Boolean).sort().join(" "));
+  ' 2>"$TMP/provider.err")"
+  rc=$?
+  if [ "$rc" -ge 2 ] || [ -z "$provided" ]; then
+    bad "check 6  the provider probe itself failed (node exit $rc) — a clean result would be untrustworthy:"
+    note "$(head -2 "$TMP/provider.err" | tr '\n' ' ')"
+  elif [ "$provided" = "NO_PROVIDER_REGISTERED" ]; then
+    bad "check 6  extensions/dsh/index.js did not register a skill provider"
+  else
+    for s in orch-delegation-brief orch-discussion-protocol orch-evidence-protocol orch-real-path-testing; do
+      case " $provided " in
+        *" $s "*) ok "check 6  provider serves: $s" ;;
+        *) bad "check 6  provider does NOT serve: $s" ;;
+      esac
+    done
+    # Isolation: includeDefaultRoots:false means the provider must serve exactly
+    # this bundle's four skills and nothing else. Comparing against the needle
+    # list rather than against names written out here keeps this script free of
+    # the very strings the leak gate hunts — writing them literally is what once
+    # made the gate report itself.
+    served_count=0
+    for n in $provided; do served_count=$((served_count+1)); done
+    if [ "$served_count" -eq 4 ]; then
+      ok "check 6  provider serves exactly 4 skills (isolated from the global directory)"
+    else
+      bad "check 6  provider serves $served_count entries, expected 4 — the global skills directory is leaking in"
+      note "$provided"
+    fi
+    for n in "${NAME_NEEDLES[@]}"; do
+      case " $provided " in
+        *"$n"*) bad "check 6  a known third-party name leaked into what the provider serves: $n" ;;
+      esac
+    done
+  fi
+  fi
+else
+  bad "check 6  extensions/dsh/index.js is missing — the bundle has no skill provider"
+fi
+
 for s in delegation-brief discussion-protocol evidence-protocol real-path-testing; do
   if [ -d "$SKILLS_DIR/$s" ]; then
     bad "check 6  a RETIRED unprefixed skill still exists as a directory: $s"

@@ -97,6 +97,15 @@
 !/plugins/aegis-skill-prefix/package.json
 !/plugins/aegis-skill-prefix/src/index.ts
 
+# --- extensions/ — the bundle's own skill provider -------------------------
+# Mounted by the patch row that the generator emits, and resolved through the
+# package specifier, so it must also appear in package.json's exports map.
+!/extensions/
+/extensions/*
+!/extensions/dsh/
+/extensions/dsh/*
+!/extensions/dsh/index.js
+
 # --- docs/ is NOT distributed --------------------------------------------
 # The four design documents stay on disk for the author and are held out of the
 # published tree by the `/*` default above — there is deliberately no `!` rule
