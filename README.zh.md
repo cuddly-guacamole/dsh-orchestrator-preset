@@ -133,9 +133,7 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 
 `describeAegisSkillsInZh` 默认关，因为把一份目录翻译过来是**读者偏好**，不是路由需求。
 
-**从设置卡片打开它。** 两个开关都由宿主渲染：它从运行中的插件条目上读本插件导出的 `Config`，自己生成表单 —— 所以这里**没有客户端代码，也不需要注入任何服务**。这能成立有两个必要条件，缺一不可：schema 用 `@deepseek-ai/schemastery` 写而不是 `zod`（宿主读的是 `schema.dict` 与 `schema.meta.volatile`，那是 schemastery 的形状；zod 对象对卡片**完全不可见**），且每个字段都标了 `.volatile()`（未标记的字段会被丢弃，而一个没有任何 volatile 字段的 schema 根本不会生成卡片）。
-
-要在某一层里设置（做配置下发、或手边没有 UI 时用）也可以 —— home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出：
+**在 patch 层里设置它。目前没有设置页开关。** home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出：
 
 ```yaml
 - id: orch-aegis-prefix
@@ -144,9 +142,15 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
     describeAegisSkillsInZh: true
 ```
 
-**用 patch 覆盖时两个 key 都要重述。** patch 是**整行替换**某行的 config，不做深合并；只写你要改的那个，另一个会被打回默认值。**设置卡片没有这个坑 —— 它写的是整张表单。**
+**两个 key 都要重述。** patch 是**整行替换**某行的 config，不做深合并；只写你要改的那个，另一个会被打回默认值。两条路都需要**重启**：config 在插件 apply 时读。
 
-两条路都要**重启**：config 是在插件 apply 时读的。
+### 为什么还没有开关，以及它需要什么
+
+宿主确实会从插件 schema 生成设置表单，本插件的 `Config` 也按那个要求写好了 —— 用 `@deepseek-ai/schemastery` 而不是 `zod`，两个字段都标了 `.volatile()`。**但这不够，这是实测的结论而不是猜测**：`dsh-settings.describe()` 只考虑 `dsh-config-editor.entries()` 返回的条目，而后者过滤到 `parent.tree.ctx.fiber.entry?.id === "include"` 的行。**由 bundle patch 插入的行不属于那一类**，所以这里的东西到不了设置界面。
+
+开发机上唯一**确实有**设置卡片的第三方插件（`@quill507/dsh-auto-approval-llm`）走的也不是这条：它自带一个浏览器客户端插件和一条自己的 GET 路由，而且它源码里管那条路由叫「**给没有宿主表单的卡片（条目非 ACTIVE）的降级来源**」。所以这里要一个开关，意味着写一个**客户端插件**：`dsh.client` 声明、独立的浏览器入口、一条读路由、以及一张绑定到本条目 id 的表单。**那是一个小项目，不是这个 schema 上的一个字段，而且它还没做。**
+
+**客户端页面支持已列入计划并在此记为未完成。** 在它落地之前，两个开关只能改配置文件；想知道为什么，看这一节。
 
 ### 5. 接入 profile
 

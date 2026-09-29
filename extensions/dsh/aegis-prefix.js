@@ -37,34 +37,43 @@ const PREFIX = 'aegis-'
 export const name = 'orch-aegis-prefix'
 
 /** Only the skill registry: this plugin registers names, it serves none.
- *  The settings card needs no `settings` injection — the host reads this module's
- *  `Config` export straight off the running entry (dsh-settings `schema(entry)`
- *  takes `entry.fiber.runtime.Config`), so a schema is all it takes. */
+ *  No `settings` injection, because there is no settings surface to serve — the
+ *  switches are set in a patch layer. See the note above `Config`. */
 export const inject = ['skills']
 
 /** Behaviour defaults, shared by the schema below and by the read in `apply`.
- *  Declared once so the card's default and the code's default cannot drift. */
+ *  Declared once so the schema's default and the code's default cannot drift. */
 const DEFAULTS = Object.freeze({
   prefixAegisSkills: true,
   describeAegisSkillsInZh: false,
 })
 
 /**
- * The two switches, rendered by the host's settings card.
+ * The two switches. **Not rendered as a settings card — see below.**
  *
- * Two things make that work, and neither is optional:
- *  - the schema comes from `@deepseek-ai/schemastery`, not from `zod`. The host's
- *    `volatileForm()` walks `schema.type` / `schema.dict` / `schema.meta.volatile`,
- *    which are schemastery's shape; a zod object has none of them, so a zod Config
- *    is silently invisible to the card — which is exactly what the first version of
- *    this plugin exported, and why it had no switch despite declaring a schema;
- *  - each field is marked `.volatile()`. Only volatile fields survive that walk —
- *    an unmarked one is dropped and, if every field is unmarked, the form is
- *    `undefined` and no card is rendered at all.
+ * Set them in a patch layer: the home layer `$DSH_HOME/cordis.patch.yml` applies
+ * after this bundle's, so a row there wins. Restate both keys, because a patch
+ * replaces a row's config rather than deep-merging it.
  *
- * Defaults are ON for the prefix, because off would leave the routing table
- * pointing at names nothing provides, and OFF for the description swap, because
- * translating a catalogue is a reader preference rather than a requirement.
+ * WHY THERE IS NO UI, measured rather than assumed
+ * The host does build forms from plugin schemas — `dsh-settings.describe()` reads
+ * `entry.fiber.runtime.Config` and runs its own `volatileForm()` over it — but it
+ * only considers entries returned by `dsh-config-editor.entries()`, which filters
+ * to rows whose `parent.tree.ctx.fiber.entry?.id === "include"`. A row inserted by
+ * a bundle patch is not one of those, so nothing here appears in the settings UI.
+ *
+ * The one third-party plugin on this host that *does* have a settings card
+ * (`@quill507/dsh-auto-approval-llm`) does not use that path either: it ships a
+ * browser client plugin and its own GET route, and its source says outright that
+ * the route exists as the degradation source "for a card that has no host form
+ * (entry not ACTIVE)".
+ *
+ * So reaching the UI means writing a client plugin, which is a separate project
+ * rather than a field on this schema. The schema is kept anyway: it is the correct
+ * declaration, it carries the two defaults, and it is exactly what such a client
+ * would bind to. Two earlier attempts at the auto-form failed for reasons recorded
+ * above — a `zod` Config is invisible to `volatileForm`, and adding schemastery plus
+ * `.volatile()` satisfies that function while leaving the `include` filter unmet.
  */
 export const Config = z.object({
   prefixAegisSkills: z.boolean().default(DEFAULTS.prefixAegisSkills).volatile(),

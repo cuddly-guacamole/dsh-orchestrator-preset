@@ -234,16 +234,8 @@ those four paths one by one — a fifth cannot be added without saying so.
 `describeAegisSkillsInZh` defaults to off because translating a catalogue is a reader
 preference rather than a routing requirement.
 
-**Turn it on from the settings card.** Both switches are rendered by the host: it reads this
-plugin's `Config` export off the running entry and builds the form itself, so there is no
-client code here and nothing to inject. Two things make that work and neither is optional —
-the schema is written with `@deepseek-ai/schemastery` rather than `zod` (the host walks
-`schema.dict` and `schema.meta.volatile`, which are schemastery's shape; a zod object is
-silently invisible to the card), and each field is marked `.volatile()` (unmarked fields are
-dropped, and a schema with no volatile field produces no card at all).
-
-To set it in a layer instead — useful for provisioning, or when the UI is not at hand — the
-home layer `$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins:
+**Set it in a patch layer. There is no settings-page control for it yet.** The home layer
+`$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins:
 
 ```yaml
 - id: orch-aegis-prefix
@@ -252,11 +244,28 @@ home layer `$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row th
     describeAegisSkillsInZh: true
 ```
 
-Restate **both** keys when patching. A patch replaces a row's config rather than deep-merging
-it, so naming only the one you are changing drops the other back to its default. The settings
-card does not have that hazard — it writes the whole form.
+Restate **both** keys. A patch replaces a row's config rather than deep-merging it, so naming
+only the one you are changing drops the other back to its default. A restart is needed either
+way: the config is read when the plugin is applied.
 
-Either route needs a restart: the config is read when the plugin is applied.
+### Why there is no control yet, and what it would take
+
+The host does build settings forms from plugin schemas, and this plugin's `Config` is written
+the way that requires — `@deepseek-ai/schemastery` rather than `zod`, with both fields marked
+`.volatile()`. That is not sufficient, which was measured rather than assumed:
+`dsh-settings.describe()` only considers entries that `dsh-config-editor.entries()` returns,
+and that filters to rows whose `parent.tree.ctx.fiber.entry?.id === "include"`. A row inserted
+by a bundle patch is not one of those, so nothing here reaches the settings UI.
+
+The one third-party plugin on the development machine that does have a settings card
+(`@quill507/dsh-auto-approval-llm`) does not use that path either — it ships a browser client
+plugin plus its own GET route, and its own source calls the route the degradation source "for a
+card that has no host form (entry not ACTIVE)". So a control here means writing a client
+plugin: a `dsh.client` declaration, a separate browser entry, a read route, and a form bound to
+this entry's id. That is a small project, not a field on this schema, and it is **not done**.
+
+**Client-page support is planned and tracked here as unfinished.** Until it lands the switches
+are config-only, and this section is the place to look when wondering why.
 
 ### 5. Wire it into a profile
 
