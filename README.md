@@ -63,6 +63,19 @@ but must never restate it. The same discipline governs the orchestration layer's
 content: the orchestrator persona explicitly disclaims the lane roster and the MCP rules,
 because a second copy is a second owner.
 
+**The four `orch-*` skill names are load-bearing, and renaming one is a two-file edit.**
+`routing-sections.mjs` and `personas/orchestrator.md` both name `orch-evidence-protocol` and
+`orch-delegation-brief` explicitly, and the routing table's rows resolve by that exact
+string. Rename a skill directory and its frontmatter but not those references, and the row
+keeps pointing at a name nothing provides — which is a silent failure, because a routing
+entry that matches no skill simply never fires. `node tools/gen-cordis-patch.mjs` and
+`node tools/audit-personas.mjs` catch a half-finished rename; neither is run automatically,
+so run one after touching a skill name.
+
+The `orch-` prefix itself is not decoration: these skills land in a registry that also holds
+whatever else a given machine has installed, so an unprefixed `evidence-protocol` would be a
+name waiting to collide.
+
 ### Evidence and state
 
 Completion is a file, not a sentence. A task counts as done only when
@@ -120,7 +133,7 @@ Unrelated projects sharing a similar name are not a source for anything in this 
 | `routing-sections.mjs` | The four resident routing sections. |
 | `lane-composition.mjs` | The three durable-agent-id child-addressing tools. |
 | `personas/` | Ten persona files: orchestrator, planner, and one per lane. |
-| `skills/` | The four self-authored `orch-*` skills, plus [`MANIFEST.md`](./skills/MANIFEST.md). |
+| `skills/` | The four self-authored `orch-*` skills. This directory is the authoritative list of them. |
 | `extensions/dsh/` | The bundle's two plugins: the skills provider, and the aegis prefix bridge. |
 | `docs/` | **Not distributed.** The design history is held back; the Design section above is the specification. |
 | `install.sh` | Installs everything below into a DSH home. |
@@ -199,8 +212,8 @@ test -L ~/.dsh/profiles/web/node_modules/@quill507/dsh-orchestrator-preset && ec
 and a provider scoped to it serves them, so installing this preset adds nothing to your
 global skills directory and removing it takes nothing away. That directory is where other
 people's tools live; a preset that scatters copies into it inherits the mess without the
-context. [`skills/MANIFEST.md`](./skills/MANIFEST.md) is the authoritative list of what this
-bundle ships, and that file is also why the names are not enumerated anywhere else.
+context. What this bundle ships is exactly what is in `skills/`, and `.gitignore` admits
+those four paths one by one — a fifth cannot be added without saying so.
 
 `describeAegisSkillsInZh` defaults to off because translating a catalogue is a reader
 preference rather than a routing requirement. Turn it on in a layer you own — the home layer
@@ -490,6 +503,9 @@ MIT License:
 
 ### Skills that are not redistributed
 
-A user's skills directory normally holds more than the four this preset ships. The
-third-party skills there are **not** redistributed by this repository, and two of them
-carry no licence declaration at all. See [`skills/MANIFEST.md`](./skills/MANIFEST.md).
+A user's skills registry normally holds more than the four this preset ships. The third-party
+skills installed on any given machine are **not** redistributed by this repository, and some
+of them carry no licence declaration at all, which makes redistributing those a licence
+violation rather than an oversight. That is why this repository names none of them and why
+`.gitignore` is a whitelist: what is installed is personal to whoever installed it, so a list
+here would describe one machine and go stale the moment it was written.

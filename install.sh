@@ -140,7 +140,6 @@ for s in $SKILLS; do
   fi
 done
 [ -f "${REPO_ROOT}/extensions/dsh/index.js" ] || die "extensions/dsh/index.js is missing — the bundle has no skill provider."
-info "manifest: ${REPO_ROOT}/skills/MANIFEST.md"
 
 # --- 4. nothing to install ------------------------------------------------
 # The aegis prefix bridge and its optional description swap live in the bundle's

@@ -428,10 +428,11 @@ ABSPATH_GENERIC='[A-Za-z]:[\\/]Users[\\/][^[:space:]"'"'"'<>|/]*(\[r\]|r\]|x|som
 
 # A denylist of third-party and private-data names is unavoidable -- there is no
 # shape that means "a name I have not thought of". But listing them here would
-# publish what this installation has installed, which is the same exposure the
-# MANIFEST table was cut for. So the list lives in a local, uncommitted file.
-# Absent that file the gate still runs its shape rules and says so out loud,
-# rather than passing quietly on less coverage than it looks like it has.
+# publish what this installation has installed, which is one machine's
+# environment rather than this project's. So the list lives in a local,
+# uncommitted file. Absent that file the gate still runs its shape rules and says
+# so out loud, rather than passing quietly on less coverage than it looks like it
+# has.
 NEEDLE_FILE="$REPO_ROOT/tools/leak-needles.local.txt"
 NAME_NEEDLES=()
 if [ -f "$NEEDLE_FILE" ]; then

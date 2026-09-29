@@ -81,7 +81,6 @@
 /skills/orch-real-path-testing/*
 !/skills/orch-discussion-protocol/
 /skills/orch-discussion-protocol/*
-!/skills/MANIFEST.md
 !/skills/orch-delegation-brief/SKILL.md
 !/skills/orch-discussion-protocol/SKILL.md
 !/skills/orch-evidence-protocol/SKILL.md
@@ -123,9 +122,9 @@
 # any other skills/*/          third-party skills are not redistributable here.
 #                              NOT enumerated on purpose: what is installed on a
 #                              given machine is that person's environment, not this
-#                              project's. The rule and the licence reason are in
-#                              skills/MANIFEST.md; enforcement is `/*` above, which
-#                              refuses everything not explicitly re-admitted.
+#                              project's, and some of it carries no licence at all.
+#                              Enforcement is `/*` above, which refuses everything
+#                              not explicitly re-admitted.
 # retired-lineage data dirs/    private, and not named for the same reason
 # tools/leak-needles.local.txt  this machine's own denylist; see that file's header
 # *.bak *.bak-*                stray backups

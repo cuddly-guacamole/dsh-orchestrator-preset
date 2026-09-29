@@ -32,6 +32,10 @@ DSH 没有「一个会派活的 agent」这种概念。preset 声明一组工具
 
 「唯一归属者」正是要点。MCP 纪律只存在于一段里，orchestrator persona 只留一个指针，委派函可以**引用**它但绝不可复述它。编排层自身的内容也守同一条纪律：orchestrator persona 明确声明不承载 lane 名册与 MCP 规则 —— 因为第二份副本就是第二个归属者。
 
+**四个 `orch-*` 技能名是承重的，改名是「改两个文件」的活。** `routing-sections.mjs` 与 `personas/orchestrator.md` 都按名字显式引用了 `orch-evidence-protocol` 与 `orch-delegation-brief`，而路由表的行是按那个**精确字符串**解析的。把技能目录和 frontmatter 改名、却没改这两处引用，那一行就会指向一个没有东西提供的名字 —— **而这是静默失败**：匹配不到任何技能的路由行，只是永远不触发而已。`node tools/gen-cordis-patch.mjs` 与 `node tools/audit-personas.mjs` 能抓住半途而废的改名；两者都不会自动运行，所以动过技能名之后，跑一个。
+
+`orch-` 前缀本身不是装饰：这些技能落进的是一个**还装着该机器已装其它技能的注册表**，所以不加前缀的 `evidence-protocol` 就是一个等着撞名的名字。
+
 ### 证据与状态
 
 完成是一个文件，不是一句话。只有当 `.dsh/evidence/<task-id>-<slug>.md` 存在、非空、且**末行**恰有一条锚定的判定行时，一个任务才算完成。每个回合触碰的每条路径在完成时会被归类为 `in_scope` / `out_of_scope` / `undeclared` / `illegal`，凡非 `in_scope` 一律拒绝完成声明。需要跨会话存活的状态 —— lane 台账（`.dsh/state/lanes.md`）、方向级认领（`.dsh/state/claims.md`）、目标帧（`.dsh/goals/<slug>.md`）—— 都落在文件里，以便任何主张都能对着别的写入者也能看到的那个文件来核对。
@@ -56,7 +60,7 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 | `routing-sections.mjs` | 四段常驻路由 section。 |
 | `lane-composition.mjs` | 三个按持久 agent id 的子代寻址工具。 |
 | `personas/` | 十份 persona：orchestrator、planner，以及每条 lane 一份。 |
-| `skills/` | 四个自研技能，外加 [`MANIFEST.md`](skills/MANIFEST.md)。 |
+| `skills/` | 四个自研技能。本目录就是它们的权威清单。 |
 | `extensions/dsh/` | 本包的两个插件：技能 provider，以及 aegis 前缀桥。 |
 | `docs/` | **不分发。** 设计史被留存；上文的设计一节即是规范。 |
 | `README.zh.md` | 本文件。 |
@@ -115,8 +119,8 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 **不会向 `~/.dsh/skills/` 拷贝任何东西。** 四个 `orch-*` 技能随 bundle 走，由一个限定在
 本包范围内的 provider 提供：装这个 preset 不会往你的全局技能目录里加东西，卸载也不会
 留下东西。那个目录里装的是别人的工具；往里撒副本的 preset 只会继承那份混乱，却拿不到
-对应的上下文。[`skills/MANIFEST.md`](skills/MANIFEST.md) 是本包发布内容的权威清单，也正因如此，
-这些名字在别处一概不予列举。
+对应的上下文。本包发布的内容就是 `skills/` 里那些，而 `.gitignore` 是**逐条**准入这四条
+路径的 —— 想加第五条，必须显式说出来。
 
 `describeAegisSkillsInZh` 默认关，因为把一份目录翻译过来是**读者偏好**，不是路由需求。在你自己的层里打开它 —— home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出：
 
@@ -213,4 +217,4 @@ MIT —— 参见 [`LICENSE`](LICENSE)。
 
 ### 不再分发的技能
 
-用户的 skills 目录通常不止本 preset 发布的这四个。那里的第三方技能**不由**本仓库再分发，其中两个**完全没有**任何许可声明。参见 [`skills/MANIFEST.md`](skills/MANIFEST.md)。
+用户的技能注册表通常不止本 preset 发布的这四个。该机器上装的第三方技能**不由**本仓库再分发，其中**有些完全没有**任何许可声明 —— 那类东西再分发是**许可违规，不是疏忽**。这也是本仓库一个名字都不列举、且 `.gitignore` 用白名单的原因：装了什么，是装它那个人的事；写一份清单在这里，描述的是某一台机器，而且写下的那一刻就开始过期。
