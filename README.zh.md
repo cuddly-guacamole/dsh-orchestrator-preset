@@ -79,15 +79,24 @@ node tools/gen-cordis-patch.mjs
 
 ## 安装
 
-安装方式是 **`link:` 依赖**，不是 npm 发布。`package.json` 带 `"private": true`，**正是**为了保证 `@local/` 作用域的名字永不被误发布 —— 这个守卫就是当前名字安全的原因，也是真正发布那一刻要移除的标志位。本包**不**声明任何 `dependencies` / `peerDependencies`：运行时一切由宿主提供。
+安装方式是 **`link:` 依赖**，不是 npm 发布。`package.json` 带 `"private": true`，**正是**为了保证 `@local/` 作用域的名字永不被误发布 —— 这个守卫就是当前名字安全的原因，也是真正发布那一刻要移除的标志位。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
+
+| 包 | 范围 | 为什么 |
+|---|---|---|
+| `@deepseek-ai/dsh-skill-filesystem` | `>=0.2.0-rc.2 <2` | 本 bundle 挂载的 provider |
+| `@deepseek-ai/dsh-tools` | `>=0.2.0-rc.2 <2` | `defineTool`，`lane-composition.mjs` 用 |
+| `@deepseek-ai/cordis` | `>=4.0.1 <5` | 插件契约；这是真实的大版本边界 |
+| `zod` | `>=3` | `Config` schema 的约定 |
+
+**下界写的是实际跑过的版本**，不是设计稿恰好参照过的更早版本。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
 
 ### 0. 宿主版本门
 
 ```sh
-dsh --version          # 必须 >= 0.1.7-rc.1
+dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 ```
 
-这是 `install.sh` 内部的硬检查，刻意**不**做成 `peerDependencies`：在 `link:` 安装下，peer 依赖可能让 `pnpm install` 直接失败，所以版本要求放在安装器里。`install.sh --check` 只跑这个门，不写任何东西。
+这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本，0.2.0-rc.2 是实际跑过的版本。**两者之间诚实的答案是「未测」**，这两个数字保持分开正是为此，而不是悄悄合并成一个。`install.sh --check` 只跑这个门，不写任何东西。
 
 ### 1–4. 安装
 

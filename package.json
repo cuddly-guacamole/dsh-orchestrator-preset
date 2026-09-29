@@ -23,6 +23,26 @@
   },
   "private": true,
   "type": "module",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1 <5",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.0-rc.2 <2",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <2",
+    "zod": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
   "exports": {
     "./plan-aware-persona.mjs": "./plan-aware-persona.mjs",
     "./routing-sections.mjs": "./routing-sections.mjs",

@@ -161,19 +161,35 @@ The install method is a **`link:`** dependency, not an npm publish. `package.jso
 `"private": true` **precisely so the `@local/`-scoped name can never be published by
 accident** — that guard is what makes the current name safe, and it is the flag to remove at
 the moment of any real publication (see [Publishing to npm](#publishing-to-npm-future-work-not-yet-done)).
-The package declares **no** `dependencies` and **no** `peerDependencies`: the host supplies
-everything at runtime.
+The package declares **no** `dependencies` — the host supplies everything at runtime. It does
+declare `peerDependencies`, all four marked `optional`, so that what it was tested against is
+written down without any install being able to fail over it:
+
+| Package | Range | Why |
+|---|---|---|
+| `@deepseek-ai/dsh-skill-filesystem` | `>=0.2.0-rc.2 <2` | the provider this bundle mounts |
+| `@deepseek-ai/dsh-tools` | `>=0.2.0-rc.2 <2` | `defineTool`, used by `lane-composition.mjs` |
+| `@deepseek-ai/cordis` | `>=4.0.1 <5` | the plugin contract; a real major boundary |
+| `zod` | `>=3` | the `Config` schema convention |
+
+The lower bounds name **the version this was actually run against**, not an earlier one the
+design happened to reference. The upper bounds follow the convention the published
+`@quill507/dsh-auto-approval-llm` uses on the same host packages. `optional: true` is what
+keeps the declaration honest: the coupling here is deep — `ctx.skills.registerProvider` is a
+host API — so a major change could break this silently, and saying so is worth more than
+pretending the range is enforced. It is not.
 
 ### 0. Host version gate
 
 ```sh
-dsh --version          # must be >= 0.1.7-rc.1
+dsh --version          # install.sh refuses below 0.1.7-rc.1
 ```
 
-This is a hard check inside `install.sh`, deliberately **not** a `peerDependencies` entry:
-under a `link:` install a peer dependency can make `pnpm install` fail outright, so the
-requirement lives in the installer and as a runtime check instead. `install.sh --check` runs
-this gate and writes nothing.
+This is a hard check inside `install.sh`, and it is deliberately **looser** than the
+`peerDependencies` above: 0.1.7-rc.1 is the version the design was written against, while
+0.2.0-rc.2 is the version it has been run on. Between those two the honest answer is
+**untested**, and the two numbers are kept separate for that reason rather than quietly
+merged into one. `install.sh --check` runs this gate and writes nothing.
 
 ### 1–4. Install
 
