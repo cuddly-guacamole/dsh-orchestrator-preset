@@ -170,7 +170,7 @@ written down without any install being able to fail over it:
 | `@deepseek-ai/dsh-skill-filesystem` | `>=0.2.0-rc.2 <2` | the provider this bundle mounts |
 | `@deepseek-ai/dsh-tools` | `>=0.2.0-rc.2 <2` | `defineTool`, used by `lane-composition.mjs` |
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | the plugin contract; a real major boundary |
-| `zod` | `>=3` | the `Config` schema convention |
+| `@deepseek-ai/schemastery` | `>=3.18.0 <4` | the `Config` schema the settings card is built from |
 
 The lower bounds name **the version this was actually run against**, not an earlier one the
 design happened to reference. The upper bounds follow the convention the published
@@ -232,8 +232,18 @@ context. What this bundle ships is exactly what is in `skills/`, and `.gitignore
 those four paths one by one — a fifth cannot be added without saying so.
 
 `describeAegisSkillsInZh` defaults to off because translating a catalogue is a reader
-preference rather than a routing requirement. Turn it on in a layer you own — the home layer
-`$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins:
+preference rather than a routing requirement.
+
+**Turn it on from the settings card.** Both switches are rendered by the host: it reads this
+plugin's `Config` export off the running entry and builds the form itself, so there is no
+client code here and nothing to inject. Two things make that work and neither is optional —
+the schema is written with `@deepseek-ai/schemastery` rather than `zod` (the host walks
+`schema.dict` and `schema.meta.volatile`, which are schemastery's shape; a zod object is
+silently invisible to the card), and each field is marked `.volatile()` (unmarked fields are
+dropped, and a schema with no volatile field produces no card at all).
+
+To set it in a layer instead — useful for provisioning, or when the UI is not at hand — the
+home layer `$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins:
 
 ```yaml
 - id: orch-aegis-prefix
@@ -242,8 +252,11 @@ preference rather than a routing requirement. Turn it on in a layer you own — 
     describeAegisSkillsInZh: true
 ```
 
-Restate **both** keys. A patch replaces a row's config rather than deep-merging it, so naming
-only the one you are changing drops the other back to its default.
+Restate **both** keys when patching. A patch replaces a row's config rather than deep-merging
+it, so naming only the one you are changing drops the other back to its default. The settings
+card does not have that hazard — it writes the whole form.
+
+Either route needs a restart: the config is read when the plugin is applied.
 
 ### 5. Wire it into a profile
 
@@ -487,7 +500,7 @@ anywhere; the overlap half needs the upstream corpus, which is deliberately not 
 the rewrite is **partial evidence rather than a verified claim** — the tool reports it as
 unverified, not as a pass, because those are different things.
 
-**The authors of the packages this was tested against** — `zod`, and the DSH packages that
+**The authors of the packages this was tested against** — `@deepseek-ai/schemastery`, and the DSH packages that
 supply `dsh-tools`, `dsh-skill-filesystem` and `dsh-home-paths`. Nothing here would load
 without them, and none of them are dependencies of this package: the host supplies them at
 runtime, which is precisely why this bundle declares no runtime dependencies of its own.

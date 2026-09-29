@@ -28,7 +28,7 @@
  * pack that registers late still gets namespaced.
  */
 
-import { z } from 'zod'
+import z from '@deepseek-ai/schemastery'
 
 const AEGIS_PROVIDER = 'aegis-method-pack'
 const PREFIX = 'aegis-'
@@ -36,19 +36,39 @@ const PREFIX = 'aegis-'
 /** Cordis plugin name. */
 export const name = 'orch-aegis-prefix'
 
-/** Only the skill registry: this plugin registers names, it serves none. */
+/** Only the skill registry: this plugin registers names, it serves none.
+ *  The settings card needs no `settings` injection — the host reads this module's
+ *  `Config` export straight off the running entry (dsh-settings `schema(entry)`
+ *  takes `entry.fiber.runtime.Config`), so a schema is all it takes. */
 export const inject = ['skills']
 
+/** Behaviour defaults, shared by the schema below and by the read in `apply`.
+ *  Declared once so the card's default and the code's default cannot drift. */
+const DEFAULTS = Object.freeze({
+  prefixAegisSkills: true,
+  describeAegisSkillsInZh: false,
+})
+
 /**
- * Rendered by the host as two settings switches.
- *  - the prefix defaults ON: off would leave the routing table pointing at names
- *    nothing provides;
- *  - the description swap defaults OFF: it is a reader preference, not a
- *    requirement, and it rewrites text a reader may be relying on.
+ * The two switches, rendered by the host's settings card.
+ *
+ * Two things make that work, and neither is optional:
+ *  - the schema comes from `@deepseek-ai/schemastery`, not from `zod`. The host's
+ *    `volatileForm()` walks `schema.type` / `schema.dict` / `schema.meta.volatile`,
+ *    which are schemastery's shape; a zod object has none of them, so a zod Config
+ *    is silently invisible to the card — which is exactly what the first version of
+ *    this plugin exported, and why it had no switch despite declaring a schema;
+ *  - each field is marked `.volatile()`. Only volatile fields survive that walk —
+ *    an unmarked one is dropped and, if every field is unmarked, the form is
+ *    `undefined` and no card is rendered at all.
+ *
+ * Defaults are ON for the prefix, because off would leave the routing table
+ * pointing at names nothing provides, and OFF for the description swap, because
+ * translating a catalogue is a reader preference rather than a requirement.
  */
 export const Config = z.object({
-  prefixAegisSkills: z.boolean().default(true),
-  describeAegisSkillsInZh: z.boolean().default(false),
+  prefixAegisSkills: z.boolean().default(DEFAULTS.prefixAegisSkills).volatile(),
+  describeAegisSkillsInZh: z.boolean().default(DEFAULTS.describeAegisSkillsInZh).volatile(),
 })
 
 /**
@@ -85,14 +105,14 @@ const ZH_DESCRIPTIONS = [
 const ZH_BY_EN = new Map(ZH_DESCRIPTIONS)
 
 export function apply(ctx, rawConfig) {
-  let cfg
-  try {
-    cfg = Config.parse(rawConfig ?? {})
-  } catch {
-    cfg = { prefixAegisSkills: true, describeAegisSkillsInZh: false }
-  }
-  const wantPrefix = cfg.prefixAegisSkills
-  const wantZh = cfg.describeAegisSkillsInZh
+  // Read the two switches off the raw patch value, applying DEFAULTS for whatever
+  // the row does not set. Schemastery schemas are not zod's: there is no `.parse`
+  // here, and calling the schema does not fill defaults either — so the defaults
+  // have to come from the shared constant, which is also what the card shows.
+  const raw = rawConfig !== null && typeof rawConfig === 'object' ? rawConfig : {}
+  const pick = (key) => (typeof raw[key] === 'boolean' ? raw[key] : DEFAULTS[key])
+  const wantPrefix = pick('prefixAegisSkills')
+  const wantZh = pick('describeAegisSkillsInZh')
 
   if (!wantPrefix) {
     ctx.logger.info("[orch-aegis-prefix] prefix disabled by config; the preset's routing table will not resolve")

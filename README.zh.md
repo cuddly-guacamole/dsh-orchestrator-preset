@@ -86,7 +86,7 @@ node tools/gen-cordis-patch.mjs
 | `@deepseek-ai/dsh-skill-filesystem` | `>=0.2.0-rc.2 <2` | 本 bundle 挂载的 provider |
 | `@deepseek-ai/dsh-tools` | `>=0.2.0-rc.2 <2` | `defineTool`，`lane-composition.mjs` 用 |
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | 插件契约；这是真实的大版本边界 |
-| `zod` | `>=3` | `Config` schema 的约定 |
+| `@deepseek-ai/schemastery` | `>=3.18.0 <4` | 设置卡片据以生成的 `Config` schema |
 
 **下界写的是实际跑过的版本**，不是设计稿恰好参照过的更早版本。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
 
@@ -131,7 +131,11 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 对应的上下文。本包发布的内容就是 `skills/` 里那些，而 `.gitignore` 是**逐条**准入这四条
 路径的 —— 想加第五条，必须显式说出来。
 
-`describeAegisSkillsInZh` 默认关，因为把一份目录翻译过来是**读者偏好**，不是路由需求。在你自己的层里打开它 —— home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出：
+`describeAegisSkillsInZh` 默认关，因为把一份目录翻译过来是**读者偏好**，不是路由需求。
+
+**从设置卡片打开它。** 两个开关都由宿主渲染：它从运行中的插件条目上读本插件导出的 `Config`，自己生成表单 —— 所以这里**没有客户端代码，也不需要注入任何服务**。这能成立有两个必要条件，缺一不可：schema 用 `@deepseek-ai/schemastery` 写而不是 `zod`（宿主读的是 `schema.dict` 与 `schema.meta.volatile`，那是 schemastery 的形状；zod 对象对卡片**完全不可见**），且每个字段都标了 `.volatile()`（未标记的字段会被丢弃，而一个没有任何 volatile 字段的 schema 根本不会生成卡片）。
+
+要在某一层里设置（做配置下发、或手边没有 UI 时用）也可以 —— home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出：
 
 ```yaml
 - id: orch-aegis-prefix
@@ -140,7 +144,9 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
     describeAegisSkillsInZh: true
 ```
 
-**两个 key 都要重述。** patch 是**整行替换**某行的 config，不做深合并；只写你要改的那个，另一个会被打回默认值。
+**用 patch 覆盖时两个 key 都要重述。** patch 是**整行替换**某行的 config，不做深合并；只写你要改的那个，另一个会被打回默认值。**设置卡片没有这个坑 —— 它写的是整张表单。**
+
+两条路都要**重启**：config 是在插件 apply 时读的。
 
 ### 5. 接入 profile
 
@@ -201,7 +207,7 @@ MIT —— 参见 [`LICENSE`](LICENSE)。
 
 **oh-my-openagent**（[code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)）—— 那些 persona 最终上溯到的源头，作者 **code-yeongyu**。该项目**不是开源的**，本仓库也不分发其中任何文本：这里每一份 persona 都已按一条明确阈值重写 —— 与上游 agent 源码的 n-gram 重合**低于 2%**，且**不存在连续六行相同**。`tools/audit-personas.mjs` 就是那条阈值，做成了可执行的形式。它的一半（术语探针）在任何环境都能跑；另一半（重合度）需要上游语料，而语料是**刻意不随仓库分发**的，所以这次重写是**部分证据，而不是一个已验证的结论** —— 工具把它报成「未验证」而不是「通过」，因为这两者是不同的事。
 
-**本项所针对的各个包的作者** —— `zod`，以及提供 `dsh-tools`、`dsh-skill-filesystem`、`dsh-home-paths` 的 DSH 各包。没有它们这里什么都加载不起来，而它们当中**没有任何一个是本包的依赖**：宿主在运行时提供，这正是本 bundle 不声明任何运行时依赖的原因。
+**本项所针对的各个包的作者** —— `@deepseek-ai/schemastery`，以及提供 `dsh-tools`、`dsh-skill-filesystem`、`dsh-home-paths` 的 DSH 各包。没有它们这里什么都加载不起来，而它们当中**没有任何一个是本包的依赖**：宿主在运行时提供，这正是本 bundle 不声明任何运行时依赖的原因。
 
 还有一点要说清楚：用来**建造**它的工具——一个在长会话里工作的语言模型——不是这些设计的来源。其中的错误按原样记在本仓库自己的历史里，没有被抹平；哪些是实测、哪些是假设，全文随处都标了出来。
 
