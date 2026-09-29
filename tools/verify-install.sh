@@ -560,6 +560,81 @@ else
 fi
 
 # ===========================================================================
+head_ "check 10 — the zh description table still matches the installed pack"
+# ===========================================================================
+# The description swap matches on the English text verbatim, so an upstream
+# rewrite silently falls through to English. That is the right failure direction
+# — better English than garbled Chinese — but it is invisible, and the table rots
+# one skill at a time. This check turns the rot into a number.
+#
+# Falsifiable by construction: it compares the table against the pack on disk, so
+# upgrading aegis turns it red exactly when a key stops matching.
+PREFIX_PLUGIN="$REPO_ROOT/extensions/dsh/aegis-prefix.js"
+if [ -f "$PREFIX_PLUGIN" ] && [ -d "$PROFILE_DIR/node_modules/aegis/skills" ]; then
+  zhrc=0
+  node -e '
+    const fs = require("node:fs"), path = require("node:path")
+    const [, pluginPath, packRoot] = process.argv
+    const src = fs.readFileSync(pluginPath, "utf8")
+    // The table is an array of [en, zh] pairs; pull the first element of each.
+    const start = src.indexOf("const ZH_DESCRIPTIONS = [")
+    const end = src.indexOf("\n]", start)
+    const body = src.slice(start, end)
+    const keys = []
+    let pos = 0
+    for (;;) {
+      // Entries are [en, zh] pairs. The en side is single-quoted unless the text
+      // itself contains an apostrophe, in which case it is double-quoted — and an
+      // extractor that only knew one of the two silently skipped those entries and
+      // reported the newest of them as a stale key.
+      const i1 = body.indexOf("[\u0027", pos)
+      const i2 = body.indexOf("[\u0022", pos)
+      let i = -1, q = "\u0027"
+      if (i1 < 0 && i2 < 0) break
+      if (i1 < 0) { i = i2; q = "\u0022" } else if (i2 < 0) { i = i1 } else { i = Math.min(i1, i2); if (i2 < i1) q = "\u0022" }
+      let j = i + 2
+      while (j < body.length) {
+        if (body[j] === "\\") { j += 2; continue }
+        if (body[j] === q) break
+        j++
+      }
+      keys.push(body.slice(i + 2, j))
+      pos = j + 1
+    }
+    const set = new Set(keys)
+    const misses = []
+    let total = 0
+    for (const d of fs.readdirSync(packRoot)) {
+      const f = path.join(packRoot, d, "SKILL.md")
+      if (!fs.existsSync(f)) continue
+      const dl = fs.readFileSync(f, "utf8").split("\n").find((l) => l.startsWith("description:"))
+      if (!dl) continue
+      let desc = dl.slice("description:".length).trim()
+      if (desc.length > 1 && ((desc[0] === "\u0022" && desc[desc.length - 1] === "\u0022") || (desc[0] === "\u0027" && desc[desc.length - 1] === "\u0027"))) desc = desc.slice(1, -1)
+      total++
+      if (!set.has(desc)) misses.push(d)
+    }
+    console.log("KEYS=" + keys.length + " TOTAL=" + total + " MISS=" + misses.length)
+    if (misses.length) console.log("MISSING=" + misses.join(","))
+  ' "$PREFIX_PLUGIN" "$PROFILE_DIR/node_modules/aegis/skills" >"$TMP/zh.txt" 2>"$TMP/zh.err" || zhrc=$?
+  zhline="$(cat "$TMP/zh.txt" 2>/dev/null | head -1)"
+  if [ "$zhrc" -ne 0 ] || [ -z "$zhline" ]; then
+    warn "check 10  the zh table could not be read ($(head -1 "$TMP/zh.err" 2>/dev/null))"
+  else
+    zkeys="$(printf '%s' "$zhline" | sed -n 's/.*KEYS=\([0-9]*\).*/\1/p')"
+    zmiss="$(printf '%s' "$zhline" | sed -n 's/.*MISS=\([0-9]*\).*/\1/p')"
+    if [ "$zmiss" = "0" ]; then
+      ok "check 10  all $zkeys zh keys match the installed pack"
+    else
+      bad "check 10  $zmiss of $zkeys zh keys no longer match the pack — those skills will show English:"
+      sed -n 's/^MISSING=//p' "$TMP/zh.txt" | tr ',' '\n' | sed 's/^/      /'
+    fi
+  fi
+else
+  warn "check 10  skipped: no aegis pack under the profile, or the prefix plugin is absent"
+fi
+
+# ===========================================================================
 printf '\n========================================\n'
 printf 'SUMMARY  %d passed, %d failed  (profile: %s)\n' "$PASS" "$FAIL" "$PROFILE"
 printf '========================================\n'

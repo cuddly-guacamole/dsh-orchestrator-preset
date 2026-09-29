@@ -1,6 +1,26 @@
 {
   "name": "@quill507/dsh-orchestrator-preset",
   "version": "1.0.0",
+  "description": "A thin-shell agent preset for DeepSeek Harness: nine named lanes with declared tool boundaries, resident routing sections, four self-authored skills, and an evidence-based completion gate.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "agent-preset",
+    "orchestration",
+    "aegis"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cuddly-guacamole/dsh-orchestrator-preset.git"
+  },
+  "homepage": "https://github.com/cuddly-guacamole/dsh-orchestrator-preset#readme",
+  "bugs": {
+    "url": "https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "private": true,
   "type": "module",
   "exports": {

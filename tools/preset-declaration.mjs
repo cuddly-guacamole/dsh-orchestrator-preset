@@ -63,6 +63,9 @@ export const providerName = 'orch-method-pack'
 export const prefixRowId = 'orch-aegis-prefix'
 export const prefixEntry = `${bundlePkg}/extensions/dsh/aegis-prefix.js`
 export const prefixAegisSkills = true
+// 描述汉化：**默认关**。它是读者偏好而不是路由需求，不该强加给每个装这个预设的人。
+// 谁想要，在自己的层里覆盖这一行（home 层 `$DSH_HOME/cordis.patch.yml` 在本层之后应用）。
+export const describeAegisSkillsInZh = false
 
 // description：默认文本（计划 T06 给定；约束：不得含被排除的上游项目文本（DESIGN.md §12.4/§12.5），不得含用户路径）
 export const description = 'A thin orchestration preset: aegis method pack for methodology, self-authored lane boundaries for delegation. Declares its full plugins[] because DSH presets have no inheritance.'
