@@ -1,4 +1,19 @@
-# dsh-orchestrator-preset
+<div align="center">
+
+# @quill507/dsh-orchestrator-preset
+
+**A thin-shell agent preset for DeepSeek Harness**
+
+*The aegis method pack for methodology · a self-authored orchestration layer for delegation*
+
+[![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
+[![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2-4c6ef5?style=flat-square&labelColor=454a54)
+[![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
+
+[中文](README.zh.md) · [Notices](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
+
+</div>
 
 A thin-shell agent preset for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
 the **aegis methodology pack** (upstream, consumed at runtime, unmodified) plus a
@@ -8,8 +23,6 @@ completion gate.
 
 The repository root **is** the bundle. There is no `bundle/` subdirectory: the files here
 are exactly the files that get installed.
-
-[English](README.md) · [中文](README.zh.md)
 
 ---
 

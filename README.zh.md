@@ -1,6 +1,19 @@
-# dsh-orchestrator-preset
+<div align="center">
 
-[English](README.md) · **中文**
+# @quill507/dsh-orchestrator-preset
+
+**为 DeepSeek Harness 的薄壳 agent preset**
+
+*aegis 方法论层负责方法 · 自研编排层负责委派*
+
+[![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
+[![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2-4c6ef5?style=flat-square&labelColor=454a54)
+[![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
+
+[English](README.md) · [归属与来源](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
+
+</div>
 
 DeepSeek Harness 的薄壳 agent preset：**aegis 方法论层**（上游、运行时消费、未改动）加上一个**自研编排层** —— 九条命名 lane、声明式工具边界、常驻路由 section、随装配切换的 persona，以及以磁盘证据为准的完成门。
 
