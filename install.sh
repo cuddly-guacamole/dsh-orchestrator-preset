@@ -9,10 +9,12 @@
 # What it does, in order:
 #   0. gate   — refuse to continue unless the host is >= 0.1.7-rc.1
 #   1. stage  — copy this repository's distributable content to $DSH_HOME/plugins/
-#   2. link   — verify the per-profile @local/ symlink that `pnpm install` creates
+#   2. link   — verify the per-profile symlink that `pnpm install` creates
 #   3. skills — verify the four bundled skills; the bundle's own provider serves
 #              them, so nothing is copied into the user's global skills directory
-#   4. plugin — copy aegis-skill-prefix and substitute its <DSH_HOME> placeholder
+#   4. none   — the aegis prefix and its optional description swap ship inside the
+#              bundle as extensions/dsh/aegis-prefix.js; there is no companion
+#              plugin to install, and installing the old one reintroduces a race
 #   5. report — print the profile wiring the user must apply themselves
 #
 # What it deliberately does NOT do: touch a profile's package.json or cordis.patch.yml.
@@ -37,6 +39,7 @@ if [ ! "$DSH_HOME" = "${DSH_HOME%/}" ]; then DSH_HOME="${DSH_HOME%/}"; fi
 
 say()  { printf '\n== %s\n' "$*"; }
 info() { printf '   %s\n' "$*"; }
+warn() { printf '   !! %s\n' "$*"; }
 die()  { printf '\n!! %s\n' "$*" >&2; exit 1; }
 
 # --- semver compare -------------------------------------------------------
@@ -140,26 +143,19 @@ done
 [ -f "${REPO_ROOT}/extensions/dsh/index.js" ] || die "extensions/dsh/index.js is missing — the bundle has no skill provider."
 info "manifest: ${REPO_ROOT}/skills/MANIFEST.md"
 
-# --- 4. the aegis-skill-prefix plugin ------------------------------------
-say "4. install the aegis-skill-prefix plugin (substituting <DSH_HOME>)"
-PREFIX_DEST="${DSH_HOME}/plugins/aegis-skill-prefix"
-if [ -d "$PREFIX_DEST" ]; then
-  info "already present — leaving it in place"
-else
-  mkdir -p "$PREFIX_DEST"
-  cp -r "${REPO_ROOT}/plugins/aegis-skill-prefix/." "${PREFIX_DEST}/"
-  # A bundle patch resolves relative paths against the PROFILE directory, so this
-  # row must be an absolute file:/// URL. The shipped file carries a placeholder
-  # instead of a machine-local path; resolve it here.
-  # The template already supplies `file:///`, so strip any leading slash: that
-  # turns both `C:/Users/x` and `/home/x` into exactly three slashes, not four.
-  DSH_HOME_URL="$(printf '%s' "$DSH_HOME" | sed 's#\\#/#g; s#^/*##')"
-  PATCH="${PREFIX_DEST}/cordis.patch.yml"
-  sed -i "s#<DSH_HOME>#${DSH_HOME_URL}#g" "$PATCH"
-  if grep -q '<DSH_HOME>' "$PATCH"; then
-    die "placeholder substitution failed in ${PATCH}."
-  fi
-  info "placeholder resolved -> $(grep -o "file:///[^']*" "$PATCH" | tail -1)"
+# --- 4. nothing to install ------------------------------------------------
+# There used to be a companion plugin here that added the aegis- prefix and
+# localised descriptions. Both jobs now live in the bundle's own
+# extensions/dsh/aegis-prefix.js, done in a single registration pass — which is
+# what removed the race that two plugins mutating the same skills produced.
+# Copying the old plugin alongside the bundle would bring that race back, so the
+# step is gone rather than documented.
+say "4. nothing to install — extensions/dsh/aegis-prefix.js does this inside the bundle"
+
+if [ -d "${DSH_HOME}/plugins/aegis-skill-prefix" ]; then
+  warn "a stale ${DSH_HOME}/plugins/aegis-skill-prefix exists from an older install"
+  info "it is now redundant, and running it alongside the bundle reintroduces a fixed race"
+  info "remove it, and drop its row from the profile's dsh.profile.bundles"
 fi
 
 # --- 5. what the user must do by hand ------------------------------------

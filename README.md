@@ -121,7 +121,7 @@ Unrelated projects sharing a similar name are not a source for anything in this 
 | `lane-composition.mjs` | The three durable-agent-id child-addressing tools. |
 | `personas/` | Ten persona files: orchestrator, planner, and one per lane. |
 | `skills/` | The four self-authored `orch-*` skills, plus [`MANIFEST.md`](./skills/MANIFEST.md). |
-| `plugins/aegis-skill-prefix/` | A separate small plugin; see install step 4. |
+| `extensions/dsh/` | The bundle's two plugins: the skills provider, and the aegis prefix bridge. |
 | `docs/` | **Not distributed.** The design history is held back; the Design section above is the specification. |
 | `install.sh` | Installs everything below into a DSH home. |
 | `tools/verify-install.sh` | Twenty read-only checks that the preset is installed and selected. |
@@ -169,10 +169,10 @@ this gate and writes nothing.
 DSH_HOME=/some/other/home ./install.sh
 ```
 
-From a clone, that stages the bundle into `<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle/`,
-verifies the per-profile symlink, copies the four skills one directory at a time, and copies
-`plugins/aegis-skill-prefix` with its `<DSH_HOME>` placeholder resolved to a real absolute
-path. Doing it by hand:
+From a clone, that stages the bundle into `<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle/`
+and verifies the per-profile symlink. Nothing is copied into `~/.dsh/skills/`, and there is no
+companion plugin: the four skills are served by the bundle's own provider, and the aegis prefix
+bridge is mounted by a row the generator emits. Doing it by hand:
 
 ```sh
 # 1. copy the bundle
@@ -189,11 +189,12 @@ test -L ~/.dsh/profiles/web/node_modules/@quill507/dsh-orchestrator-preset && ec
 #    mounted by the generated patch with includeDefaultRoots:false. Nothing is
 #    written to ~/.dsh/skills/.
 
-# 4. install the aegis-skill-prefix plugin
-cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
-#    its cordis.patch.yml ships a <DSH_HOME> placeholder; replace it with your real path,
-#    because a bundle patch resolves relative paths against the PROFILE directory rather
-#    than against its own, so that row must be an absolute file:/// URL.
+# 4. nothing to install. The aegis prefix bridge ships inside the bundle as
+#    extensions/dsh/aegis-prefix.js, mounted by a generated patch row with two
+#    settings: prefixAegisSkills (default on) and describeAegisSkillsInZh
+#    (default off). If you have a plugins/aegis-skill-prefix from an older
+#    install, remove it — it is redundant, and running it alongside the bundle
+#    reintroduces a fixed race over the same skill registrations.
 ```
 
 **Nothing is copied into `~/.dsh/skills/`.** The four `orch-*` skills travel with the bundle
@@ -350,11 +351,12 @@ If it is wanted later:
   `node tools/gen-cordis-patch.mjs` — no other edit is needed, and no persona file is
   affected. (`personas/orchestrator.md` is inlined rather than file-resolved, so it is
   correctly absent from that list.)
-- **Three things beyond that are unsolved**: `plugins/aegis-skill-prefix` becomes a second
-  package; the four skills under `skills/` are plain Markdown with no npm story and would
-  need a postinstall step to copy them into a profile's skills directory; and `package.json`
-  should gain an explicit `exports` map, because the persona `.md` deep paths currently
-  rely on legacy no-exports resolution.
+- **Two things beyond that are unsolved**: the four skills under `skills/` are plain Markdown
+  with no npm story and would need a postinstall step to copy them into a profile's skills
+  directory; and `package.json` carries `"private": true`, which npm refuses to publish.
+  The `exports` map and the second-package question are both settled — the map exists, and
+  the companion plugin was folded into `extensions/dsh/aegis-prefix.js` rather than shipped
+  as its own package.
 - **`"private": true` must be removed** at the moment of publication. It is the guard that
   currently makes the name safe to have.
 - **The npm account does not exist yet** on the public registry, so publication is blocked
@@ -400,6 +402,37 @@ digest.
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).
+
+## Acknowledgements
+
+This preset is mostly other people's work arranged in a particular way, and it is worth
+saying whose.
+
+**[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** — the host this
+runs inside, MIT-licensed. The configuration rows in `cordis.patch.yml` are derived from
+it, the bundle/patch model this project is built on is its design, and its own first-party
+bundles (`dsh-web-app`, `dsh-base`) are the reference implementations the architecture here
+was read off. Several findings recorded in this README — that composing a profile rewrites
+its `cordis.yml`, that a filesystem skill provider can be pointed at an arbitrary tree —
+are the host's documented behaviour, measured rather than guessed.
+
+**[aegis](https://github.com/GanyuanRan/Aegis)** — the methodology pack this preset routes
+into, by Jesse Vincent and Ganyuan Ran. It owns the method: the routing discipline, the
+skill-per-situation idea, the pressure-testing and verification habits. This project
+supplies the orchestration layer around it and consumes aegis at runtime without vendoring
+a line of its text. Its `extensions/dsh/index.js` was also the working reference for the
+provider mounted here — twelve lines that made the skills-in-the-bundle design obviously
+correct before it was tried.
+
+**The authors of the packages this was tested against** — `zod`, and the DSH packages that
+supply `dsh-tools`, `dsh-skill-filesystem` and `dsh-home-paths`. Nothing here would load
+without them, and none of them are dependencies of this package: the host supplies them at
+runtime, which is precisely why this bundle declares no runtime dependencies of its own.
+
+And a note on what is **not** acknowledged here: the tooling used to build this — a
+language model working through a long session — is not a source of the design. The mistakes
+in it are catalogued in this repository's own history rather than smoothed away, and the
+distinction between what was measured and what was assumed is marked throughout.
 
 ## Third-party attribution
 

@@ -57,7 +57,7 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 | `lane-composition.mjs` | 三个按持久 agent id 的子代寻址工具。 |
 | `personas/` | 十份 persona：orchestrator、planner，以及每条 lane 一份。 |
 | `skills/` | 四个自研技能，外加 [`MANIFEST.md`](skills/MANIFEST.md)。 |
-| `plugins/aegis-skill-prefix/` | 一个独立的小插件，见安装第 4 步。 |
+| `extensions/dsh/` | 本包的两个插件：技能 provider，以及 aegis 前缀桥。 |
 | `docs/` | **不分发。** 设计史被留存；上文的设计一节即是规范。 |
 | `README.zh.md` | 本文件。 |
 | `install.sh` | 把下面这些装进一个 DSH home。 |
@@ -107,10 +107,10 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 #    这个 filesystem skill provider 提供；该 provider 由生成的 patch 挂载，且
 #    includeDefaultRoots:false。不会向 ~/.dsh/skills/ 写入任何东西。
 
-# 4. 安装 aegis-skill-prefix 插件
-cp -r plugins/aegis-skill-prefix ~/.dsh/plugins/
-#    它的 cordis.patch.yml 里带一个 <DSH_HOME> 占位符，需替换成你的真实路径 ——
-#    bundle patch 里的相对路径是按 PROFILE 目录解析的，所以那一行必须是绝对 file:/// URL。
+# 4. 什么都不用装。aegis 前缀桥随包自带（extensions/dsh/aegis-prefix.js），
+#    由生成的一行 patch 挂载，带两个设置：prefixAegisSkills（默认开）与
+#    describeAegisSkillsInZh（默认关）。若你从旧版装过 plugins/aegis-skill-prefix，
+#    请删掉它 —— 它已冗余，且与预设同时运行会让同一批技能注册重新产生一个已修复的竞态。
 ```
 
 **不会向 `~/.dsh/skills/` 拷贝任何东西。** 四个 `orch-*` 技能随 bundle 走，由一个限定在
@@ -165,6 +165,18 @@ patch 是**整行替换**而非深度合并，所以上面那段是完整的一�
 ## 许可证
 
 MIT —— 参见 [`LICENSE`](LICENSE)。
+
+## 致谢
+
+这个预设大半是别人的工作，只是被摆成了某一种形状，所以值得把是谁说清楚。
+
+**[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** —— 本预设运行的宿主，MIT 许可。`cordis.patch.yml` 里的配置行派生自它，本项目赖以成立的 bundle/patch 模型是它的设计，而它自家的一等公民 bundle（`dsh-web-app`、`dsh-base`）就是这里那套架构的参照实现。本 README 记录的若干发现——组合一个 profile 会重写它的 `cordis.yml`、filesystem skill provider 可以指向任意目录树——都是宿主的既定行为，而且是**测出来的**，不是猜的。
+
+**[aegis](https://github.com/GanyuanRan/Aegis)** —— 本预设路由进入的方法论包，作者 Jesse Vincent 与 Ganyuan Ran。方法归它：路由纪律、按情境给技能的做法、压力测试与验证习惯。本项目提供的是它外围的编排层，并在运行时消费 aegis，**一行原文都没有 vendor 进来**。它的 `extensions/dsh/index.js` 同时也是这里那座 provider 的可用参照——那十二行让「技能随包自带」这个设计在被尝试之前就已经显然正确。
+
+**本项目所针对的各个包的作者** —— `zod`，以及提供 `dsh-tools`、`dsh-skill-filesystem`、`dsh-home-paths` 的 DSH 各包。没有它们这里什么都加载不起来，而它们当中**没有任何一个是本包的依赖**：宿主在运行时提供，这正是本 bundle 不声明任何运行时依赖的原因。
+
+还有一点要说清楚：用来**建造**它的工具——一个在长会话里工作的语言模型——不是这些设计的来源。其中的错误按原样记在本仓库自己的历史里，没有被抹平；哪些是实测、哪些是假设，全文随处都标了出来。
 
 ## 第三方归属
 

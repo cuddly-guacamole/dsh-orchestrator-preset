@@ -87,15 +87,13 @@
 !/skills/orch-evidence-protocol/SKILL.md
 !/skills/orch-real-path-testing/SKILL.md
 
-# --- plugins/ ---
-!/plugins/
-!/plugins/aegis-skill-prefix/
-/plugins/aegis-skill-prefix/*
-!/plugins/aegis-skill-prefix/src/
-/plugins/aegis-skill-prefix/src/*
-!/plugins/aegis-skill-prefix/cordis.patch.yml
-!/plugins/aegis-skill-prefix/package.json
-!/plugins/aegis-skill-prefix/src/index.ts
+# --- plugins/ is NOT distributed ------------------------------------------
+# This repository used to ship a companion plugin here. Everything it did now
+# lives in extensions/dsh/aegis-prefix.js, as one plugin doing both jobs in a
+# single registration pass — which is what removed the race between them. There
+# is deliberately no `!` rule for plugins/; do not add one back, and do not
+# reinstate the plugin, because shipping both would reproduce that race in every
+# installing deployment.
 
 # --- extensions/ — the bundle's own plugins --------------------------------
 # Both files are mounted by patch rows the generator emits and are resolved
