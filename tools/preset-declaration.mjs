@@ -30,7 +30,7 @@
 //    「topRows → groups → LANES → 常量」的**叙述顺序**书写，但 `groups` 引用了 `LANES`
 //    与 `PLAN_MODE_SECTION`，而 ESM 的 `const` 存在 TDZ ⇒ 照抄该顺序会在 import 时抛
 //    `ReferenceError: Cannot access 'PLAN_MODE_SECTION' before initialization`（LANES 同理）。
-//    ⇒ 本文件把**被引用者前置**（MCP_DENY / 三份 deny / PLATFORM_SHELL / PLAN_MODE_SECTION /
+//    ⇒ 本文件把**被引用者前置**（MCP_CLOSURE_EXPR / 三份 deny / PLATFORM_SHELL / PLAN_MODE_SECTION /
 //    LANES），再声明 topRows / groups。**所有值逐字照抄契约块，只调整声明次序。**
 //
 // ⛔ LEGAL_TOOL_NAMES 是**参考清单（REFERENCE list）**，**⛔ 不是门**：
@@ -70,30 +70,55 @@ export const describeAegisSkillsInZh = false
 // description：默认文本（计划 T06 给定；约束：不得含被排除的上游项目文本（DESIGN.md §12.4/§12.5），不得含用户路径）
 export const description = 'A thin orchestration preset: aegis method pack for methodology, self-authored lane boundaries for delegation. Declares its full plugins[] because DSH presets have no inheritance.'
 
-// ── MCP loader 名（修 MCP 洞）─────────────────────────────────────────────────
-// 4 个 loader 名 = `mcp_<server>`（默认命名，dsh-mcp-loader/src/index.ts:74）。
-// 用户在 web profile 里配了 4 个 server（singleToolThreshold: 0 ⇒ 每个都有 loader）：
-//   playwright / jlceda / cloudflare-browser / desktop-touch
-// ⇒ 4 个 loader 工具：mcp_playwright / mcp_jlceda / mcp_cloudflare-browser / mcp_desktop-touch
+// ── MCP loader 名：**按机器算**，不再静态写死（修「预设在新机器上不可用」的洞）──
+// loader 名 = `mcp_<server>`（默认命名，dsh-mcp-loader/src/index.ts:74）；用户在 web profile 里
+//   配了 4 个 server（playwright / jlceda / cloudflare-browser / desktop-touch）⇒ 4 个 loader 工具。
 //
-// 【能不能挡？能。源码依据】dsh-tools/lib/index.js:2895-2910 的 restrict() 把 deny 名
-//   校验 against `view(scope).restrictableNames`（= **继承来的**名字集合，含 global 层）。
-//   而 mcp-loader 的 loader 工具是 **全局注册**的（dsh-mcp-client/lib/index.js:153 的
-//   ctx.tools.register；mcp-loader 同路径）⇒ **在 restrictableNames 内** ⇒ deny 生效。
-//
+// 【能不能挡？能。源码依据】dsh-tools/lib/index.js:2895-2910 的 restrict() 把 deny 名校验
+//   against `view(scope).restrictableNames`（= **继承来的**名字集合，含 global 层），而 loader
+//   工具是**全局注册**的 ⇒ 在 restrictableNames 内 ⇒ deny 生效。
 // 【loader 自己的 hiddenTools **挡不住** loader 名】:117 `deny.delete(loaderName)` +
 //   :169-171 直接抛错（"rename the loader or drop the rule"）⇒ loader 名被结构性保护。
 //   ⇒ 只有 preset 的 toolFilter 能挡它。
-//
 // ⚠️ **必须全部 10 个 agent 都 deny（不只只读 lane）** —— forge 若成为 holder，它派出的
 //    只读孙代会经 ancestryIds 继承该 server 的真实工具名，与只读边界直接冲突。
 // ⚠️ **orchestrator 无法被本 preset 收窄**（toolFilter 只是 `tool-subagent` row 的 config 字段，
 //    orchestrator 由 preset registry 创建 ⇒ 无该机制）⇒ 记为**已知残余风险，不假装解决**。
-// ⚠️ **漂移提醒**：MCP_DENY 是**部署相关**的（随用户的 MCP 配置变化）⇒ 新增 MCP server 后
-//    必须同步这 4 处（3 份 deny + DESIGN.md §3.3.4）。
-export const MCP_DENY = ['mcp_playwright', 'mcp_jlceda', 'mcp_cloudflare-browser', 'mcp_desktop-touch']
+//
+// ⛔ **为什么不能把这 4 个名字写死**：同一个 restrict() 对**未知名字直接抛错**
+//   （`tools.restrict() names unknown global tool "mcp_playwright"`）⇒ 名单一旦写死，
+//   在**没有配那条 server 的机器上**（新机器必然如此）lane 的工具过滤创建即失败 ⇒ 该 lane 不可用
+//   ⇒ 整个预设在新机器上不可用。而这 4 个名字正是 dsh-mcp-loader 为**用户自己配置的** server 生成的。
+//
+// 【修法 = 求值时从**已组装的 loader 树**里算】实测（`!!js` 求值上下文，见 `.dsh/evidence/` 的实验）：
+//   - `baseUrl` / `process`（含 `process.getBuiltinModule`）可用 ⇒ 任意文件读取也可用；
+//   - `ctx.loader` **可达**（`ctx.get('loader')` 亦可）⇒ `loader.entries()` 里能看到**整棵**已组装
+//     的 entry 列表，**含本行之后的行**（实测：即使 mcp-loader 行排在本行之后也能读到）⇒ 与顺序无关；
+//   - 但**工具注册表当时还看不到 mcp_* 名**：`ctx.get('tools')` → undefined、`ctx.reflect.get('tools')`
+//     严格模式 → undefined、非严格模式下 `restrictableNames` 里也还没有 mcp_* —— loader 是在
+//     dsh-mcp-loader 的 apply 里注册的（src/index.ts:1038），晚于本行的 config 求值。
+//   ⇒ 只能按**配置**算（而不是按当时已注册的名字算）。这就是 MCP_CLOSURE_EXPR 存在的原因。
+export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader || ctx.get('loader'); if (!l) return out; let rows = []; try { rows = Array.from(l.entries()) } catch (e) { return out } for (const r of rows) { let off = false; try { off = r.disabled === true } catch (e) { off = true } if (off) continue; const o = r.options || {}; if (!/mcp[-_]loader/i.test(String(o.id) + ' ' + String(o.name))) continue; const servers = (o.config && o.config.servers) || {}; for (const s of Object.keys(servers)) { const c = servers[s] || {}; if (c.mode === 'eager') continue; if (c.loaderName) { out.push(String(c.loaderName)); continue } if (!/^[A-Za-z0-9_-]{1,32}$/.test(s)) continue; out.push('mcp_' + s) } } return Array.from(new Set(out)).sort() })()"
+// 取值口径（逐条都能在被测源码上核对）：
+//   · 只认 **mcp-loader** 行（id/name 匹配 /mcp[-_]loader/i）—— 官方 `dsh-mcp-client` 注册的是
+//     `mcp__<server>__<tool>`，**没有** `mcp_<server>` 这种 loader ⇒ 把它算进来会得到不存在的名字。
+//   · `mode: 'eager'` 的 server **排除**：eager 的 loader 会被 probe 后 dispose（src/index.ts:1008-1025）
+//     ⇒ 届时该名字不存在 ⇒ deny 会炸。
+//   · `loaderName` 覆盖优先；server 名不合 `^[A-Za-z0-9_-]{1,32}$`（mcp-loader 自己会在 mount 时
+//     拒绝这种配置，src/connection.ts:248）且未给 loaderName ⇒ 跳过。
+//   · `entry.disabled` 为真 ⇒ 跳过（禁用的行不会注册 loader）。
+//
+// ⚠️ **已知残余（未消除，写在这里而不是留给下一个人发现）**：`mode: 'auto'`（默认）+ 
+//   `singleToolThreshold >= 1`（默认 1）+ 该 server 实际工具数 ≤ 阈值 ⇒ mcp-loader 会 **eager 注册并
+//   dispose 掉 loader**（src/index.ts:1008-1025）⇒ 上面算出来的名字届时**不存在** ⇒ 该 lane 首次派发
+//   仍会 loud 失败（restrict 抛 unknown）。本机不受影响（profile patch 设了 `singleToolThreshold: 0`，
+//   该设置下 auto 永不 eager）。要**彻底**消除只能靠运行时机制（对 child 施加 guard / 在 agent 创建时
+//   按当时注册表 restrict）——那需要新增插件文件，不在本单的面内；见证据文件的「Limits」。
+// ⚠️ **漂移提醒（改口径了）**：新增 MCP server **不再**需要同步任何名单（闭包按机器算）。
+//   但 dsh-mcp-loader 的**默认命名规则**（src/index.ts:74）或 **eager 判定**（src/index.ts:1008-1025、
+//   1038）若变了，必须改 MCP_CLOSURE_EXPR —— 它就是这两个事实的镜像。
 
-// 只读 lane（**25** 项 = 21 + 4 MCP）—— 控制面 3 名（DESIGN.md §3.3.4 的裁决：只读 lane 不得操纵/杀死他 lane）
+// 只读 lane（**21** 项静态 + 按机器算的 MCP 闭包）—— 控制面 3 名（DESIGN.md §3.3.4 的裁决：只读 lane 不得操纵/杀死他 lane）
 //   ⚠️ **+3 项（T16 / lane-composition.mjs）**：`subagent_children` / `subagent_send` / `subagent_interrupt`
 //   —— 它们是自写绑定器注册进 **Lead own scope** 的 lane 寻址名；scope 自己的层会被**其下每个 agent 继承**
 //   （`dsh-scope:162-171` `chainLayers` + `dsh-tools:2959-2974`）⇒ 不 deny 就会出现在 lane 的工具面里。
@@ -103,25 +128,22 @@ export const READONLY_DENY = ['write', 'edit', 'todo_write', 'ask_user_question'
   'subagent_children', 'subagent_send', 'subagent_interrupt',
   'subagent_fork',
   'subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
-  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner',
-  ...MCP_DENY]
-// wright（**22** 项 = 18 + 4 MCP）—— 同上，叶子执行者不需要控制面
+  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
+// wright（**18** 项静态 + 同一份 MCP 闭包）—— 同上，叶子执行者不需要控制面
 //   （可写、可用 todo_write / skill）；⚠️ T16 的 3 个 lane 寻址名同样 deny（理由见上）
 export const WRIGHT_DENY = ['ask_user_question', 'exit_plan_mode',
   'send_message', 'interrupt_agent', 'list_agents',
   'subagent_children', 'subagent_send', 'subagent_interrupt',
   'subagent_fork',
   'subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
-  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner',
-  ...MCP_DENY]
-// forge（**17** 项 = 13 + 4 MCP）—— 保留 list_agents + send_message（它要管自己派出的只读孙代）；
+  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
+// forge（**13** 项静态 + 同一份 MCP 闭包）—— 保留 list_agents + send_message（它要管自己派出的只读孙代）；
 //   deny interrupt_agent。**MCP 也 deny**（理由见上）。⚠️ T16 的 3 个 lane 寻址名同样 deny：
 //   本轮裁决是「这 3 件不出现在**任何 lane** 的工具面里」（见 T16 目标句）—— lane 用「派人」而不是「寻址」。
 export const FORGE_DENY = ['ask_user_question', 'exit_plan_mode', 'interrupt_agent',
   'subagent_children', 'subagent_send', 'subagent_interrupt',
   'subagent_fork',
-  'subagent_analyst', 'subagent_auditor', 'subagent_reader', 'subagent_wright', 'subagent_forge', 'subagent_planner',
-  ...MCP_DENY]
+  'subagent_analyst', 'subagent_auditor', 'subagent_reader', 'subagent_wright', 'subagent_forge', 'subagent_planner']
 
 // ── shell 工具名派生（⚠️ 不能只用 process.platform）──────────────────────────
 // 在用户的部署里，**home 级 patch**（$DSH_HOME/cordis.patch.yml）把 host 层的

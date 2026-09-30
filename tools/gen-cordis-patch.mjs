@@ -15,8 +15,10 @@
 // 无第三方依赖（只用 node: 内置模块）。
 //
 // ⛔ 本生成器**不做**任何工具名闭集断言（该机制已按用户裁决删除，见 DESIGN.md §3.3.4 的 ⛔ 段）。
-//    ⇒ deny / allow 里出现 LEGAL_TOOL_NAMES 之外的名字（典型：4 个 mcp_* 名）**必须放行并正常渲染**。
+//    ⇒ deny / allow 里出现 LEGAL_TOOL_NAMES 之外的名字**必须放行并正常渲染**。
 //    LEGAL_TOOL_NAMES 仅作为**参考清单**打印规模，不参与任何判定。
+// ⚠️ 但 lane 的 deny 值本身**不是**一份静态名单：静态项 + 按机器算的 MCP 闭包，渲染成一个 `!!js`
+//    plain scalar（见下方 denyExpr）。名字是否在本机存在由 `restrict()` 在派发时判定，生成期不判定。
 //
 // 行数口径（⚠️ 两套数字，别混）：`(29 rows)` = DESIGN §2.4 的口径
 //   （14 顶层 + 3 group + 3 delegation 控制 + 9 lane；= `topRows + groups + delegation.rows`），
@@ -220,9 +222,27 @@ function pushRow(lines, row, indent) {
 const personaExpr = (bundlePkg, file) =>
   `!!js process.getBuiltinModule('node:fs').readFileSync(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('${bundlePkg}/personas/${file}'), 'utf8')`
 
+// ── lane 的 deny 值 = 静态名单 **拼上**按机器算的 MCP 闭包（不是一份写死的名单）──────
+// 为什么不是列表项：`restrict()` 对**未知名字**直接抛错（dsh-tools/lib/index.js:2895-2910），而
+//   MCP loader 名（`mcp_<server>`）随**用户自己的** MCP 配置漂移 ⇒ 写死它 = 在没配那条 server 的
+//   机器上 lane 创建即失败。闭包在求值时从**已组装的 loader 树**算（口径与残余见
+//   preset-declaration.mjs 的 MCP_CLOSURE_EXPR 段）。
+// ⚠️ 必须渲染成**单个 plain scalar**（`!!js (["a"]).concat(<闭包>)`）：以 `(` 开头 ⇒ 不会被 YAML
+//   当成 flow sequence（那是 resolve 不掉的 `!!js`）。闭包体内**不得**出现 `: ` / `#` / 反斜杠 /
+//   双引号 —— 那是 plain scalar 的边界；这条约束由 T13/check 13 的求值测试兜住。
+const jsString = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+const denyExpr = (names, closure) => {
+  if (typeof closure !== 'string' || closure.length === 0) {
+    throw new Error('MCP_CLOSURE_EXPR 缺失 / 非字符串 ⇒ 停（不得把 MCP 名退回静态名单：那正是「新机器上不可用」的成因）')
+  }
+  return `!!js ([${names.map(jsString).join(', ')}]).concat(${closure})`
+}
+
 export function laneRow(lane, d) {
   const common = d.LANE_COMMON          // ⚠️ 必须复用声明里的那对值，不得另写一份
-  const filter = lane.deny !== undefined ? { deny: lane.deny } : { allow: lane.allow }
+  const filter = lane.deny !== undefined
+    ? { deny: RAW(denyExpr(lane.deny, d.MCP_CLOSURE_EXPR)) }
+    : { allow: lane.allow }
   return {
     id: `tool-subagent-${lane.tool.replace(/^subagent_/, '').replace(/_/g, '-')}`,
     name: '@deepseek-ai/dsh-tool-subagent',
