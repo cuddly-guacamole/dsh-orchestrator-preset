@@ -1,6 +1,6 @@
 {
   "name": "@quill507/dsh-orchestrator-preset",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A thin-shell agent preset for DeepSeek Harness: nine named lanes with declared tool boundaries, resident routing sections, four self-authored skills, and an evidence-based completion gate.",
   "keywords": [
     "deepseek-harness",
