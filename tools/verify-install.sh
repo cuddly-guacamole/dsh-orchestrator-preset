@@ -9,13 +9,19 @@
 # Read-only. It composes the profile tree in memory and never writes to a DSH
 # home; check 5 asserts that, rather than assuming it.
 #
-# Five checks, two of which were wrong as originally written. What changed:
+# Eleven checks, two of which were wrong as originally written. What changed:
 #
 #   1. selectedDefault in the profile patch            unchanged — still valid
 #   2. the bundle link is a real symlink               unchanged — test -L, not -e
 #   3. the bundle is readable THROUGH the link         unchanged — present != usable
 #   4. the patch generator is in sync                 CHANGED — see below
 #   5. which preset is actually selected               REPLACED — see below
+#   6. the four orch-* skills come from this bundle    ADDED — presence is not isolation
+#   7. the two shell rows read as deliberate           ADDED — enabled/disabled by choice
+#   8. leak gate over the shipped tree                 ADDED — names and paths, see below
+#   9. every aegis-* routing target resolves           ADDED — a dangling row fails silently
+#  10. the zh description table still matches         ADDED — a stale key fails silently
+#  11. no client-bundle declaration comes back        ADDED — dead by construction
 #
 # Why 4 changed: the generator resolves its skeleton from $DSH_HOME, falling back
 # to ~/.dsh. A shell that happens to export DSH_HOME resolves fine; a plain shell
@@ -633,6 +639,79 @@ if [ -f "$PREFIX_PLUGIN" ] && [ -d "$PROFILE_DIR/node_modules/aegis/skills" ]; t
   fi
 else
   warn "check 10  skipped: no aegis pack under the profile, or the prefix plugin is absent"
+fi
+
+# ===========================================================================
+head_ "check 11 — no client-bundle declaration comes back into this package"
+# ===========================================================================
+# The browser half was withdrawn as measured-dead, not as deferred: a preset's
+# rows are mounted into a detached `PresetTree` (mountPreset() -> new
+# PresetTree(ctx) + tree.root.update()), while the client-bundle scanner
+# (@deepseek-ai/dsh-client-modules) enumerates the ROOT loader tree — so a
+# `dsh.client` declaration in this package's manifest is never read and the
+# bundle it names is never served. Nothing in this repository can make one work,
+# which leaves exactly one question a gate can answer: whether one comes back.
+#
+# Falsifiable by construction, twice over: put the declaration back into
+# package.json, or drop a native plugin out of the exports map, and this goes
+# red. The scan parses package.json instead of grepping it and skips comment
+# lines in the JS, because this repository explains `dsh.client` in prose — so a
+# plain text search would fire on the explanation, not on a declaration, and a
+# gate that cannot tell those apart is a gate that gets deleted the first time
+# it cries wolf.
+node -e '
+  const fs = require("node:fs"), path = require("node:path")
+  const root = process.argv[1]
+  const hits = []
+  let pkg
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+  } catch (e) {
+    console.log("PARSE_ERROR=" + e.message)
+    process.exit(3)
+  }
+  const own = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k)
+  if (own(pkg.dsh, "client")) hits.push("package.json: a client key on the dsh object")
+  if (own(pkg.exports, "./client")) hits.push("package.json: an exports entry ./client")
+  const dir = path.join(root, "extensions", "dsh")
+  const rows = fs.readdirSync(dir).filter((f) => f.endsWith(".js"))
+  for (const f of rows) {
+    const file = path.join(dir, f)
+    fs.readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+      const t = line.trim()
+      // Comment lines are exactly where this repository TALKS about dsh.client.
+      if (t.startsWith("*") || t.startsWith("//") || t.startsWith("/*") || t.startsWith("#")) return
+      if (/\bdsh\s*\.\s*client\b/.test(line)) hits.push(file + ":" + (i + 1) + ": " + t)
+    })
+  }
+  console.log("ROWS=" + rows.length)
+  for (const h of hits) console.log("HIT " + h)
+  const natives = ["./extensions/dsh/index.js", "./extensions/dsh/aegis-prefix.js"]
+  const gone = natives.filter((k) => !own(pkg.exports, k))
+  console.log("NATIVE_MISSING=" + gone.length + (gone.length ? " " + gone.join(",") : ""))
+' "$REPO_ROOT" >"$TMP/decl.txt" 2>"$TMP/decl.err"
+drc=$?
+if [ "$drc" -ne 0 ]; then
+  bad "check 11  the declaration scan could not run (exit $drc) — an unscanned tree is not a clean one:"
+  sed 's/^/      /' "$TMP/decl.err" | head -3
+else
+  dhits="$(sed -n '/^HIT /p' "$TMP/decl.txt")"
+  drows="$(sed -n 's/^ROWS=//p' "$TMP/decl.txt")"
+  if [ -n "$dhits" ]; then
+    bad "check 11  a client-bundle declaration is back in this package's own files:"
+    printf '%s\n' "$dhits" | sed 's/^/      /'
+  else
+    ok "check 11  no dsh.client declaration in package.json or its $drows extension files"
+  fi
+  # The reason, printed beside the verdict it explains rather than only in the
+  # comment above: the next reader meets it at the failure, not before one.
+  note "a preset's rows live in a detached PresetTree the client-bundle scanner never walks, so such a declaration is dead code by construction — adding one back is a fixed route to a browser bundle that is never served."
+  dmiss="$(sed -n 's/^NATIVE_MISSING=\([0-9]*\).*/\1/p' "$TMP/decl.txt")"
+  if [ "$dmiss" = "0" ]; then
+    ok "check 11  both native plugins are still declared in exports (index.js + aegis-prefix.js)"
+  else
+    bad "check 11  a native plugin has left the exports map: $(sed -n 's/^NATIVE_MISSING=[0-9]* //p' "$TMP/decl.txt")"
+  fi
 fi
 
 # ===========================================================================

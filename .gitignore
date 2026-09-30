@@ -95,11 +95,12 @@
 # installing deployment.
 
 # --- extensions/ — the bundle's own plugins --------------------------------
-# Both files are mounted by patch rows the generator emits and are resolved
-# through the package specifier, so each must also appear in package.json's
-# exports map. Listed one by one rather than as extensions/dsh/*.js: a plugin
-# added later should fail LOUDLY here rather than slip into the published tree,
-# which is the same default-deny reasoning as the `/*` above.
+# Each file is mounted by a row the generator emits and is resolved through the
+# package specifier, so each must also appear in package.json's exports map.
+# Listed one by one rather than as extensions/dsh/*.js: a plugin added later
+# should fail LOUDLY here rather than slip into the published tree, which is the
+# same default-deny reasoning as the `/*` above.
+#
 !/extensions/
 /extensions/*
 !/extensions/dsh/

@@ -8,13 +8,15 @@
 #
 # What it does, in order:
 #   0. gate   — refuse to continue unless the host is >= 0.1.7-rc.1
-#   1. stage  — copy this repository's distributable content to $DSH_HOME/plugins/
+#   1. stage  — sync this repository's distributable set into $DSH_HOME/plugins/
+#               on every run, so the copy the host resolves is a projection of
+#               this repository rather than of the first install
 #   2. link   — verify the per-profile symlink that `pnpm install` creates
 #   3. skills — verify the four bundled skills; the bundle's own provider serves
 #              them, so nothing is copied into the user's global skills directory
-#   4. none   — the aegis prefix and its optional description swap ship inside the
-#              bundle as extensions/dsh/aegis-prefix.js; there is no companion
-#              plugin to install, and installing the old one reintroduces a race
+#   4. none   — the aegis prefix and its optional description swap ship inside
+#              the bundle under extensions/dsh/; there is no companion plugin
+#              to install, and installing the old one reintroduces a race
 #   5. report — print the profile wiring the user must apply themselves
 #
 # What it deliberately does NOT do: touch a profile's package.json or cordis.patch.yml.
@@ -35,6 +37,11 @@ CHECK_ONLY=0
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
+# Git Bash reads a Windows path with backslashes as literal filename characters
+# for the syscall-backed tests (`test -L`, `readlink`) while `test -e` and `cp`
+# happen to accept it — so the same variable needs two spellings, and mixing them
+# silently turns "the symlink is right there" into "MISSING". One spelling, here.
+DSH_HOME="${DSH_HOME//\\//}"
 if [ ! "$DSH_HOME" = "${DSH_HOME%/}" ]; then DSH_HOME="${DSH_HOME%/}"; fi
 
 say()  { printf '\n== %s\n' "$*"; }
@@ -79,19 +86,36 @@ if [ "$CHECK_ONLY" = "1" ]; then
 fi
 
 # --- 1. stage the bundle --------------------------------------------------
+# The set below is the distributable tree, and it is synced on EVERY run rather
+# than only on the first. The earlier form copied once and then said "already
+# present — leaving it in place", which meant a later run silently published
+# nothing: a change to any file in this set reached the repository and never
+# reached the host, and the failure was invisible from both sides. A bundle is
+# what the host resolves, so the deployed copy has to be a projection of this
+# repository, not a snapshot of the first install.
+#
+# Each item is removed then copied, so a file deleted here cannot survive there,
+# and `cp -r src dst` cannot nest a directory inside an existing one.
+#
+# Deliberately NOT distributed (see .gitignore, which carries the reasoning):
+# install.sh · docs/ · .git/ · .dsh/ · .gitattributes · .gitignore · tools/*.local*
+# — plus tools/verify-install.sh, which is a gate for the author's checkout and
+# names paths that only exist in this repository.
 say "1. stage the bundle into ${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 DEST="${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
-if [ -e "$DEST" ]; then
-  info "already present — leaving it in place (remove it yourself to reinstall)."
-else
-  mkdir -p "$DEST"
-  for item in LICENSE README.md README.zh.md cordis.patch.yml package.json personas tools \
-              lane-composition.mjs plan-aware-persona.mjs routing-sections.mjs; do
-    cp -r "${REPO_ROOT}/${item}" "${DEST}/"
-  done
-  # The repo root IS the bundle content; these belong in the bundle, not to it.
-  info "staged $(find "$DEST" -type f | wc -l) files."
-fi
+mkdir -p "$DEST"
+DISTRIBUTABLE="LICENSE README.md README.zh.md THIRD_PARTY_NOTICES.md cordis.patch.yml
+  package.json personas skills extensions tools lane-composition.mjs
+  plan-aware-persona.mjs routing-sections.mjs"
+STAGED=0
+for item in $DISTRIBUTABLE; do
+  [ -e "${REPO_ROOT}/${item}" ] || die "${item} is missing from the repository."
+  rm -rf "${DEST:?}/${item}"
+  cp -r "${REPO_ROOT}/${item}" "${DEST}/"
+  STAGED=$((STAGED + 1))
+done
+rm -f "${DEST}/tools/leak-needles.local.txt" "${DEST}/tools/verify-install.sh"
+info "synced ${STAGED} entries; ${DSH_HOME}/plugins/${BUNDLE_DIRNAME} now holds $(find "$DEST" -type f | wc -l) files."
 
 # --- 2. verify the per-profile link --------------------------------------
 # The bundle is resolved BY NAME from a profile's node_modules, so the symlink
@@ -123,11 +147,11 @@ else
 fi
 
 # --- 3. the four self-authored skills ------------------------------------
-# Nothing to copy. The skills ship inside this bundle and are served by the
-# filesystem skill provider that extensions/dsh/index.js mounts, with
-# includeDefaultRoots:false so the user's global skills directory is left alone.
-# Copying them into $DSH_HOME/skills is what this step used to do, and removing
-# it is the point: a preset should not scatter copies through the user's home.
+# Nothing to copy beyond step 1's sync of skills/. The bundle's filesystem skill
+# provider (extensions/dsh/index.js) serves them with includeDefaultRoots:false,
+# so the user's global skills directory is left alone. Copying them into
+# $DSH_HOME/skills is what this step used to do, and removing it is the point: a
+# preset should not scatter copies through the user's home.
 say "3. verify the bundled skills (nothing to copy — the bundle's provider serves them)"
 for s in $SKILLS; do
   [ -f "${REPO_ROOT}/skills/${s}/SKILL.md" ] || die "skills/${s}/SKILL.md is missing from the repository."
@@ -142,13 +166,14 @@ done
 [ -f "${REPO_ROOT}/extensions/dsh/index.js" ] || die "extensions/dsh/index.js is missing — the bundle has no skill provider."
 
 # --- 4. nothing to install ------------------------------------------------
-# The aegis prefix bridge and its optional description swap live in the bundle's
-# own extensions/dsh/aegis-prefix.js, mounted by a row the generator emits. There
-# is no companion plugin, which is deliberate: the two used to be separate
-# plugins, and because both mutate the same skill registrations they raced — the
-# split produced 4 of 22 descriptions localised and two bare names leaking back.
-# One plugin doing both in a single registration pass is what removed the race.
-say "4. nothing to install — extensions/dsh/aegis-prefix.js does this inside the bundle"
+# The aegis prefix bridge and its optional description swap both live in the
+# bundle's own extensions/dsh/ and are mounted by a row the generator emits —
+# aegis-prefix.js by `cordis.patch.yml`. There is no companion plugin, which is
+# deliberate: the prefix and the swap used to be separate plugins, and because
+# both mutate the same skill registrations they raced — the split produced 4 of
+# 22 descriptions localised and two bare names leaking back. One plugin doing
+# both in a single registration pass is what removed the race.
+say "4. nothing to install — extensions/dsh/ does this inside the bundle"
 
 # --- 5. what the user must do by hand ------------------------------------
 say "5. the profile wiring (deliberate — see the header of this script)"

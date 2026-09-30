@@ -33,13 +33,125 @@ import z from '@deepseek-ai/schemastery'
 const AEGIS_PROVIDER = 'aegis-method-pack'
 const PREFIX = 'aegis-'
 
+/** The id `cordis.patch.yml` gives this plugin's row. The settings plane calls
+ *  the row id the namespace, so this one string names the row, the settings
+ *  namespace, and the key the Plugins page dispatches for it. */
+const ROW_ID = 'orch-aegis-prefix'
+
+/** Read route the browser half falls back to when no host form is handed over.
+ *  The web carrier mounts the Fetch registry under `/api`, hence the prefix. */
+const VALUES_ROUTE = '/api/orch-aegis-prefix/values'
+
+/** The stored values of a volatile boolean field, or `undefined` when the row
+ *  does not name it. Read per request from the loader entry, never cached: the
+ *  entry object is replaced by a reload, and a stale copy would report a value
+ *  the running plugin is not using. */
+function storedSwitches(entry) {
+  const config = entry?.options?.config
+  const raw = config !== null && typeof config === 'object' ? config : {}
+  const out = {}
+  for (const key of Object.keys(DEFAULTS)) {
+    if (typeof raw[key] === 'boolean') out[key] = raw[key]
+  }
+  return out
+}
+
+/** Whether a request may read this route: a privileged configuration surface is
+ *  loopback-same-origin only, mirroring the official settings fence. */
+function isLoopbackSameOrigin(request) {
+  let url
+  try {
+    url = new URL(request.url)
+  } catch {
+    return false
+  }
+  const host = request.headers.get('host') ?? url.host
+  if (host === '') return false
+  let hostUrl
+  try {
+    hostUrl = new URL(`http://${host}`)
+  } catch {
+    return false
+  }
+  if (hostUrl.hostname !== '127.0.0.1' && hostUrl.hostname !== 'localhost' && hostUrl.hostname !== '[::1]') return false
+  if (request.headers.get('sec-fetch-site') === 'cross-site') return false
+  const origin = request.headers.get('origin')
+  if (origin === null) return true
+  try {
+    return new URL(origin).host === hostUrl.host
+  } catch {
+    return false
+  }
+}
+
+/** One JSON answer with a status. */
+function json(status, body) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  })
+}
+
+/**
+ * Register the read route the browser half uses when the Plugins page hands it
+ * no host form.
+ *
+ * Registration rides the carrier-neutral Fetch registry rather than the web
+ * server: a native registration would shadow the carrier's `/api` prefix route
+ * and bypass its request fence. The binding waits for `connection.fetch`
+ * instead of probing once, because composition rows mount in dependency order
+ * and the registry may not exist when `apply` runs.
+ *
+ * This route owns NO write path. The card writes through the host form the page
+ * hands it; GET is the degradation source for an entry the Host does not serve
+ * to the client, and the carrier of the effective values for a plain fetch.
+ */
+function installValuesRoute(ctx) {
+  const bind = (carrier) => {
+    const registry = carrier?.fetch
+    if (registry === undefined || typeof registry.register !== 'function') return
+    ctx.effect(
+      () =>
+        registry.register({
+          path: VALUES_ROUTE,
+          methods: ['GET'],
+          requestBody: 'buffered',
+          fetch: (request) => {
+            if (!isLoopbackSameOrigin(request)) return json(403, { ok: false, error: 'forbidden' })
+            if (request.method !== 'GET') return json(405, { ok: false, error: 'method-not-allowed' })
+            const declared = storedSwitches(ctx.fiber?.entry)
+            const value = { ...DEFAULTS, ...declared }
+            return json(200, {
+              ok: true,
+              value: {
+                value,
+                declared,
+                // Whether the settings document accepts writes at all. The row's
+                // own form is the writer; this only says the plane is live.
+                writable: ctx.get('settings')?.writable === true,
+              },
+            })
+          },
+        }),
+      'orch-aegis-prefix: values route',
+    )
+  }
+  const direct = ctx.get('connection')
+  if (direct !== undefined) {
+    bind(direct)
+    return
+  }
+  if (typeof ctx.inject !== 'function') return
+  ctx.inject(['connection'], (connectionCtx) => bind(connectionCtx.get('connection')))
+}
+
 /** Cordis plugin name. */
 export const name = 'orch-aegis-prefix'
 
-/** Only the skill registry: this plugin registers names, it serves none.
- *  No `settings` injection, because there is no settings surface to serve — the
- *  switches are set in a patch layer. See the note above `Config`. */
-export const inject = ['skills']
+/** The skill registry, and the carrier the read route rides.
+ *  Still no `settings` injection: this plugin serves a read route, it does not
+ *  own a settings surface. See the note above `installValuesRoute`. */
+export const inject = ['skills', 'connection']
 
 /** Behaviour defaults, shared by the schema below and by the read in `apply`.
  *  Declared once so the schema's default and the code's default cannot drift. */
@@ -49,31 +161,50 @@ const DEFAULTS = Object.freeze({
 })
 
 /**
- * The two switches. **Not rendered as a settings card — see below.**
+ * The two switches.
  *
- * Set them in a patch layer: the home layer `$DSH_HOME/cordis.patch.yml` applies
- * after this bundle's, so a row there wins. Restate both keys, because a patch
- * replaces a row's config rather than deep-merging it.
+ * There is no UI, and this is now a measured architectural boundary rather than
+ * pending work. Two mechanisms were checked; the first does not reach a
+ * patch-inserted row at all, and the second reaches the row but cannot reach the
+ * browser.
  *
- * WHY THERE IS NO UI, measured rather than assumed
- * The host does build forms from plugin schemas — `dsh-settings.describe()` reads
- * `entry.fiber.runtime.Config` and runs its own `volatileForm()` over it — but it
- * only considers entries returned by `dsh-config-editor.entries()`, which filters
- * to rows whose `parent.tree.ctx.fiber.entry?.id === "include"`. A row inserted by
- * a bundle patch is not one of those, so nothing here appears in the settings UI.
+ * why the settings card never appears
+ * `dsh-settings.describe()` builds its forms from `entry.fiber.runtime.Config`
+ * via `volatileForm()` — which this schema satisfies, both fields being
+ * `.volatile()` — but it only ever visits entries returned by
+ * `dsh-config-editor.entries()`, and that filters to rows whose
+ * `parent.tree.ctx.fiber.entry?.id === "include"`
+ * (`@deepseek-ai/dsh-config-editor/lib/index.js:31`). A row inserted by a bundle
+ * patch is not one of those, so nothing here appears on the settings page.
  *
- * The one third-party plugin on this host that *does* have a settings card
- * (`@quill507/dsh-auto-approval-llm`) does not use that path either: it ships a
- * browser client plugin and its own GET route, and its source says outright that
- * the route exists as the degradation source "for a card that has no host form
- * (entry not ACTIVE)".
+ * why the Plugins page reaches the row but not the browser
+ * That page keys a row's configuration `<package name>#<row id>`, projects the
+ * key from the `plugins.row.config` slot ledger, and hands the entry the Host
+ * form of the row's settings namespace — the row id — so the row itself is
+ * reachable, and it does not consult the `include` filter. What cannot be
+ * reached is the browser half: the switches need a client bundle, and the
+ * client-bundle scanner (`@deepseek-ai/dsh-client-modules`) enumerates the ROOT
+ * loader tree, while a preset's rows are mounted into a detached `PresetTree` of
+ * their own (`@deepseek-ai/dsh-agent-preset-registry`, `mountPreset()` ->
+ * `new PresetTree(ctx)` + `tree.root.update(...)`). `PresetTree` extends
+ * `EntryTree` but deletes the owner's `subtree` pointer in its constructor, so
+ * its rows are enumerated by nothing the scanner walks. A `dsh.client`
+ * declaration in this package's manifest is therefore never read and the bundle
+ * is never served — measured on this host, not assumed. There is no supported
+ * way around it either: `ClientModuleRegistry` exports `compose` /
+ * `bundleResource` / `onGraphChanged` and keeps its response map private, so no
+ * registration door exists. A UI would have to live in a profile bundle, i.e. a
+ * separate package, not in this preset.
  *
- * So reaching the UI means writing a client plugin, which is a separate project
- * rather than a field on this schema. The schema is kept anyway: it is the correct
- * declaration, it carries the two defaults, and it is exactly what such a client
- * would bind to. Two earlier attempts at the auto-form failed for reasons recorded
- * above — a `zod` Config is invisible to `volatileForm`, and adding schemastery plus
- * `.volatile()` satisfies that function while leaving the `include` filter unmet.
+ * The settings form itself is not in doubt: `POST /api/settings/describe`
+ * answers a namespace `orch-aegis-prefix` whose schema carries both keys and
+ * whose value carries both stored booleans, so the read route below is a real
+ * degradation source and not a placeholder.
+ *
+ * Editing without a UI works, and is supported: the home layer
+ * `$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins.
+ * Restate both keys, because a patch replaces a row's config rather than
+ * deep-merging it.
  */
 export const Config = z.object({
   prefixAegisSkills: z.boolean().default(DEFAULTS.prefixAegisSkills).volatile(),
@@ -187,6 +318,7 @@ export function apply(ctx, rawConfig) {
   }
 
   ctx.logger.info(`[orch-aegis-prefix] applied; zh=${wantZh}, ${ZH_DESCRIPTIONS.length} mappings available`)
+  installValuesRoute(ctx)
   void sync()
   ctx.on('skills/change', () => {
     void sync()
