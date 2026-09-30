@@ -160,6 +160,50 @@ const DEFAULTS = Object.freeze({
   describeAegisSkillsInZh: false,
 })
 
+/** Unwrap one field of the resolved config into a plain boolean, or `undefined`.
+ *
+ *  A deployed row does NOT hand `apply` booleans. The schema's `.volatile()`
+ *  fields reach the second argument as frozen reference objects carrying a
+ *  `get()` — so `typeof raw[key] === 'boolean'` is structurally always false and
+ *  both switches silently read their defaults instead. Two consequences were
+ *  measured on this host before the fix: `describeAegisSkillsInZh: true` did
+ *  nothing, and `prefixAegisSkills: false` could not turn the prefix off.
+ *
+ *  Order of authority:
+ *  1. a plain boolean — the plugin is being driven by a caller that passes data
+ *     directly, with no schema in the way;
+ *  2. the reference's own `get()`, which the loader keeps pointing at the value
+ *     the schema validated, so a live settings edit is seen on the next read;
+ *  3. the row's declared key in the loader entry, which is what the row actually
+ *     wrote — the only source that can name keys the schema filled in;
+ *  4. the shared default.
+ *
+ *  Reading per call rather than once at apply keeps the two sources honest and
+ *  lets `sync()` observe a value changed after `apply` ran. */
+function readSwitch(key, raw, entry) {
+  const rawValue = raw[key]
+  if (typeof rawValue === 'boolean') return rawValue
+  if (rawValue !== null && typeof rawValue === 'object' && typeof rawValue.get === 'function') {
+    try {
+      const value = rawValue.get()
+      if (typeof value === 'boolean') return value
+    } catch {
+      // A reference whose owner is gone falls through to the declared key.
+    }
+  }
+  const declared = storedSwitches(entry)[key]
+  if (typeof declared === 'boolean') return declared
+  return DEFAULTS[key]
+}
+
+/** Both switches, resolved for one entry. */
+function readSwitches(rawConfig, entry) {
+  const raw = rawConfig !== null && typeof rawConfig === 'object' ? rawConfig : {}
+  const out = {}
+  for (const key of Object.keys(DEFAULTS)) out[key] = readSwitch(key, raw, entry)
+  return out
+}
+
 /**
  * The two switches.
  *
@@ -245,14 +289,11 @@ const ZH_DESCRIPTIONS = [
 const ZH_BY_EN = new Map(ZH_DESCRIPTIONS)
 
 export function apply(ctx, rawConfig) {
-  // Read the two switches off the raw patch value, applying DEFAULTS for whatever
-  // the row does not set. Schemastery schemas are not zod's: there is no `.parse`
-  // here, and calling the schema does not fill defaults either — so the defaults
-  // have to come from the shared constant, which is also what the card shows.
-  const raw = rawConfig !== null && typeof rawConfig === 'object' ? rawConfig : {}
-  const pick = (key) => (typeof raw[key] === 'boolean' ? raw[key] : DEFAULTS[key])
-  const wantPrefix = pick('prefixAegisSkills')
-  const wantZh = pick('describeAegisSkillsInZh')
+  // The second argument is the schema-resolved config, not the row's literal
+  // text: `.volatile()` fields arrive as reference objects. Read the switches
+  // through the unwrapping helper instead of the raw argument — see the note on
+  // `readSwitch` for why reading it directly made both switches inert.
+  const { prefixAegisSkills: wantPrefix, describeAegisSkillsInZh: wantZh } = readSwitches(rawConfig, ctx?.fiber?.entry)
 
   if (!wantPrefix) {
     ctx.logger.info("[orch-aegis-prefix] prefix disabled by config; the preset's routing table will not resolve")
