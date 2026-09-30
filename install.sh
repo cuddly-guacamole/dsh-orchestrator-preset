@@ -97,10 +97,15 @@ fi
 # Each item is removed then copied, so a file deleted here cannot survive there,
 # and `cp -r src dst` cannot nest a directory inside an existing one.
 #
-# Deliberately NOT distributed (see .gitignore, which carries the reasoning):
-# install.sh · docs/ · .git/ · .dsh/ · .gitattributes · .gitignore · tools/*.local*
-# — plus tools/verify-install.sh, which is a gate for the author's checkout and
-# names paths that only exist in this repository.
+# Deliberately NOT staged into the bundle (see .gitignore, which carries the
+# reasoning): install.sh · docs/ · .git/ · .dsh/ · .gitattributes · .gitignore ·
+# tools/*.local* — plus tools/verify-install.sh, which is a gate for the author's
+# checkout and names paths that only exist in this repository.
+#
+# Staging is not publication. What reaches npm is package.json's `files` array,
+# and that array admits no tools/ entry — so no author tool is published, while
+# install.sh, absent from the list above, is: it is the only entry point a
+# first-time user has.
 say "1. stage the bundle into ${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 DEST="${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 mkdir -p "$DEST"

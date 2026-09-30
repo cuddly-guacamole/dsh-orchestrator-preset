@@ -1,6 +1,6 @@
 {
   "name": "@quill507/dsh-orchestrator-preset",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A thin-shell agent preset for DeepSeek Harness: nine named lanes with declared tool boundaries, resident routing sections, four self-authored skills, and an evidence-based completion gate.",
   "keywords": [
     "deepseek-harness",
@@ -61,6 +61,21 @@
     "./extensions/dsh/aegis-prefix.js": "./extensions/dsh/aegis-prefix.js",
     "./package.json": "./package.json"
   },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "README.zh.md",
+    "THIRD_PARTY_NOTICES.md",
+    "cordis.patch.yml",
+    "package.json",
+    "personas",
+    "skills",
+    "extensions",
+    "lane-composition.mjs",
+    "plan-aware-persona.mjs",
+    "routing-sections.mjs",
+    "install.sh"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

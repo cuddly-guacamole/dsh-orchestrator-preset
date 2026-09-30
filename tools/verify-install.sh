@@ -9,7 +9,7 @@
 # Read-only. It composes the profile tree in memory and never writes to a DSH
 # home; check 5 asserts that, rather than assuming it.
 #
-# Eleven checks, two of which were wrong as originally written. What changed:
+# Twelve checks, two of which were wrong as originally written. What changed:
 #
 #   1. selectedDefault in the profile patch            unchanged — still valid
 #   2. the bundle link is a real symlink               unchanged — test -L, not -e
@@ -22,6 +22,7 @@
 #   9. every aegis-* routing target resolves           ADDED — a dangling row fails silently
 #  10. the zh description table still matches         ADDED — a stale key fails silently
 #  11. no client-bundle declaration comes back        ADDED — dead by construction
+#  12. what npm would publish is what files says      ADDED — a directory entry sweeps the working tree
 #
 # Why 4 changed: the generator resolves its skeleton from $DSH_HOME, falling back
 # to ~/.dsh. A shell that happens to export DSH_HOME resolves fine; a plain shell
@@ -712,6 +713,97 @@ else
   else
     bad "check 11  a native plugin has left the exports map: $(sed -n 's/^NATIVE_MISSING=[0-9]* //p' "$TMP/decl.txt")"
   fi
+fi
+
+# ===========================================================================
+head_ "check 12 — what npm would publish is still what package.json's files says"
+# ===========================================================================
+# 0.1.0 published 32 files — its whole tracked tree, author tools included — and
+# nothing inside the package said so: a manifest with no `files` field publishes
+# whatever the packer walks. The repair is a positive whitelist, and it is
+# invisible from inside the tarball, so it is gated here in two halves, each
+# falsified by hand before this comment was written.
+#
+# Half 1: the array must exist, and must name nothing that resolves under tools/.
+# npm's `files` has no `!` negation, so "the author tools stay out" is expressed
+# only as tools/ being ABSENT from a positive list — one added entry undoes the
+# whole repair, which is what makes it worth asserting rather than trusting.
+#
+# Half 2: a DIRECTORY entry publishes that directory's WORKING TREE, not its
+# tracked set. Measured, not assumed: with `tools` in the array, the packer swept
+# up the untracked, git-ignored needles file alongside the four author tools. So
+# every directory entry is walked and every file under it is asked whether git
+# would ignore it. git check-ignore is index-aware, which is exactly the question
+# being asked: a tracked file is published either way, while an untracked ignored
+# file reaches the tarball only because a directory entry swept it up. A git
+# failure counts as a failure, not as a clean answer.
+FILES_ENTRIES=()
+files_probe="$(node -e '
+  const fs = require("node:fs")
+  let pkg
+  try { pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) }
+  catch { console.log("PARSE_ERROR"); process.exit(0) }
+  if (!Array.isArray(pkg.files)) { console.log("NO_FILES_ARRAY"); process.exit(0) }
+  for (const f of pkg.files) console.log("FILES_ENTRY=" + f)
+' "$REPO_ROOT/package.json" 2>"$TMP/files.err")"
+while IFS= read -r line; do
+  case "$line" in
+    FILES_ENTRY=*) FILES_ENTRIES+=("${line#FILES_ENTRY=}") ;;
+  esac
+done <<< "$files_probe"
+
+if [ -z "$files_probe" ]; then
+  bad "check 12  package.json could not be read for a files array — nothing was gated"
+  note "$(head -2 "$TMP/files.err" | tr '\n' ' ')"
+elif case "$files_probe" in *NO_FILES_ARRAY*) true ;; *) false ;; esac; then
+  bad "check 12  package.json has NO files array — npm publishes the walked tree, author tools included (the 0.1.0 defect)"
+elif case "$files_probe" in *PARSE_ERROR*) true ;; *) false ;; esac; then
+  bad "check 12  package.json does not parse as JSON — the files gate cannot be read out of it"
+else
+  tools_hits=0
+  for e in "${FILES_ENTRIES[@]}"; do
+    norm="${e#./}"; norm="${norm%/}"
+    case "$norm" in
+      tools|tools/*)
+        bad "check 12  files names a path under tools/: $e"
+        tools_hits=$((tools_hits+1)) ;;
+    esac
+  done
+  [ "$tools_hits" -eq 0 ] &&
+    ok "check 12  files holds ${#FILES_ENTRIES[@]} entries and none of them resolves under tools/"
+
+  # Every directory entry is walked. A `dir/*` entry publishes the directory just
+  # as a bare `dir` does, so both spellings are resolved to the directory.
+  dirs=0; walked=0; ignored_hits=0
+  for e in "${FILES_ENTRIES[@]}"; do
+    d="${e%/}"
+    case "$d" in */'*') d="${d%/\*}" ;; esac
+    [ -n "$d" ] || continue
+    [ -d "$REPO_ROOT/$d" ] || continue
+    dirs=$((dirs+1))
+    while IFS= read -r f; do
+      rel="${f#"$REPO_ROOT"/}"
+      walked=$((walked+1))
+      git -C "$REPO_ROOT" check-ignore -q -- "$rel"; rc=$?
+      if [ "$rc" -eq 0 ]; then
+        bad "check 12  the published set sweeps up a git-ignored file: $rel (a directory entry in files)"
+        ignored_hits=$((ignored_hits+1))
+      elif [ "$rc" -ne 1 ]; then
+        bad "check 12  git check-ignore exited $rc on $rel — an unasked question is not a clean answer"
+        ignored_hits=$((ignored_hits+1))
+      fi
+    done < <(find "$REPO_ROOT/$d" -type f | sort)
+  done
+  if [ "$dirs" -eq 0 ]; then
+    warn "check 12  none of the ${#FILES_ENTRIES[@]} entries is a directory — the ignored-file walk did not run"
+  elif [ "$ignored_hits" -eq 0 ]; then
+    ok "check 12  no git-ignored file under the $dirs directory entries of files ($walked files walked)"
+  fi
+  # The reason, beside the verdict it explains rather than only in the comment
+  # above: the inventory is not what `git ls-files` would give, and the whitelist
+  # is not a filter — which is why the array's exact contents are the gate.
+  note "check 12  npm's files has no '!' negation, so tools/ stays out only by being ABSENT from the list"
+  note "check 12  a directory entry ships the WORKING TREE: $dirs entries walked, $walked files asked, $ignored_hits ignoring"
 fi
 
 # ===========================================================================
