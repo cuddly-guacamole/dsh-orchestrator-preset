@@ -261,7 +261,7 @@ Restate **both** keys. A patch replaces a row's config rather than deep-merging 
 only the one you are changing drops the other back to its default. A restart is needed either
 way: the config is read when the plugin is applied.
 
-### Why there is no control yet, and what it would take
+### Why there is no control, and why one cannot be added
 
 The host does build settings forms from plugin schemas, and this plugin's `Config` is written
 the way that requires — `@deepseek-ai/schemastery` rather than `zod`, with both fields marked
@@ -270,14 +270,32 @@ the way that requires — `@deepseek-ai/schemastery` rather than `zod`, with bot
 and that filters to rows whose `parent.tree.ctx.fiber.entry?.id === "include"`. A row inserted
 by a bundle patch is not one of those, so nothing here reaches the settings UI.
 
-The one third-party plugin on the development machine that does have a settings card
-(`@quill507/dsh-auto-approval-llm`) does not use that path either — it ships a browser client
-plugin plus its own GET route, and its own source calls the route the degradation source "for a
-card that has no host form (entry not ACTIVE)". So a control here means writing a client
-plugin: a `dsh.client` declaration, a separate browser entry, a read route, and a form bound to
-this entry's id. That is a small project, not a field on this schema, and it is **not done**.
+There is a second mechanism that *does* reach a patch-inserted row — the **Plugins page**
+renders a row's own configuration, keyed `<package name>#<row id>`, and it does not consult
+the `include` filter. What blocks the control is therefore not the row, it is the **browser
+half**: the two switches need a client bundle, and **a preset's rows cannot serve one**.
 
-**Client-page support is planned and tracked here as unfinished.** Until it lands the switches
+MEASURED, host 0.2.0-rc.2: the client-bundle scanner (`@deepseek-ai/dsh-client-modules`)
+walks the *root* loader tree, while a preset's rows are mounted into a detached
+`PresetTree` of their own (`@deepseek-ai/dsh-agent-preset-registry`, `mountPreset()` →
+`new PresetTree(ctx)` + `tree.root.update(...)`). `PresetTree` extends `EntryTree` but
+deletes the owner's `subtree` pointer in its constructor, so its rows are reachable from
+nothing the scanner enumerates. A `dsh.client` declaration in this package's manifest is
+therefore never read, and the bundle is never served — the row simply never grows a
+configure control. There is no public way around it: `ClientModuleRegistry` exports
+`compose` / `bundleResource` / `onGraphChanged` and keeps its response map private, so
+there is no supported registration door either. A UI would have to live in a **profile**
+bundle (a separate package), not in this preset.
+
+The settings form itself is not in doubt: on the `orch-debug` profile,
+`POST /api/settings/describe` answers a namespace `orch-aegis-prefix` whose schema carries
+both keys and whose value carries both stored booleans.
+
+Editing without the UI still works, and is still supported: the home layer
+`$DSH_HOME/cordis.patch.yml` applies after this bundle's, so a row there wins. Restate both
+keys, because a patch replaces a row's config rather than deep-merging it.
+
+**Client-page support is not planned; the limitation above is architectural.** The switches
 are config-only, and this section is the place to look when wondering why.
 
 ### 5. Wire it into a profile

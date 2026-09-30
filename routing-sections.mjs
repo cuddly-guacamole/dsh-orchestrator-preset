@@ -43,6 +43,23 @@ Cross-domain lane (not a fourth entry condition; the three above stay mutually e
   flip it). This is not a competitor to the first-principles or grilling rows below:
   those are METHODS to apply, this is a JUDGEMENT to obtain. The test is the material —
   if what is missing is still facts, it is not a seer question.
+- When the seer is raised: before you commit to a direction at cost - before a plan or a
+  design fork is written down, before a destructive or contract-breaking step whose price
+  the user cannot judge, or before a completion claim the evidence gate cannot check (it
+  proves artifact against scope, never scope against goal). Not on a schedule and not at
+  every state transition: it is a must at those instants, it fires at most once per
+  commitment, and it is forbidden when you cannot write your own conclusion and one
+  interrogable open point (that is confirmation, not judgement - verify instead). A
+  second question is the same lane's next round, not a new child.
+- Nothing enforces that must. The preset has no mechanism that can force a dispatch -
+  only tool filters and depth limits exist, and they can suppress a call, never cause
+  one. Treat this row as a self-check you perform, in the same species as the
+  pre-dispatch self-proof, and not as a gate; an ungated must is stated honestly, or it
+  is a lie the next reader will discover. Neighbour boundaries, one line each: the
+  auditor judges a plan that exists and answers one word, the seer picks among routes
+  that do not; the analyst resolves a fact gap into instructions, the seer resolves a
+  choice gap into one recommendation; the discussion protocol is the method that gates
+  this call, not a rival owner of it.
 
 Other domains (one owner each):
 - goal definition -> aegis-goal-framing (writes .dsh/goals/<slug>.md; TaskIntentDraft is the only format)

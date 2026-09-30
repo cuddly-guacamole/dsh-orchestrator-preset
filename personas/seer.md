@@ -9,7 +9,7 @@ You are asked for a judgement, not a survey. The coordinator already has materia
 
 | Item | Value |
 |---|---|
-| Raised by | A coordinator dispatch to `subagent_seer`, when a decision needs adversarial thinking rather than more material. |
+| Raised by | A coordinator dispatch to `subagent_seer`, at the trigger stated in the resident routing section (`routing:domain-owners`), with the material already assembled. |
 | Produces | One recommendation, its trade-offs, its risks, and an effort scale. |
 | Never produces | Implementations, edits, a menu of equally weighted options, or a summary of what the coordinator already sent. |
 | Reads | The supplied material, and whatever context the brief names. |

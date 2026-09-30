@@ -161,9 +161,15 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 
 宿主确实会从插件 schema 生成设置表单，本插件的 `Config` 也按那个要求写好了 —— 用 `@deepseek-ai/schemastery` 而不是 `zod`，两个字段都标了 `.volatile()`。**但这不够，这是实测的结论而不是猜测**：`dsh-settings.describe()` 只考虑 `dsh-config-editor.entries()` 返回的条目，而后者过滤到 `parent.tree.ctx.fiber.entry?.id === "include"` 的行。**由 bundle patch 插入的行不属于那一类**，所以这里的东西到不了设置界面。
 
-开发机上唯一**确实有**设置卡片的第三方插件（`@quill507/dsh-auto-approval-llm`）走的也不是这条：它自带一个浏览器客户端插件和一条自己的 GET 路由，而且它源码里管那条路由叫「**给没有宿主表单的卡片（条目非 ACTIVE）的降级来源**」。所以这里要一个开关，意味着写一个**客户端插件**：`dsh.client` 声明、独立的浏览器入口、一条读路由、以及一张绑定到本条目 id 的表单。**那是一个小项目，不是这个 schema 上的一个字段，而且它还没做。**
+确实有**第二个**能到达补丁插入行的机制 —— **Plugins 页**会渲染一行自己的 config，键为 `<包名>#<行 id>`，它**不**查那个 `include` 过滤。所以卡住开关的不是行本身，而是**浏览器半边**：那两个开关需要一个 client bundle，而**预设的行供应不了**。
 
-**客户端页面支持已列入计划并在此记为未完成。** 在它落地之前，两个开关只能改配置文件；想知道为什么，看这一节。
+**实测，宿主 0.2.0-rc.2**：client bundle 扫描器（`@deepseek-ai/dsh-client-modules`）走的是**根** loader 树，而预设的行挂在它自己的一棵独立 `PresetTree` 上（`@deepseek-ai/dsh-agent-preset-registry`，`mountPreset()` → `new PresetTree(ctx)` + `tree.root.update(...)`）。`PresetTree` 继承 `EntryTree`，却在构造函数里把 owner 的 `subtree` 指针删掉，所以它的行从扫描器枚举的任何东西都不可达。于是本包 manifest 里的 `dsh.client` 声明**永远不会被读到**，bundle 也永远不会被供应 —— 那一行只是不会长出 configure 控件。公开的路子也没有：`ClientModuleRegistry` 只导出 `compose` / `bundleResource` / `onGraphChanged`，响应表是私有的，所以也没有受支持的注册入口。UI 只能落在**一个 profile 级** bundle（另一个包）里，不能落在这个 preset 里。
+
+设置表单本身不用怀疑：在 `orch-debug` 档上，`POST /api/settings/describe` 返回命名空间 `orch-aegis-prefix`，schema 里两个 key 都在，值里两个已存的布尔量也都在。
+
+不带 UI 的编辑仍然有效，也仍然受支持：home 层 `$DSH_HOME/cordis.patch.yml` 在本 bundle 之后应用，所以那里的一行会胜出。**两个 key 都要重述**，因为 patch 是**整行替换**某行的 config，不做深合并。
+
+**客户端页面支持不在计划内；上面那个限制是架构性的。** 两个开关只能改配置文件；想知道为什么，看这一节。
 
 ### 5. 接入 profile
 
