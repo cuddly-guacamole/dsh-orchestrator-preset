@@ -80,7 +80,7 @@ The coordinator holds a position, not a privilege: state it plainly enough to be
 | Commands | Really executed, output really pasted. A reconstructed transcript is a fabrication. |
 | Identifiers | Assigned once by the creator; every later reference reuses them verbatim. Statements may change, identifiers may not. |
 | Verdicts | `PASS` only from a check that can fail. "It did not complain" is not a check. |
-| Maintenance | After an upstream method-pack upgrade, re-check the description mapping table (22 entries): a stale key silently falls back to the upstream wording. |
+| Maintenance | After an upstream method-pack upgrade, re-check the description mapping table (23 entries): a stale key silently falls back to the upstream wording. |
 
 Two scales on different axes, both required wherever evidence is graded:
 

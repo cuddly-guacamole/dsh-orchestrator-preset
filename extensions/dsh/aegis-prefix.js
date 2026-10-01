@@ -278,6 +278,7 @@ const ZH_DESCRIPTIONS = [
   ['Use when executing a written implementation plan with independent tasks in the current session where delegation beats inline coordination cost; otherwise inline. Ad-hoc 2+ tasks without a plan use dispatching-parallel-agents.', '执行书面实现计划、当前会话独立任务委托优于内联时用；临时 2+ 无计划任务用 dispatching-parallel-agents。'],
   ['Use when encountering a bug, test failure, or unexpected behavior, before proposing fixes', '遇到 bug、测试失败或意外行为、提出修复前用。'],
   ['Use when the user explicitly requests strict or test-first TDD, or when the current conversation already contains an explicit `TDD Route: strict` decision from another Aegis workflow.', '用户显式要求严格/测试优先 TDD，或会话已有 TDD Route: strict 决策时用。'],
+  ['Use when designing, changing, or reviewing user-facing interfaces or interaction flows, including API changes that alter visible states or recovery. Backend-only work without user-facing effects stays on its existing route.', '设计/变更/评审面向用户的界面或交互流程时用，含改变可见状态或恢复路径的 API 变更；纯后端、无用户可见影响的工作留在既有路线上。'],
   ['Use when the user says `aegis:update`, asks to update or upgrade an installed Aegis method-pack, wants the latest Aegis version, or asks whether Aegis is current on this host.', '用户说 aegis:update、要求更新/升级已装方法包、要最新版本或询问是否最新时用。'],
   ['Use when starting a turn or checking Aegis skill routing.', '回合开始或检查 Aegis 技能路由时用。'],
   ['Use when a coding task needs a concurrent checkout, unrelated dirty state blocks safe branch switching, or the user or repository explicitly requires a worktree.', '编码任务需并发 checkout、无关脏状态阻止安全切分支、或用户/仓库明确要求 worktree 时用。'],
