@@ -55,9 +55,9 @@ export const providerEntry = `${bundlePkg}/extensions/dsh/index.js`
 export const providerName = 'orch-method-pack'
 
 // ── bundle 级 aegis 前缀行（与 provider 行同层）────────────────────────────
-// 为什么前缀必须随预设发布：预设的常驻路由表按 `aegis-*` 点名二十个技能，而上游
+// 为什么前缀必须随预设发布：预设的常驻路由表按 `aegis-*` 点名二十二个技能，而上游
 // aegis 包按**裸名**注册（brainstorming、goal-framing…），因为它不绑定宿主。
-// 没有这一步，整张路由表会指向二十个不存在的名字。详见 extensions/dsh/aegis-prefix.js。
+// 没有这一步，整张路由表会指向二十二个不存在的名字。详见 extensions/dsh/aegis-prefix.js。
 // 它**只做命名空间，不碰描述** —— 描述语言是读者偏好，不是路由需求。
 // ⛔ 关闭 `prefixAegisSkills` 必须同时改写路由表，两者不能分开。
 export const prefixRowId = 'orch-aegis-prefix'

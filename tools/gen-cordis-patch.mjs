@@ -305,7 +305,7 @@ export function render(d, section, shellSource) {
   // 它挂载本包自己的 skill provider，让四个 orch-* 技能随包自带，不再拷进用户全局目录。
   lines.push(`    - id: ${d.providerRowId}`)
   lines.push(`      name: '${d.providerEntry}'`)
-  // aegis 前缀行：同一层的第二个挂载点。路由表按 aegis-* 点名二十一个技能，而上游
+  // aegis 前缀行：同一层的第二个挂载点。路由表按 aegis-* 点名二十二个技能，而上游
   // 按裸名注册；这一行是两者之间那座桥。
   // 两个开关默认值不同，各有理由：前缀关掉会让路由表悬空（默认开）；描述汉化是
   // 读者偏好（默认关，由使用者在自己的层里打开）。

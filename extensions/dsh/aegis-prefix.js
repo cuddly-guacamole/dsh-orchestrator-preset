@@ -3,7 +3,7 @@
  * optionally localises their descriptions.
  *
  * WHY THE PREFIX LIVES HERE
- * The preset's resident routing table names twenty-one skills by their prefixed
+ * The preset's resident routing table names twenty-two skills by their prefixed
  * name, while the upstream pack registers them bare — it is host-agnostic and has
  * no reason to know this preset exists. Nothing bridged that, so every aegis row
  * in the routing table pointed at a name resolving to nothing, and the failure was

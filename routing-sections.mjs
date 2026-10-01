@@ -75,6 +75,7 @@ Other domains (one owner each):
 - strict TDD -> aegis-test-driven-development
 - worktree creation -> aegis-using-git-worktrees; branch finish -> aegis-finishing-a-development-branch
 - project context / terminology -> aegis-establishing-project-context
+- UI/UX design, interaction flows, and API changes that alter visible states or recovery -> aegis-ui-ux-governance (composed with the task owner; backend-only work with no user-visible effect stays on its existing route)
 - anti-entropy / retirement -> aegis-anti-entropy-governance
 - aegis self-update -> aegis-update-aegis
 - DSH host routing check -> aegis-using-aegis (load it only when the user names it)
