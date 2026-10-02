@@ -59,6 +59,7 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./extensions/dsh/index.js": "./extensions/dsh/index.js",
     "./extensions/dsh/aegis-prefix.js": "./extensions/dsh/aegis-prefix.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -71,6 +72,7 @@
     "personas",
     "skills",
     "extensions",
+    "locale",
     "lane-composition.mjs",
     "plan-aware-persona.mjs",
     "routing-sections.mjs",

@@ -110,7 +110,7 @@ say "1. stage the bundle into ${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 DEST="${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 mkdir -p "$DEST"
 DISTRIBUTABLE="LICENSE README.md README.zh.md THIRD_PARTY_NOTICES.md cordis.patch.yml
-  package.json personas skills extensions tools lane-composition.mjs
+  package.json personas skills extensions locale tools lane-composition.mjs
   plan-aware-persona.mjs routing-sections.mjs"
 STAGED=0
 for item in $DISTRIBUTABLE; do

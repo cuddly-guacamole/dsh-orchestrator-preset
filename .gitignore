@@ -132,6 +132,20 @@
 !/extensions/dsh/index.js
 !/extensions/dsh/aegis-prefix.js
 
+# --- locale/ — the plugin page's localised title and description -------------
+# Admitted in three layers like every other shipped tree, not with a bare
+# `!/locale/**`: `!/locale/` on its own does make the whole tree visible, but it
+# also makes every file ever dropped into it visible — the exact hole the third
+# layer exists to close, described in the header above.
+# Listed one by one rather than as locale/*.json: a language added later should
+# fail LOUDLY here rather than slip into the published tree, which is the same
+# default-deny reasoning as the `/*` above, and the same reason extensions/ above
+# enumerates its two files instead of globbing them.
+!/locale/
+/locale/*
+!/locale/en.json
+!/locale/zh.json
+
 # --- docs/ is NOT distributed --------------------------------------------
 # The four design documents stay on disk for the author and are held out of the
 # published tree by the `/*` default above — there is deliberately no `!` rule
