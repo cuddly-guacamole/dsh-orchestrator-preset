@@ -68,6 +68,8 @@
 !/tools/verify-install.sh
 !/tools/gen-cordis-patch.mjs
 !/tools/preset-declaration.mjs
+!/tools/patch-contract.test.mjs
+!/tools/verify-install-sync.mjs
 
 # --- skills/ ---
 !/skills/
@@ -85,6 +87,28 @@
 !/skills/orch-discussion-protocol/SKILL.md
 !/skills/orch-evidence-protocol/SKILL.md
 !/skills/orch-real-path-testing/SKILL.md
+
+# --- .agents/ — the decision log that ships with the preset -------------------
+# Admitted in three layers like every other shipped tree, not with a bare
+# `!/.agents/**`. Measured on a scratch repo, not assumed: `!/.agents/` on its own
+# does make the whole tree visible, but it also makes every file ever dropped into
+# it visible — the exact hole layer 3 exists to close, described in the header
+# above. `/.agents/*` plus the explicit list below is what keeps a new, unreviewed
+# file out of the published tree; the same default-deny reasoning as the `/*`.
+# The ADRs are covered by ONE pattern, not listed one by one. This is a
+# deliberate departure from the per-file convention used for personas/ and
+# extensions/ above: adrs/ is a typed folder where every .md is an ADR by
+# definition, so enumerating them buys nothing and guarantees a fourth round of
+# "my new file is invisible". Measured on a scratch repo, not assumed: the
+# pattern still denies a .txt or .png in adrs/, and still denies a .md anywhere
+# else under .agents/, so the default-deny hole stays closed outside the single
+# folder whose type is the rule.
+!/.agents/
+/.agents/*
+!/.agents/README.md
+!/.agents/adrs/
+/.agents/adrs/*
+!/.agents/adrs/*.md
 
 # --- plugins/ is NOT distributed ------------------------------------------
 # This repository used to ship a companion plugin here. Everything it did now
