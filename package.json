@@ -22,6 +22,10 @@
     "access": "public"
   },
   "type": "module",
+  "scripts": {
+    "test": "node --test tools/patch-contract.test.mjs",
+    "verify:install-sync": "node tools/verify-install-sync.mjs"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1 <5",
     "@deepseek-ai/dsh-skill-filesystem": ">=0.2.0-rc.2 <2",

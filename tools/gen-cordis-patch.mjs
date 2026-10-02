@@ -8,10 +8,13 @@
 //
 // 用法：
 //   node tools/gen-cordis-patch.mjs            # 写 $BUNDLE/cordis.patch.yml
-//   node tools/gen-cordis-patch.mjs --check    # 不写；逐字节比较，不一致 ⇒ stale + exit 1
+//   node tools/gen-cordis-patch.mjs --check    # 不写；**机器无关**地比较，不一致 ⇒ stale + exit 1
 //   node tools/gen-cordis-patch.mjs --help
 // 输出（stdout）：wrote <path> (29 rows) / ok <path> (29 rows) / stale <path>
-// exit：0 = 成功（写成功或 --check 一致）· 1 = --check 不一致 · 2 = 用法错误 / 输入非法
+// exit：0 = 成功（写成功 / --check 通过）· 1 = --check 内容漂移 · 2 = 用法错误 / 输入非法
+// ⚠️ `--check` 排除**一行**：产物头部 `# Shell source:`（唯一按机器派生的部分）。只差那一行
+//    ⇒ 逐字段打 stderr 警告 + **exit 0**（宿主漂移信号，不是产物缺陷）。判据与理由见本文件
+//    的「机器派生的 provenance 行」一节；契约测试 import 的是**同一个**函数。
 // 无第三方依赖（只用 node: 内置模块）。
 //
 // ⛔ 本生成器**不做**任何工具名闭集断言（该机制已按用户裁决删除，见 DESIGN.md §3.3.4 的 ⛔ 段）。
@@ -317,6 +320,124 @@ export function render(d, section, shellSource) {
   return lines.join('\n') + '\n'
 }
 
+// ── 机器派生的 provenance 行：产物里**唯一**按机器变化的部分 ────────────────────
+// 一条事实一个 home（`.agents/README.md` 的规则）：「产物里哪几行不参与逐字节比较」是
+// `render()` **自己的性质**，所以它的定义住在渲染器旁边并导出 —— `--check` 门与
+// `tools/patch-contract.test.mjs` 共用**这一个**实现。两处各写一份遮蔽规则就是两个 home，
+// 迟早分叉；那正是「绿色测试掩盖红色门」的同款缺陷。
+// ⚠️ 为什么不另开一个 `tools/provenance.mjs`：`.gitignore` 对 `tools/` 是逐个文件放行
+//    （`/tools/*` + 一串 `!`），新文件默认被忽略；本轮不能动 `.gitignore`。
+//
+// 为什么这一行必须被排除：`render()` 把 `shellSource` 打进产物头部，而那些值来自**本机**的
+// 宿主侧已组装配置（`preset-declaration.mjs` 的 `resolveShellSource()` 链：冻结件 →
+// `<DSH home>/profiles/web/cordis.yml` → `dsh --profile web --dump-config`）。已组装配置在
+// 不同机器上**必然不同**（宿主版本、本机 profile patch、已注册的 MCP server 全都进那份文本），
+// 于是「产物 == 本机 render()」这一逐字节等式在**任何别的机器上都不成立** ⇒ 一个**已提交**的
+// 产物在任何别的机器上都被 `--check` 判 stale。把这一行排除，硬门才真的机器无关。
+// ⛔ 排除**不等于**放过：差异逐字段打印成 stderr 警告（`provenanceWarnings`），**退出码不受影响**
+//    —— 它是**宿主漂移信号**，不是产物缺陷。
+// 📌 只有 `bash=` / `pwsh=` 两项决定产物里 shell 工具的启用面（它们经 `disabled:` 表达式与
+//    `PLATFORM_SHELL` 生效）；`normalized-digest` 是纯指纹，不影响产物行为。
+
+/**
+ * 产物里按机器派生、**不参与**逐字节比较的行。
+ * ⚠️ 必须匹配**整行**（`.*$`）：只匹配前缀的话，行尾那串
+ *    `kind=… normalized-digest=…` 会留在被比较的文本里，机器相关性根本没去掉。
+ */
+export const MACHINE_DERIVED_LINE = /^# Shell source: .*$/m
+
+/** provenance 行的字段名与顺序（与上面 `render()` 的模板一一对应）。 */
+export const PROVENANCE_FIELDS = ['kind', 'fallback', 'bash', 'pwsh', 'normalized-digest']
+
+/** 文本里的 provenance 行；没有则 null。 */
+export function provenanceLineOf(text) {
+  return MACHINE_DERIVED_LINE.exec(text)?.[0] ?? null
+}
+
+/**
+ * 逐字段解析 provenance 行。解析不出来返回 `{}` —— 调用方**必须**把 `{}` 当「整行不同」处理，
+ * 不许当成「一致」（那会让一个被手改坏的 provenance 行静悄悄通过）。
+ */
+export function provenanceFields(line) {
+  const out = {}
+  if (typeof line !== 'string') return out
+  // 模板尾部那句括号说明不是字段，先切掉，否则最后一段会被并进字段值。
+  const body = line.replace(/^# Shell source:\s*/, '').replace(/\s+\(absolute path[\s\S]*$/, '')
+  for (const seg of body.split(new RegExp(`(?=\\s(?:${PROVENANCE_FIELDS.join('|')})=)`))) {
+    const s = seg.trim()
+    const at = s.indexOf('=')
+    if (at > 0) out[s.slice(0, at)] = s.slice(at + 1)
+  }
+  return out
+}
+
+/** 机器无关文本：provenance 行换成占位符，**其余逐字不动**。 */
+export function machineIndependent(text) {
+  return text.replace(MACHINE_DERIVED_LINE, '# Shell source: <machine-derived — excluded from the byte comparison>')
+}
+
+/**
+ * 两段文本第一处不同的行（用于把 `stale` 说成人话）；无差异返回 null。
+ * ⚠️ 必须在**机器无关**文本上比较：直接比原文的话，第一处差异永远是 provenance 行
+ *    （它本来就该不同）⇒ 会把人指到**没有坏**的那一行，而真正坏掉的那行不显示。
+ *    占位符是单行、不含换行 ⇒ 报出来的行号与产物文件里的行号一一对应。
+ */
+function firstDifferingLine(a, b) {
+  const al = machineIndependent(a).split('\n')
+  const bl = machineIndependent(b).split('\n')
+  for (let i = 0; i < Math.max(al.length, bl.length); i += 1) {
+    if (al[i] !== bl[i]) return `第 ${i + 1} 行\n    产物: ${al[i] ?? '<无此行>'}\n    本机: ${bl[i] ?? '<无此行>'}`
+  }
+  return null
+}
+
+/**
+ * provenance 差异的警告行。**不抛错、不改退出码** —— 由调用方打到 stderr。
+ * @returns {string[]} 空数组 = 两行一致
+ */
+export function provenanceWarnings(recorded, computed) {
+  if (recorded === computed) return []
+  const rf = provenanceFields(recorded)
+  const cf = provenanceFields(computed)
+  const fields = Object.keys(cf).length > 0 ? PROVENANCE_FIELDS.filter((k) => k in cf)
+    : (Object.keys(rf).length > 0 ? PROVENANCE_FIELDS.filter((k) => k in rf) : [])
+  const out = []
+  if (fields.length === 0) {
+    out.push('  ⚠ 无法逐字段解析 provenance 行 ⇒ 整行视为不同（格式可能被手改过）')
+    out.push(`    产物: ${recorded ?? '<产物里没有这一行>'}`)
+    out.push(`    本机: ${computed ?? '<本机 render() 没有这一行>'}`)
+  } else {
+    for (const k of fields) {
+      if (rf[k] === cf[k]) continue
+      out.push(`    ${k}: 产物记录 ${rf[k] ?? '<无该字段>'}  ≠  本机解析 ${cf[k] ?? '<无该字段>'}`)
+    }
+  }
+  if (out.length === 0) return []          // 字段名变了但值都相同（模板演进）⇒ 不报
+  return [
+    '⚠ WARNING  provenance 行（产物里唯一按机器派生的一行）与本机解析结果不同 ——',
+    '            **门已通过，退出码不受影响**。这条警告不是产物缺陷。',
+    '  · 它说明：产物记录的这组指纹是在**另一台机器 / 另一个 DSH 安装**上算出来的，本机重新',
+    '    解析得到的是本机的宿主侧已组装配置。两边都对，只是**机器不同**。',
+    '  · 它不说明：产物内容与声明不一致 —— 那是**硬门**，已逐字节比较通过，否则本行不会打印。',
+    '  · 哪一项该管：`bash=` / `pwsh=` 决定产物里 shell 工具的启用面，**它们不同才需要人看**；',
+    '    `normalized-digest` 是纯指纹，**不影响产物行为**，它不同不必重新生成。',
+    '  · 不要为了消掉这条警告而在某台机器上重新生成并提交：那样只是把指纹换成那台机器的。',
+    ...out,
+  ]
+}
+
+/**
+ * `--check` 门与契约测试**共用**的机器无关判据（本文件里这条事实的**唯一** home）。
+ * @param {string} existing  已提交的产物
+ * @param {string} rendered  本机 render() 的输出
+ * @returns {{ok: boolean, warnings: string[], difference: string|null}}
+ */
+export function compareMachineIndependent(existing, rendered) {
+  const warnings = provenanceWarnings(provenanceLineOf(existing), provenanceLineOf(rendered))
+  if (machineIndependent(existing) === machineIndependent(rendered)) return { ok: true, warnings, difference: null }
+  return { ok: false, warnings, difference: firstDifferingLine(existing, rendered) }
+}
+
 // ── shell 来源交叉核对（协调者裁决 1 步骤 2：`dsh --profile web --dump-config`）──
 function crossCheckShell(d) {
   let live
@@ -341,7 +462,12 @@ const USAGE = [
   'usage: node tools/gen-cordis-patch.mjs [--check] [--skeleton <path>] [--no-crosscheck] [--help]',
   '',
   '  (no flag)        render $BUNDLE/cordis.patch.yml and write it',
-  '  --check          render and compare with the existing file (no write); mismatch => stale + exit 1',
+  '  --check          render and compare with the existing file (no write); mismatch => stale + exit 1.',
+  '                   The comparison is **machine-independent**: the one machine-derived line',
+  '                   (`# Shell source:`, see compareMachineIndependent) is excluded, because a',
+  '                   committed artifact can never match a different host byte-for-byte.',
+  '                   A difference **in that line only** is a host-drift signal: printed to stderr',
+  '                   field by field, **exit code stays 0**. Any other difference => exit 1.',
   '  --skeleton <p>   authoritative indentation reference (plan-mode section source).',
   '                   Resolution order: --skeleton > $DSH_SKELETON >',
   '                   <DSH home>/node_modules/@deepseek-ai/dsh-web-app/presets/standard.patch.yml >',
@@ -425,8 +551,24 @@ export async function main(argv = process.argv.slice(2)) {
   if (check) {
     let existing = null
     try { existing = readFileSync(OUT_PATH, 'utf8') } catch { existing = null }
-    if (existing === content) { console.log(`ok ${OUT_PATH} (${rows} rows)`); for (const l of detail) console.log(l); return 0 }
-    console.log(`stale ${OUT_PATH}${existing === null ? ' (artifact absent)' : ''}`)
+    if (existing === null) {
+      console.log(`stale ${OUT_PATH} (artifact absent)`)
+      for (const l of detail) console.log(l)
+      return 1
+    }
+    // 硬门 = **机器无关**的逐字节比较。provenance 行是产物里唯一按机器派生的部分（定义在
+    // `compareMachineIndependent` 旁边，契约测试 import 的是同一个函数），把它排除之后
+    // 这一步才是「产物 == 声明」而不是「产物 == 本机的宿主配置」。
+    const verdict = compareMachineIndependent(existing, content)
+    if (verdict.ok) {
+      console.log(`ok ${OUT_PATH} (${rows} rows)`)
+      for (const l of detail) console.log(l)
+      // 宿主漂移信号：逐字段打到 stderr，**不改退出码**（stderr ≠ 失败路径，失败路径走 stdout 的 `stale`）。
+      for (const w of verdict.warnings) console.error(w)
+      return 0
+    }
+    console.log(`stale ${OUT_PATH}`)
+    console.error(`⛔ 内容漂移（机器无关判据）⇒ exit 1：${verdict.difference}`)
     for (const l of detail) console.log(l)
     return 1
   }
