@@ -51,12 +51,14 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_SOURCE = REPO_ROOT;
 // The live profiles link-mount this path; it is a copy, not a symlink.
 //
-// Derived from the user's home, never written out. A literal `C:/Users/<someone>`
-// here was a machine-local absolute path in the shipped tree, and this file is
-// walked by `verify-install.sh` check 8, which is exactly the kind of leak that
-// check exists to catch — the gate was failing on the gate's own tooling. It also
-// meant the documented default (run it with no arguments) only worked on the one
-// machine that path was copied from.
+// Derived from the user's home, never written out. A literal absolute Windows
+// path was spelled here, and this file is walked by `verify-install.sh` check 8 —
+// which is exactly the kind of leak that check exists to catch, so the gate was
+// failing on the gate's own tooling. Spelling the path in the comment to explain
+// that is the same mistake in a new coat; the shape-based scanner rightly cannot
+// tell an example from a real value, and that is the behaviour we want.
+// It also meant the documented default (run it with no arguments) only worked on
+// the one machine that path was copied from.
 //
 // $DSH_HOME wins when it is set, matching `resolveDshHome()` in the host
 // (@deepseek-ai/dsh-home-paths): env var first, then ~/.dsh. install.sh stages
@@ -165,26 +167,72 @@ const installedFiles = walk(args.installed, args.installed);
 if (!installedFiles) dieConfig(`cannot read installed dir: ${args.installed}`);
 const installedSet = new Set(installedFiles);
 
+// --- what install.sh actually deploys ---------------------------------------
+// `files[]` above is the npm PUBLICATION set. The installed copy is not that set:
+// it is the staging projection install.sh writes, and the two differ on purpose.
+// The file that says which is which is install.sh, so read the list from there
+// instead of keeping a second copy here — a hand-maintained duplicate of the
+// staging list is precisely the drift this tool exists to catch, and it would
+// report a healthy install as broken the first time the two lists diverged.
+//
+// Today the difference is install.sh itself: it IS published (it is in files[] —
+// it is a first-time user's only entry point) and is deliberately NOT staged (see
+// the comment above DISTRIBUTABLE in install.sh). Comparing the two sets blindly
+// therefore reported `MISSING install.sh` forever, and no amount of re-syncing
+// could clear it: the installer is designed not to copy itself.
+const INSTALL_SH = join(args.source, 'install.sh');
+if (!existsSync(INSTALL_SH)) dieConfig(`cannot read the staging list: ${INSTALL_SH} not found`);
+const installSrc = readFileSync(INSTALL_SH, 'utf8');
+const dm = installSrc.match(/^DISTRIBUTABLE="([^"]*)"/m);
+if (!dm) dieConfig(`could not find DISTRIBUTABLE= in ${INSTALL_SH} — refusing to guess the staged set`);
+
+// Staging is not a plain copy: install.sh stages `tools/` wholesale and then
+// deletes two author-only files out of the result (`rm -f "${DEST}/tools/…"`).
+// Those two are absent by design, so a staged-set computed from DISTRIBUTABLE
+// alone reports them MISSING forever. Read the removals from install.sh too.
+const removedAfterStaging = new Set();
+for (const line of installSrc.split('\n')) {
+  if (!/^\s*rm -f\s/.test(line)) continue;
+  for (const m of line.matchAll(/\$\{DEST(?::\?)?\}\/([^"\s]+)/g)) removedAfterStaging.add(m[1]);
+}
+
+const staged = new Set();
+for (const entry of dm[1].split(/\s+/).filter(Boolean)) {
+  const full = join(args.source, entry);
+  if (!existsSync(full)) {
+    process.stderr.write(`WARN staging entry has no file in the source: ${entry}\n`);
+    continue;
+  }
+  if (statSync(full).isDirectory()) {
+    for (const rel of walk(full, args.source) ?? []) staged.add(rel);
+  } else {
+    staged.add(entry.split(sep).join('/'));
+  }
+}
+for (const rel of removedAfterStaging) staged.delete(rel);
+
 const sourceFiles = walk(args.source, args.source);
 if (!sourceFiles) dieConfig(`cannot read source dir: ${args.source}`);
 const sourceSet = new Set(sourceFiles);
 
 process.stdout.write(`source    : ${args.source}\n`);
 process.stdout.write(`installed : ${args.installed}\n`);
-process.stdout.write(`package   : ${pkg.name}@${pkg.version}   files[] entries: ${pkg.files.length}   shipped files: ${shipped.size}\n\n`);
+process.stdout.write(`package   : ${pkg.name}@${pkg.version}   files[] entries: ${pkg.files.length}   published files: ${shipped.size}   staged files: ${staged.size}\n\n`);
 
-// --- the shipped surface: the only thing that can fail ----------------------
+// --- the deployed surface: the only thing that can fail ----------------------
+// Compares what install.sh stages against what the profiles load. Published-but-
+// not-staged files are reported below, never silently dropped.
 let drift = 0;
 const missing = [];
 const differing = [];
 
-for (const rel of [...shipped].sort()) {
+for (const rel of [...staged].sort()) {
   const tag = MUST_MATCH.includes(rel) ? ' [must-match]' : '';
   const inInstalled = join(args.installed, rel);
   if (!existsSync(inInstalled)) {
     missing.push(rel);
     drift++;
-    process.stdout.write(`MISSING   ${rel}${tag}  — shipped per files[], absent from the installed copy\n`);
+    process.stdout.write(`MISSING   ${rel}${tag}  — staged by install.sh, absent from the installed copy\n`);
     continue;
   }
   const a = sha256(join(args.source, rel));
@@ -196,22 +244,31 @@ for (const rel of [...shipped].sort()) {
   }
 }
 
+const publishedNotStaged = [...shipped].filter((f) => !staged.has(f)).sort();
+if (publishedNotStaged.length) {
+  process.stdout.write(
+    `\nINFO  published to npm but deliberately NOT staged into the local copy (${publishedNotStaged.length})` +
+      ` — install.sh's own list, not a drift:\n`,
+  );
+  for (const f of publishedNotStaged) process.stdout.write(`        ${f}\n`);
+}
+
 // --- informational: things that do NOT decide the verdict -------------------
-const extras = installedFiles.filter((f) => !shipped.has(f)).sort();
-const authorOnly = sourceFiles.filter((f) => !shipped.has(f) && !installedSet.has(f)).sort();
+const extras = installedFiles.filter((f) => !staged.has(f)).sort();
+const authorOnly = sourceFiles.filter((f) => !staged.has(f) && !installedSet.has(f)).sort();
 
 if (extras.length) {
-  process.stdout.write(`\nINFO  present in the installed copy but not in files[] (${extras.length}) — npm never ships these; harmless:\n`);
+  process.stdout.write(`\nINFO  present in the installed copy but not staged by install.sh (${extras.length}) — harmless:\n`);
   for (const f of extras) process.stdout.write(`        ${f}\n`);
 }
 if (authorOnly.length) {
-  process.stdout.write(`\nINFO  in the source but not in the installed copy (${authorOnly.length}) — author-only, never shipped:\n`);
+  process.stdout.write(`\nINFO  in the source but not in the installed copy (${authorOnly.length}) — author-only, never staged:\n`);
   for (const f of authorOnly) process.stdout.write(`        ${f}\n`);
 }
 
 // --- verdict ----------------------------------------------------------------
-process.stdout.write(`\nSUMMARY shipped=${shipped.size} missing=${missing.length} differing=${differing.length} `);
-process.stdout.write(`extras=${extras.length} author-only=${authorOnly.length}\n`);
+process.stdout.write(`\nSUMMARY staged=${staged.size} missing=${missing.length} differing=${differing.length} `);
+process.stdout.write(`published-not-staged=${publishedNotStaged.length} extras=${extras.length} author-only=${authorOnly.length}\n`);
 
 if (drift > 0) {
   process.stderr.write(
