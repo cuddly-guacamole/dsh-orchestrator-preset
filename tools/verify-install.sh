@@ -93,9 +93,27 @@ PROFILE_DIR="$DSH_HOME_ABS/profiles/$PROFILE"
 PATCH_YML="$PROFILE_DIR/cordis.patch.yml"
 COMPOSED_CORDIS_YML="$PROFILE_DIR/cordis.yml"
 
-# The package name is read, never written down. It is the one string in this file
-# that changes on a rename, and a hardcoded copy of it is a bug that only fires
-# after the rename — which is exactly when nobody is looking at this script.
+# ── Which KEY is the bundle linked under? ────────────────────────────────────
+# ⚠️ The key is an ALIAS, and it is deliberately not the same string everywhere.
+#    `install.sh` stages the bundle locally and links it as
+#    `@local/dsh-orchestrator-preset-bundle` on purpose: a locally staged copy that
+#    occupied the already-published key could not be told apart from the npm
+#    package of the same name, and a resolver that quietly returned the published
+#    one instead of the local projection would be silently wrong. A profile may
+#    instead carry the npm name itself as the key — also fine. Both work at
+#    runtime; only ONE of them satisfies a hardcoded path, which is how this script
+#    used to fail a perfectly healthy web profile while desktop passed.
+#    ⇒ So we do NOT guess a key. We DISCOVER the link and judge it by IDENTITY:
+#      (1) a REAL symlink exists under this profile's node_modules — `test -L`,
+#          not `test -e`, because a link some tool silently degraded into a copy
+#          passes `test -e` and then freezes every later edit to the bundle;
+#      (2) read THROUGH that link: the TARGET directory's package.json `name`;
+#      (3) that name must equal the one in THIS repo's package.json (read above,
+#          never hardcoded here).
+#    The key may be `@quill507/…`, `@local/…`, or a third thing; the identity may
+#    not be wrong. A link aimed at a directory whose `name` differs MUST fail — if
+#    we accepted "some symlink exists", the check could not fail, and a check that
+#    cannot fail is not a check.
 BUNDLE_NAME="$(node -e "
   const fs = require('node:fs');
   process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).name || '');
@@ -104,7 +122,52 @@ if [ -z "$BUNDLE_NAME" ]; then
   echo "!! cannot read the package name from $REPO_ROOT/package.json" >&2
   exit 2
 fi
-BUNDLE_LINK="$PROFILE_DIR/node_modules/$BUNDLE_NAME"
+
+# Emits one line per node_modules entry whose TARGET package.json carries our
+# name: "<kind>\t<relative-path>", where kind is `link` or `dir`. Real directories
+# are reported too (not just links) so that check 2 can still say the useful
+# thing — "it is there, but it is a copy" — instead of a bare "missing".
+BUNDLE_ENTRIES="$( cd -- "$PROFILE_DIR" && BUNDLE_NAME="$BUNDLE_NAME" node --input-type=module -e '
+  import { readdirSync, lstatSync, readFileSync, realpathSync, existsSync } from "node:fs";
+  import { join } from "node:path";
+  const want = process.env.BUNDLE_NAME;
+  const nm = join(process.cwd(), "node_modules");
+  const out = [];
+  const consider = (rel) => {
+    const abs = join(nm, rel);
+    let st;
+    try { st = lstatSync(abs); } catch { return; }
+    const kind = st.isSymbolicLink() ? "link" : (st.isDirectory() ? "dir" : null);
+    if (!kind) return;
+    let pkg;
+    try { pkg = join(realpathSync(abs), "package.json"); } catch { return; }
+    if (!existsSync(pkg)) return;
+    let name = "";
+    try { name = JSON.parse(readFileSync(pkg, "utf8")).name || ""; } catch { return; }
+    if (name !== want) return;                 // identity gate — the key is ignored
+    out.push(kind + "\t" + rel);
+  };
+  let top = [];
+  try { top = readdirSync(nm, { withFileTypes: true }); } catch { process.exit(3); }
+  for (const e of top) {
+    if (e.name.startsWith(".")) continue;
+    if (e.name.startsWith("@")) {
+      let inner = [];
+      try { inner = readdirSync(join(nm, e.name), { withFileTypes: true }); } catch {}
+      for (const s of inner) consider(e.name + "/" + s.name);
+    } else consider(e.name);
+  }
+  process.stdout.write(out.join("\n"));
+' 2>/dev/null )" || BUNDLE_ENTRIES=""
+
+# Exactly one symlink must carry our identity. Anything else is reported by kind.
+BUNDLE_N_LINK="$(printf '%s\n' "$BUNDLE_ENTRIES" | grep -c '^link	' || true)"
+BUNDLE_N_DIR="$(printf '%s\n' "$BUNDLE_ENTRIES" | grep -c '^dir	' || true)"
+BUNDLE_LINK=""
+if [ "$BUNDLE_N_LINK" = "1" ]; then
+  BUNDLE_LINK="$PROFILE_DIR/node_modules/$(printf '%s\n' "$BUNDLE_ENTRIES" | grep '^link	' | head -1 | cut -f2)"
+  BUNDLE_KEY="$(printf '%s\n' "$BUNDLE_ENTRIES" | grep '^link	' | head -1 | cut -f2)"
+fi
 
 if [ ! -d "$PROFILE_DIR" ]; then
   echo "!! no such profile: $PROFILE_DIR" >&2
@@ -130,8 +193,24 @@ head_ "check 2 — the bundle link is a REAL symlink (unchanged form)"
 # so a link that some tool silently degraded into a real directory COPY still
 # passes it — and a copy freezes the bundle while every later edit to the real
 # bundle is ignored. Only `test -L` asks the question we actually mean.
-if [ -L "$BUNDLE_LINK" ]; then
-  ok "check 2  $BUNDLE_NAME is a real symlink"
+# The path is no longer assumed: it is the one discovered above BY IDENTITY, so
+# this check passes whichever key the profile happens to use.
+if [ -z "$BUNDLE_LINK" ]; then
+  if [ "$BUNDLE_N_DIR" -gt 0 ] 2>/dev/null; then
+    bad "check 2  it is there, but NOT a symlink — a copy would freeze the bundle"
+    note "test -e would have passed this; test -L is why the check exists"
+    note "$(printf '%s\n' "$BUNDLE_ENTRIES" | grep '^dir	')"
+  elif [ "$BUNDLE_N_LINK" -gt 1 ] 2>/dev/null; then
+    bad "check 2  ambiguous: $BUNDLE_N_LINK symlinks in node_modules all carry our name"
+    note "$(printf '%s\n' "$BUNDLE_ENTRIES" | grep '^link	')"
+    note "a profile should link this bundle exactly once"
+  else
+    bad "check 2  no entry in $PROFILE_DIR/node_modules is a bundle called $BUNDLE_NAME"
+    note "the key is an alias; this gate judges the TARGET's package.json name"
+    note "add the link: dependency to the profile's package.json, then pnpm install"
+  fi
+elif [ -L "$BUNDLE_LINK" ]; then
+  ok "check 2  $BUNDLE_KEY is a real symlink"
   note "-> $(readlink "$BUNDLE_LINK")"
 elif [ -e "$BUNDLE_LINK" ]; then
   bad "check 2  it exists but is NOT a symlink — a copy would freeze the bundle"
@@ -146,17 +225,30 @@ head_ "check 3 — the bundle is readable THROUGH the link (unchanged form)"
 # ===========================================================================
 # Present is not usable. This resolves package.json by the name the patch rows
 # use, so it proves the same resolution path the host takes at boot.
-if [ -L "$BUNDLE_LINK" ] || [ -e "$BUNDLE_LINK" ]; then
-  if ( cd -- "$PROFILE_DIR" && BUNDLE_NAME="$BUNDLE_NAME" node --input-type=module -e '
-       import { createRequire } from "node:module";
-       import { realpathSync } from "node:fs";
-       const r = createRequire(process.cwd() + "/package.json");
-       const p = r.resolve(process.env.BUNDLE_NAME + "/package.json");
-       process.stdout.write(realpathSync(p));' ) >"$TMP/resolved" 2>"$TMP/resolve.err"; then
-    ok "check 3  the bundle resolves by package name and its real path is reachable"
+# ⚠️ CHANGED FORM. This used to `require.resolve()` the bundle by its **npm name**
+#    from the profile. That works only when the link key IS the npm name, which is
+#    the desktop layout — so on web it reported "not resolvable by package name" for
+#    a bundle that resolves fine. Resolution-by-name is therefore the wrong
+#    instrument: it re-asks the key question this script already answered by
+#    identity. Read THROUGH the discovered link instead and assert the identity:
+#    the target directory's package.json `name` must equal the repo's own.
+#    Failable by construction — aim the link at a directory with a different `name`
+#    and this exits 1.
+if [ -n "$BUNDLE_LINK" ] && { [ -L "$BUNDLE_LINK" ] || [ -e "$BUNDLE_LINK" ]; }; then
+  if ( BUNDLE_LINK="$BUNDLE_LINK" BUNDLE_NAME="$BUNDLE_NAME" node --input-type=module -e '
+       import { readFileSync, realpathSync } from "node:fs";
+       const real = realpathSync(process.env.BUNDLE_LINK);
+       const pkg = JSON.parse(readFileSync(real + "/package.json", "utf8"));
+       if (pkg.name !== process.env.BUNDLE_NAME) {
+         process.stderr.write("target package.json name is `" + pkg.name +
+           "`, expected `" + process.env.BUNDLE_NAME + "`\n");
+         process.exit(1);
+       }
+       process.stdout.write(real + "\t" + pkg.name);' ) >"$TMP/resolved" 2>"$TMP/resolve.err"; then
+    ok "check 3  the bundle reads through the link and its name is $BUNDLE_NAME"
     note "-> $(cat "$TMP/resolved")"
   else
-    bad "check 3  present but NOT resolvable by package name:"
+    bad "check 3  the link does not read through as $BUNDLE_NAME:"
     note "$(head -3 "$TMP/resolve.err" | tr '\n' ' ')"
   fi
 else
