@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [归属与来源](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -101,7 +101,7 @@ node tools/gen-cordis-patch.mjs
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | 插件契约；这是真实的大版本边界 |
 | `@deepseek-ai/schemastery` | `>=3.18.0 <4` | 设置卡片据以生成的 `Config` schema |
 
-**下界写的是实际跑过的版本**，不是设计稿恰好参照过的更早版本。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
+**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 0.2.1-alpha.1 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
 
 ### 0. 宿主版本门
 
@@ -109,7 +109,18 @@ node tools/gen-cordis-patch.mjs
 dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 ```
 
-这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本，0.2.0-rc.2 是实际跑过的版本。**两者之间诚实的答案是「未测」**，这两个数字保持分开正是为此，而不是悄悄合并成一个。`install.sh --check` 只跑这个门，不写任何东西。
+这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本。此后本包**已在 0.2.1-alpha.1 上实跑**，并且**同时支持 0.2.0-rc.2 与 0.2.1-alpha.1**。旧措辞里那段诚实的「未测」区间 —— 设计版本与首次实跑版本之间的那一段 —— 已经从上方封口；装当前发布版不再可能掉进去。
+
+两个受支持的版本发布在**不同的 npm dist-tag** 上，这一点值得在动手选之前先知道：
+
+| 宿主版本 | npm dist-tag | 你会拿到什么 |
+|---|---|---|
+| `0.2.0-rc.2` | `latest`（同时也是 `next`） | `npm i -g @deepseek-ai/dsh` 直接装到的版本 |
+| `0.2.1-alpha.1` | `alpha` | **不在 `latest` 上** —— 必须显式指定该 tag |
+
+第二行正是旧措辞需要两个数字的原因，也是顶部徽章并列两个版本而不是只写一个的原因：两者都不是唯一的「当前发布版」。
+
+双线支持不是推断出来的。本包交给宿主包的每一个 config 字段 —— 都是对着两个已发布版本逐字段核对过的，不是推测 —— 在两版上都存在，类型、默认值与 schema 形状一致；且 `plan-mode` 在两版上都拒绝未知键，所以声明的 `section` 文本不会被一个容忍多余键的 schema 悄悄丢掉。`install.sh --check` 只跑版本门，不写任何东西。
 
 ### 1–4. 安装
 

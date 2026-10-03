@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [中文](README.zh.md) · [Notices](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -185,8 +185,10 @@ written down without any install being able to fail over it:
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | the plugin contract; a real major boundary |
 | `@deepseek-ai/schemastery` | `>=3.18.0 <4` | the `Config` schema the settings card is built from |
 
-The lower bounds name **the version this was actually run against**, not an earlier one the
-design happened to reference. The upper bounds follow the convention the published
+The lower bounds name **the oldest host version this is supported on** — 0.2.0-rc.2, which is
+also what `latest` still resolves to — not an earlier one the design happened to reference,
+and not the newest, because the preset is supported on 0.2.1-alpha.1 too (see
+[Host version gate](#0-host-version-gate)). The upper bounds follow the convention the published
 `@quill507/dsh-auto-approval-llm` uses on the same host packages. `optional: true` is what
 keeps the declaration honest: the coupling here is deep — `ctx.skills.registerProvider` is a
 host API — so a major change could break this silently, and saying so is worth more than
@@ -199,10 +201,28 @@ dsh --version          # install.sh refuses below 0.1.7-rc.1
 ```
 
 This is a hard check inside `install.sh`, and it is deliberately **looser** than the
-`peerDependencies` above: 0.1.7-rc.1 is the version the design was written against, while
-0.2.0-rc.2 is the version it has been run on. Between those two the honest answer is
-**untested**, and the two numbers are kept separate for that reason rather than quietly
-merged into one. `install.sh --check` runs this gate and writes nothing.
+`peerDependencies` above: 0.1.7-rc.1 is the version the design was written against. The
+preset has since been **run on 0.2.1-alpha.1**, and it is supported on **both 0.2.0-rc.2
+and 0.2.1-alpha.1**. The honest "untested" band the old wording described — the stretch
+between the design version and the first run version — is closed from the top; it is no
+longer a gap you can fall into by installing the current release.
+
+The two supported versions ship on **different npm dist-tags**, which is the part worth
+knowing before you pick one:
+
+| Host version | npm dist-tag | What you get |
+|---|---|---|
+| `0.2.0-rc.2` | `latest` (also `next`) | what a plain `npm i -g @deepseek-ai/dsh` installs |
+| `0.2.1-alpha.1` | `alpha` | **not** on `latest` — you must ask for the tag explicitly |
+
+That second row is the reason the old wording needed two numbers at all. It is also why the
+badge above lists both versions rather than one: neither is the single "current" release.
+
+Dual support is not a guess. Every config key this preset hands to a host package — checked
+field-by-field against both published versions, not inferred — exists on each with the same
+type, the same default and the same schema shape, and `plan-mode` rejects unknown keys on
+both, so the declared `section` text cannot be silently dropped by a schema that tolerates
+stray keys. `install.sh --check` runs the version gate and writes nothing.
 
 ### 1–4. Install
 
