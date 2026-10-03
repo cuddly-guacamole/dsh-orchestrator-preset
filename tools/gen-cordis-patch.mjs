@@ -2,7 +2,7 @@
 // gen-cordis-patch.mjs — 由声明清单渲染 $BUNDLE/cordis.patch.yml（含 --check 门禁）
 // ============================================================================
 //
-// 单一事实源：tools/preset-declaration.mjs（28 个 row 的声明）。
+// 单一事实源：tools/preset-declaration.mjs（30 个 row 的声明）。
 // 权威缩进参照：dsh-web-app/presets/standard.patch.yml（146 行，六级缩进 0/4/6/8/10/14）；
 //   **不得**用 profiles/*/cordis.yml（它是派生件，每级 2 空格且 `>` 折叠已破坏多行文本）。
 //
@@ -10,7 +10,7 @@
 //   node tools/gen-cordis-patch.mjs            # 写 $BUNDLE/cordis.patch.yml
 //   node tools/gen-cordis-patch.mjs --check    # 不写；**机器无关**地比较，不一致 ⇒ stale + exit 1
 //   node tools/gen-cordis-patch.mjs --help
-// 输出（stdout）：wrote <path> (29 rows) / ok <path> (29 rows) / stale <path>
+// 输出（stdout）：wrote <path> (30 rows) / ok <path> (30 rows) / stale <path>
 // exit：0 = 成功（写成功 / --check 通过）· 1 = --check 内容漂移 · 2 = 用法错误 / 输入非法
 // ⚠️ `--check` 排除**一行**：产物头部 `# Shell source:`（唯一按机器派生的部分）。只差那一行
 //    ⇒ 逐字段打 stderr 警告 + **exit 0**（宿主漂移信号，不是产物缺陷）。判据与理由见本文件
@@ -23,11 +23,12 @@
 // ⚠️ 但 lane 的 deny 值本身**不是**一份静态名单：静态项 + 按机器算的 MCP 闭包，渲染成一个 `!!js`
 //    plain scalar（见下方 denyExpr）。名字是否在本机存在由 `restrict()` 在派发时判定，生成期不判定。
 //
-// 行数口径（⚠️ 两套数字，别混）：`(29 rows)` = DESIGN §2.4 的口径
-//   （14 顶层 + 3 group + 3 delegation 控制 + 9 lane；= `topRows + groups + delegation.rows`），
+// 行数口径（⚠️ 三套数字，别混）：`(30 rows)` = 声明口径
+//   （15 顶层 + 3 group + 3 delegation 控制 + 9 lane；= `topRows + groups + delegation.rows`），
 //   这是计划 `:1216`/`:1220`/`:1228` 与 T08 `:1388` / T09 `:1512` 六处一致使用的数。
-//   而渲染出的 `- id:` 行数是 **34**（多出的 4 = planning 1 + compaction 3 个子行 —— 它们**确实渲染**，
-//   只是被 DESIGN 的算式折进其 group 条目里）⇒ 生成器把两个数都打印出来，不做数字粉饰。
+//   产物里 `plugins[]` 下的 `- id:` 行数是 **34**（多出的 4 = planning 1 + compaction 3 个子行 —— 它们**确实渲染**，
+//   只是被声明的算式折进其 group 条目里）；文件里 `- id:` 总行数是 **37**（再 +3 = preset 行 + 两个 bundle 级挂载行）。
+//   ⇒ 生成器把三个数都打印出来，不做数字粉饰。
 //
 // ⚠️ import 本模块**无副作用**（CLI 只在「直接执行」时运行）⇒ `import()` 只得到导出（供 T08/T09 复用）。
 

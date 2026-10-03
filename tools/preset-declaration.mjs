@@ -1,8 +1,8 @@
 // ============================================================================
-// preset-declaration.mjs — 新 preset 的 28 个 row 的唯一来源（声明清单）
+// preset-declaration.mjs — 新 preset 的 30 个 row 的唯一来源（声明清单）
 // ============================================================================
 //
-// 定位：把「28 个 row」从散文描述变成机器可读的单一来源，让 cordis.patch.yml 可再生成
+// 定位：把「30 个 row」从散文描述变成机器可读的单一来源，让 cordis.patch.yml 可再生成
 //       （DESIGN.md §14 D9「引入生成器」的对价；计划 T06 的产物）。
 //
 // 消费者：
@@ -37,7 +37,7 @@
 //    禁止在生成器里用它断言 / 拦截 deny / allow 名单（「生成期闭集断言」机制已按用户裁决删除，
 //    见 DESIGN.md §3.3.4 的 ⛔ 段）。它只供人读 + 产物自检。新的兜底 = 「首次派发时 loud 失败」。
 
-// 12 个顶层 row（配置值与 preset-standard 逐字一致）
+// 15 个顶层 row（13 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行；口径见 topRows 处）
 // 3 个 group · 3 个 delegation 控制行 · 9 个 lane 行
 
 export const presetId = 'dsh-orchestrator-preset'
@@ -449,7 +449,7 @@ export const LANES = [
   { tool: 'subagent_planner',   persona: 'planner.md',   maxDepth: 1, deny: READONLY_DENY },
 ]
 
-// ── 14 个顶层 row（12 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行）──────────────────────────
+// ── 15 个顶层 row（13 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行）──────────────────────────
 // ⚠️ 权威骨架 standard.patch.yml **自身带** 6 个 row（command-goal / tool-goal / workflow-ptc /
 //    tool-workflow / tool-ralph / present）⇒ 本 preset **不得**含这 6 个（DESIGN.md §2.3「删除项」）。
 //    ⚠️ **第 2 个新增挂载行 = `lane-composition`（T16，2026-09-25）**：它注册 Lead own-scope 的 3 个
@@ -459,6 +459,7 @@ export const topRows = [
   { id: 'routing-sections',   name: bundlePkg + '/routing-sections.mjs' },
   { id: 'lane-composition',   name: bundlePkg + '/lane-composition.mjs' },
   { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
+  { id: 'time-context',       name: '@deepseek-ai/dsh-time-context' },
   { id: 'tool-bash',          name: '@deepseek-ai/dsh-tool-bash',          disabled: "process.platform === 'win32'" },
   { id: 'tool-pwsh',          name: '@deepseek-ai/dsh-tool-pwsh',          disabled: "process.platform !== 'win32'" },
   { id: 'tool-fs',            name: '@deepseek-ai/dsh-tool-fs' },
