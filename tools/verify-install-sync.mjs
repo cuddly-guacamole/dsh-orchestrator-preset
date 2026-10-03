@@ -34,9 +34,14 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+
+// An env var set to whitespace is treated as unset, matching the host's own
+// `resolveDshHome()` priority rather than silently building `  /plugins/…`.
+const envTrim = (v) => (typeof v === 'string' ? v.trim() : '');
 
 const EXIT_OK = 0;
 const EXIT_DRIFT = 1;
@@ -45,7 +50,23 @@ const EXIT_CONFIG = 2;
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_SOURCE = REPO_ROOT;
 // The live profiles link-mount this path; it is a copy, not a symlink.
-const DEFAULT_INSTALLED = 'C:/Users/Administrator/.dsh/plugins/dsh-orchestrator-preset-bundle';
+//
+// Derived from the user's home, never written out. A literal `C:/Users/<someone>`
+// here was a machine-local absolute path in the shipped tree, and this file is
+// walked by `verify-install.sh` check 8, which is exactly the kind of leak that
+// check exists to catch — the gate was failing on the gate's own tooling. It also
+// meant the documented default (run it with no arguments) only worked on the one
+// machine that path was copied from.
+//
+// $DSH_HOME wins when it is set, matching `resolveDshHome()` in the host
+// (@deepseek-ai/dsh-home-paths): env var first, then ~/.dsh. install.sh stages
+// into that same plugins/ directory, so the two agree on where the copy lives.
+// Keep it a working default — the CLI documents running it bare.
+const DEFAULT_INSTALLED = join(
+  envTrim(process.env.DSH_HOME) || join(homedir(), '.dsh'),
+  'plugins',
+  'dsh-orchestrator-preset-bundle',
+);
 
 // Always compared byte for byte, regardless of what the whitelist says. These
 // two are what the preset actually is at runtime: the patch the loader applies
