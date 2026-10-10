@@ -150,6 +150,15 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 //    而本判据（按 `dsh-tool-schedule` 能否解析）在那种机器上仍返回 `[]` ⇒ lane **可能**拿到提醒工具。
 //    这是「按包解析」而不是「按注册表」判定的必然代价；要彻底消除需要运行时 guard（新增插件文件），
 //    不在本轮面内。它比「把 rc.2 全部 lane 打死」小得多，故接受。
+// ⑤ 🔻 **退休触发条件**（不写这一条，这段兼容逻辑就没有出口）：当支持矩阵**不再包含 `0.2.0-rc.2`** 时
+//    —— 判据 = README「Host version gate」的三版表删掉 rc.2 那一行，**或** `package.json` 的
+//    `peerDependencies` 下界越过 `0.2.0-rc.2` —— 本段整体退休：
+//      ① 删掉行的 `disabled`（`SCHEDULE_ABSENT_EXPR`），行变成裸一行（与官方 alpha 骨架同形）；
+//      ② 删掉 `SCHEDULE_DENY_EXPR` 这条尾巴，把那 4 个名字**移进**三份静态 deny 名单 —— 那时它们
+//         才真的是「每台机器都有」，而静态名单正是表达那件事的地方；
+//      ③ 随之删掉 `patch-contract.test.mjs` 第 10b 条的宿主门断言，与 `verify-install.sh` check 13
+//         的第三台模拟机器（`oldhost`）及其两条断言。
+//    ⇒ 在那之前，本段是**有理由的保留**（没有它 = rc.2 上每次 lane 派发都抛），不是可以顺手删掉的兜底。
 export const SCHEDULE_TOOLS = ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update']
 // 单引号、无 `: `、无 `#`、无反斜杠、无双引号 —— 这是 `!!js` **plain scalar** 的边界约束
 // （由 `gen-cordis-patch.mjs` 的 denyExpr 与 check 13 的求值测试共同兜住）。
