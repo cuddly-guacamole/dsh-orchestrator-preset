@@ -155,7 +155,7 @@ Unrelated projects sharing a similar name are not a source for anything in this 
 | `extensions/dsh/` | The bundle's two plugins: the skills provider, and the aegis prefix bridge. |
 | `docs/` | **Not distributed.** The design history is held back; the Design section above is the specification. |
 | `install.sh` | Installs everything below into a DSH home. |
-| `tools/verify-install.sh` | Twenty read-only checks that the preset is installed and selected. |
+| `tools/verify-install.sh` | Thirteen read-only checks that the preset is installed and selected. |
 | `README.zh.md` | The Chinese README. Same content, same obligations. |
 | `LICENSE` | MIT, plus third-party attribution. |
 
@@ -442,21 +442,26 @@ the file.
 ./tools/verify-install.sh web
 ```
 
-Is the preset really installed, and is it really the one selected? Twenty checks across
-eight groups, plain `PASS`/`FAIL` lines and a summary, exit non-zero if anything fails. It
-is **read-only**: it composes the profile tree in memory and never writes to a DSH home —
-check 5 asserts that rather than assuming it.
+Is the preset really installed, and is it really the one selected? Thirteen checks, plain
+`PASS`/`FAIL` lines and a summary, exit non-zero if anything fails. It is **read-only**: it
+composes the profile tree in memory and never writes to a DSH home — check 5 asserts that
+rather than assuming it.
 
 | # | What it checks |
 |---|---|
 | 1 | the profile patch selects this preset, exactly once |
 | 2 | the bundle link is a **real symlink** — `test -L`, never `test -e`, because a link silently degraded into a copy still passes `test -e` |
-| 3 | the bundle is **resolvable by package name** through the link, i.e. present *and* usable |
+| 3 | the bundle is **readable through the link**, and the target's `package.json` `name` is this repository's own — present is not the same as usable |
 | 4 | the patch generator is in sync, run with **`DSH_HOME` unset** |
 | 5 | the **composed** tree really selects this preset, with no occurrence of the pre-rename name, and the preset row present |
 | 6 | the four `orch-*` skills are installed, and the four retired unprefixed names are gone as directories |
 | 7 | the two shell rows read as this host deliberately configured them |
-| 8 | leak gate: no machine-local absolute path, no third-party skill name and no private-data token, in any **tracked** file |
+| 8 | leak gate over the **working tree** — no machine-local absolute path by shape, and no third-party skill name or private-data token outside `docs/`; the name rule needs a local uncommitted `tools/leak-needles.local.txt`, and when that file is absent it prints a `WARN` saying the name rules did not run while this check's line still reports `PASS` |
+| 9 | every `aegis-*` target in the routing table resolves to a skill the installed pack actually provides — a dangling row fails silently |
+| 10 | the zh description table still matches the installed pack — a stale key fails silently |
+| 11 | no client-bundle declaration has come back into this package — dead by construction, so absence is the only thing a gate can assert |
+| 12 | what npm would publish is still what `package.json`'s `files` says — a directory entry ships the **working tree**, not the tracked set |
+| 13 | the lane deny lists name no tool that only **this** machine is guaranteed to have — a name this machine lacks breaks the lane on the next one |
 
 **Check 4 runs with `DSH_HOME` unset on purpose.** The generator resolves its skeleton
 from `$DSH_HOME` and falls back to `~/.dsh`, so a shell that happens to export the variable

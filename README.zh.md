@@ -61,6 +61,27 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 
 ---
 
+## 来源：哪些是上游的，哪些是在这里实测的
+
+这件事值得比通常更较真，因为一个 preset 就是一堆关于别人运行时的主张。
+
+| 主张 | 状态 |
+|---|---|
+| bundle 通过 `package.json` 里的 `dsh.bundle.patch` 字段声明自己的 patch，例如 `"patch": "./cordis.patch.yml"`。 | **上游契约。** 在已发布的 `@deepseek-ai/dsh-base` manifest 里逐字如此，那份 manifest 还把这份 patch 作为一个 subpath 导出。 |
+| 靠后的 patch 层胜出，且 patch 是**整行替换**而不是深合并 —— 所以一个覆盖 `config` 的行必须重述它需要的每一个键。 | **两次独立印证。** |
+| 精确的层序：先按 `dsh.profile.bundles` 的顺序应用各 bundle patch，然后是 profile 自己的 `cordis.patch.yml`，然后是 `$DSH_HOME/cordis.patch.yml`，最后是每个 `--patch` 覆盖层。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
+| 一个 profile 位于 `~/.dsh/profiles/<name>/`，内含 `cordis.yml`、`cordis.patch.yml` 与 `package.json`。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
+| `config.selectedDefault` 在 preset 的 schema 里，且是生效的那个值；schema 里还有 `config.default`，而 `defaultId` 解析 `selectedDefault ?? default`。 | **在宿主 0.2.0-rc.1 上实测**，对着 `@deepseek-ai/dsh-agent-preset-registry`。 |
+| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测。** 在 `0.2.0-rc.2` 与 `0.2.1-alpha.1` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**在 `0.2.1-alpha.2` 上不存在**（只有 `provider`/`model`）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。 |
+| `tool-subagent` 的 `Config` 接受 `backgroundMode`。 | **随版本而异。** 在 `0.2.1-alpha.1` 上存在（`lib/index.js:257`），**在 `0.2.1-alpha.2` 上不存在**。schemastery 容忍未知键，所以这次移除是静默的 —— 已把两种写法都喂给已装 schema 核过。continuable 现在由 provider 的 `prepareContinuable` 决定（`lib/index.js:323`），spawn 与 fork 在两个版本上都实现了它。 |
+| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测。** 它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。 |
+| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **假的，而这正是本 preset 唯一一条按版本分档的行存在的原因。** npm 上它发布在 `0.0.1-rc.2`（另一代）、`0.2.1-alpha.1` 与 `0.2.1-alpha.2` —— **没有 `0.2.0-rc.2`**。`dsh@0.2.0-rc.2` 不依赖它，它旗下的 app 包也都不依赖，rc.2 的骨架里没有这样一行；rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`。 |
+| lane 的 `toolFilter.deny` 若点了一个宿主没注册的工具，会在派发时响亮失败，而不是在挂载时。 | **在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 上实测，行为一致。** `tools.restrict()` 抛 `names unknown global tool`（`dsh-tools/lib/index.js:2895-2908`），而 `dsh-subagent` 在组合一个 child 时不加保护地调用它（`lib/index.js:401`）—— 所以一份硬编码的 `schedule_*` deny 清单会在 `latest` 上**弄坏每一次 lane 派发**。 |
+
+DeepSeek Harness 采用 MIT 许可：[`github.com/deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)。同名但无关的项目，不是本仓库里任何东西的来源。
+
+---
+
 ## 仓库结构
 
 | 路径 | 是什么 |
@@ -76,8 +97,9 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 | `skills/` | 四个自研技能。本目录就是它们的权威清单。 |
 | `extensions/dsh/` | 本包的两个插件：技能 provider，以及 aegis 前缀桥。 |
 | `docs/` | **不分发。** 设计史被留存；上文的设计一节即是规范。 |
-| `README.zh.md` | 本文件。 |
+| `README.zh.md` | 中文 README。同样的内容，同样的义务。 |
 | `install.sh` | 把下面这些装进一个 DSH home。 |
+| `tools/verify-install.sh` | 十三项只读检查：preset 已安装且已被选中。 |
 | `LICENSE` | MIT 许可 + 第三方归属。 |
 
 **改 preset 的正确姿势**：`cordis.patch.yml` 带「DO NOT EDIT BY HAND」头，是生成出来的。改 `tools/preset-declaration.mjs`，然后：
@@ -92,7 +114,7 @@ node tools/gen-cordis-patch.mjs
 
 ## 安装
 
-安装方式是 **`link:` 依赖**，本包**同时也发布在 npm 上**（`@quill507/dsh-orchestrator-preset`，当前版本 `0.1.6`，即 `latest` dist-tag）。`package.json` **没有** `"private"` 键。profile 用**与 registry 相同的名字**投影该 bundle ⇒ 本地投影与已发布的包**只能靠「指向哪里」区分，不能靠名字**（这正是 `tools/verify-install.sh:96-105` 记录的设计顾虑；统一到 npm 名是用户知情的例外，代价记在该注释旁）。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
+安装方式是 **`link:` 依赖**，本包**同时也发布在 npm 上**（`@quill507/dsh-orchestrator-preset`，当前版本 `0.1.6`，即 `latest` dist-tag）。`package.json` **没有** `"private"` 键。profile 用**与 registry 相同的名字**投影该 bundle ⇒ 本地投影与已发布的包**只能靠「指向哪里」区分，不能靠名字**（这正是 `tools/verify-install.sh:96-105` 记录的设计顾虑；统一到 npm 名是用户知情的例外 —— 代价与为何被接受，见[发布到 npm](#发布到-npm)）。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
 
 | 包 | 范围 | 为什么 |
 |---|---|---|
@@ -103,7 +125,7 @@ node tools/gen-cordis-patch.mjs
 
 **下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 0.2.1-alpha.1 **与 0.2.1-alpha.2** 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
 
-**受支持集合是三个版本，而这是一条实测结论，不是抄来的。** 每一个都是对着它自己那份已发布 tarball 核过的，没有假设它可以从邻居推出来：0.2.1-alpha.2 拿掉了本包此前依赖的两样东西（`{{cwd}}` 这个已注册的提示词变量，以及 `tool-subagent` 上的 `backgroundMode` 键）。三版之间的差异**没有一处**是被静默容忍的 —— 凡是必须改的行，都改成了**三版都合法**的写法（两张键的去留见本节末尾的键变更表），因为一个只在最新宿主上正确的 preset，在另外两版上就不叫受支持。
+**受支持集合是三个版本，而这是一条实测结论，不是抄来的。** 每一个都是对着它自己那份已发布 tarball 核过的，没有假设它可以从邻居推出来：0.2.1-alpha.2 拿掉了本包此前依赖的两样东西（`{{cwd}}` 这个已注册的提示词变量，以及 `tool-subagent` 上的 `backgroundMode` 键）。三版之间的差异**没有一处**是被静默容忍的 —— 凡是必须改的行，都改成了**三版都合法**的写法（见[来源](#来源哪些是上游的哪些是在这里实测的)），因为一个只在最新宿主上正确的 preset，在另外两版上就不叫受支持。
 
 有一项能力是**按宿主分档**而不是三版齐平的，值得单独点名：Lead 的持久提醒（`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`）来自 `@deepseek-ai/dsh-tool-schedule`，而**这个包在 `0.2.0-rc.2` 上不存在**。所以挂载它的那一行带一个 `disabled` 表达式，问宿主「这个包解析得到吗」；9 条 lane 的 deny 尾巴问同一个问题，只在包存在的地方加上那 4 个名字。在 `0.2.0-rc.2` 上本 preset 的行为与 0.1.5 完全一致 —— 那项能力只是不在那儿，因为它本来就不在那台宿主上。在 `0.2.1-alpha.1` 与 `0.2.1-alpha.2` 上，Lead 有提醒，而**任何被派出的子代理都没有**：9 条具名 lane deny 它们，`subagent_fork` 控制行也 deny（fork 出来的 child 同样是子代理 —— 与官方 `standard` 骨架在它两条 subagent 行上的做法同形）。`tools/verify-install.sh` 的 check 13 会**模拟**那台没有这个包的宿主，并在那 4 个名字出现时失败 ⇒ 这件事不会悄悄回归。
 
@@ -143,7 +165,7 @@ dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 DSH_HOME=/some/other/home ./install.sh
 ```
 
-手做的话：
+从一个 clone 安装时，它把 bundle stage 到 `<DSH_HOME>/plugins/dsh-orchestrator-preset-bundle/`，并校验 per-profile 符号链接。不往 `~/.dsh/skills/` 拷任何东西，也没有伴随插件：四个技能由本 bundle 自己的 provider 提供，aegis 前缀桥由生成器产出的一行挂载。手做的话：
 
 ```sh
 # 1. 复制 bundle
@@ -153,6 +175,7 @@ cp -r . ~/.dsh/plugins/dsh-orchestrator-preset-bundle/
 #    跑 `pnpm install` —— 链接由 pnpm 从 link: 依赖生成。
 #    用 test -L 校验，绝不用 test -e：Git Bash 会把链接静默降级成复制，
 #    而复制品能通过 test -e，却会冻结此后对 bundle 的每一次编辑。
+test -L ~/.dsh/profiles/web/node_modules/@quill507/dsh-orchestrator-preset && echo "real symlink"
 
 # 3. 四个自研技能**不需要安装步骤** —— 它们随包自带，由 extensions/dsh/index.js
 #    这个 filesystem skill provider 提供；该 provider 由生成的 patch 挂载，且
@@ -234,6 +257,73 @@ patch 是**整行替换**而非深度合并，所以上面那段是完整的一�
 **lane 表现得像是丢了 shell 工具。** preset 同时声明两个 shell —— `tool-bash` 与 `tool-pwsh` —— 各自按 `process.platform` 开关，所以在 Windows 上 preset 要的是 `pwsh`。在 profile 层**之后**应用的一层可以覆盖它，`~/.dsh/cordis.patch.yml` home 层就是这样一个地方：一个在 Windows 上只用 bash 的宿主，会在那里强制 `tool-bash: disabled: false` 与 `tool-pwsh: disabled: true`。这是**部署事实，不是缺陷** —— preset 不要求 `pwsh`，而「被禁用的工具」仍然是「已知的工具」，所以 lane 用 bash 一样派发和工作正常。看起来 lane 丢了 shell 时，先查你自己的 home 层或 profile 层，再怀疑 preset：home 层优先，而且是静默优先。另需注意，生成器派生 lane `toolFilter` 里那个 shell 名字时，读的是 host 层与 preset 自己各行**两处**的生效值，所以改动那个 override 就意味着要重跑 `node tools/gen-cordis-patch.mjs`。本 preset 不为迁就任何特定 shell 安排而改动任何 tool 行、filter 或 persona。
 
 **persona 前缀是空的。** `plan-aware-persona` 对缺失或空的 persona 文件**响亮失败**，而不是悄悄剥掉 agent 的身份。读报错：它会点名那个文件。
+
+---
+
+## 验证安装
+
+```sh
+./tools/verify-install.sh            # 检查 "desktop" profile
+./tools/verify-install.sh web
+```
+
+preset 真的装上了吗，装的真的是被选中的那一个吗？十三项检查，朴素的 `PASS`/`FAIL` 行加一行汇总，任何一项失败就以非零退出。它是**只读**的：在内存里组合 profile 树，从不写入任何 DSH home —— check 5 断言的是这件事本身，而不是假设它。
+
+| # | 检查什么 |
+|---|---|
+| 1 | profile patch 选中了本 preset，且恰好一次 |
+| 2 | bundle 链接是**真符号链接** —— `test -L`，绝不用 `test -e`，因为一个被静默降级成复制的链接照样能通过 `test -e` |
+| 3 | bundle **能穿过链接读出**，且目标的 `package.json` `name` 就是本仓库自己的 —— 存在不等于可用 |
+| 4 | patch 生成器与产物同步，运行时 **`DSH_HOME` 未设置** |
+| 5 | **组合出来的**树确实选中了本 preset，旧名一次都不出现，且 preset 行在场 |
+| 6 | 四个 `orch-*` 技能已安装，四个已退役的无前缀名作为目录已消失 |
+| 7 | 两条 shell 行读出来的正是这台宿主刻意配置的样子 |
+| 8 | 泄漏门扫的是**工作树** —— 按形状抓机器本地绝对路径，并抓 `docs/` 之外的第三方技能名与私密数据 token；名称规则需要一份本地未提交的 `tools/leak-needles.local.txt`，该文件不存在时它会打印 `WARN` 说明名称规则未运行，而这一条检查**仍然报 `PASS`** |
+| 9 | 路由表里每个 `aegis-*` 目标都能解析到已装包真正提供的技能 —— 悬空的行是静默失败 |
+| 10 | zh 描述映射表仍与已装的方法包一致 —— 陈旧的键是静默失败 |
+| 11 | 没有任何 client-bundle 声明回到本包 —— 按构造即死代码，所以「不在」是门唯一能断言的事 |
+| 12 | npm 会发布的东西仍与 `package.json` 的 `files` 所说一致 —— 目录条目发的是**工作树**，不是被跟踪的集合 |
+| 13 | 各 lane 的 deny 清单不点名「只有**这台**机器保证有」的工具 —— 这台机器没有的名字会让 lane 在下一台机器上坏掉 |
+
+**check 4 刻意在 `DSH_HOME` 未设置的情况下运行。** 生成器从 `$DSH_HOME` 解析骨架、回退到 `~/.dsh`，所以一个碰巧导出了该变量的 shell 解析得通，而一个干净的 shell 解析不通 —— 后者被读成了「这工具坏了」。该工具此后已被修好、会回退，所以这项检查是去证明它，而不是假设它。
+
+**check 5 组合树，而不是读 `cordis.yml`，** 因为 `cordis.yml` 回答不了这个问题：它是宿主每次启动都会重写的四行空根，所以它结构上装不下那些行，往里倒的任何东西都会在下次启动时死掉。`dsh --profile <name> --dump-config` 也不可用 —— 启动器对 `desktop` 这类由 Electron 管理的 profile 直接拒绝它。所以脚本调用宿主自己的只读 loader，跳过重写 `cordis.yml` 的那一步，再对组合出来的输出做 grep。
+
+---
+
+## 依赖
+
+本 bundle 没有任何运行时 npm 依赖。它 import `@deepseek-ai/dsh-tools`（为了 `lane-composition.mjs` 里的 `defineTool`），npm 生态里别的什么都不 import；那个包由**宿主**提供，这就是它在这里既不是 `dependency` 也不是 `peerDependency` 的原因。
+
+persona 文件在运行时按深路径解析（`createRequire(baseUrl).resolve('@quill507/dsh-orchestrator-preset/personas/scout.md')`）。`baseUrl` 由宿主注入，所以解析与 bundle 装在哪里无关。有一处脆弱点值得点名：`package.json` **没有 `exports` 字段**，所以那些深层 `.md` 路径目前是靠 Node 的 legacy no-exports 行为解析的。一份显式的 `exports` 映射会更稳，它列在下面的 npm 待办里。
+
+---
+
+## 发布到 npm
+
+**这件事已经做了。** 包以 `@quill507/dsh-orchestrator-preset` 发布；`npm view @quill507/dsh-orchestrator-preset versions` 列出 `0.1.0` 到 `0.1.6`，`dist-tags.latest` 是 `0.1.6`。运行时 specifier 就是 npm 名 —— `@local/` 别名在本 bundle 上已不再使用。
+
+- **拥有全部 specifier 的那一行**是 `tools/preset-declaration.mjs:45`，`export const bundlePkg = '@quill507/dsh-orchestrator-preset'`。这一个常量拥有生成的 `cordis.patch.yml` 里全部 **14** 处 specifier 引用。实测命令：`grep -o '@quill507/dsh-orchestrator-preset/[A-Za-z0-9._/-]*' cordis.patch.yml | sed 's|@quill507/dsh-orchestrator-preset/||' | sort -u`，它返回 14 条互异路径：**3 个 `.mjs`**（`lane-composition.mjs`、`plan-aware-persona.mjs`、`routing-sections.mjs`）、**2 个 `.js`**（`extensions/dsh/index.js`、`extensions/dsh/aegis-prefix.js`）与 **9 个 persona `.md`**。改那一行，然后跑 `node tools/gen-cordis-patch.mjs` —— 不需要别的改动，也没有任何 persona 文件受影响。（`personas/orchestrator.md` 是被内联的，不是按文件解析的，所以它正确地不在那份列表里。）
+- **在此之外还有一件事没解决**：`skills/` 下那四个技能是纯 Markdown，没有 npm 故事，需要一个 postinstall 步骤把它们拷进某个 profile 的技能目录。包上了 registry 之后这件事更要紧，因为一次 npm install 会把那些 Markdown 送到，却不把它放到任何 profile 会去读的地方。`exports` 映射与「第二个包」这个问题都已了结 —— 映射有了，而伴随插件被折进 `extensions/dsh/aegis-prefix.js`，没有作为独立包发布。
+- **已发布的包与 profile 的本地投影共用一个名字**，因为两者都是 `@quill507/dsh-orchestrator-preset`。名字上没有任何东西能区分它们；唯一的差别是各自解析到的目标 —— profile 的 `node_modules` 符号链接指向本地 stage 的 bundle，而 registry 那份是真正的 tarball。这正是 `tools/verify-install.sh:96-105` 记录的那个顾虑：原始设计把两个键区分开（`@local/…` 对 npm 名），好让「解析器返回了已发布包而不是本地投影」不可能静默发生。统一到 npm 名是对那条规则的一次**知情、且经用户批准的例外**；它接受的代价记在那条注释旁。读者不该把这个共用的名字当成巧合。
+
+### 技能 provider 架构 —— 已采纳，刻意未建
+
+**这没有实现，也没有测试。** 记录下来，是因为 owner 已把它采纳为*下一轮*的做法，也因为它会改掉上面两项。
+
+做法是：**挂载一个插件，让它调用 `@deepseek-ai/dsh-skill-filesystem` 的 `apply()`**，配置 `includeDefaultRoots: false` 与指向本包自己 `skills/` 树的 `bundledSkillDir`。它与 aegis 给自己的随包技能用的那约 12 行形状相同。这个包从本 bundle 里已经可解析，**零新增依赖**，而且它导出 `apply`、`FileSystemSkillProvider` 与 `Config` —— 所以入口已经在那儿；缺的是调用点与注册。
+
+**它会删掉什么：**
+
+- **安装第 3 步消失。** 不再需要把四个技能拷进全局 `~/.dsh/skills/`，因为 provider 从包内提供它们。这同时替用户去掉了「一次只拷一个目录、绝不整棵树拷」的那个坑。
+- **npm 待办第 5 条随之消失** —— postinstall 拷技能那一步正是这套架构存在的理由，所以那一条应当从上面的清单里划掉，而不是被解决。
+
+**它的代价，以及代价正是它被推迟的原因：**
+
+- **它会改掉生成的 `cordis.patch.yml`。** 必须声明一行新插件，于是 patch 被重新生成，它当前已核的 md5 —— `ba04ddbeb2eaa82bcb9f6d2df00fc219` —— 不再是期望值。任何钉住那个摘要的东西都得跟着更新。
+- 重新生成必须真的做、并对着宿主重新验证，不能只是推理：那个能逐字节复现今天这份 patch 的生成器，正是会产出新 patch 的东西；而一行挂载失败的 skill-provider 行，会在**运行时**而不是安装时弄丢那四个技能。
+
+现在做，意味着为一个还没人要求的收益，去改动运行中安装的技能面。推迟的代价只是一份过期的 `cordis.patch.yml` 摘要。
 
 ---
 
