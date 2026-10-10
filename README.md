@@ -175,10 +175,12 @@ command produces from the committed declaration.
 
 ## Installation
 
-The install method is a **`link:`** dependency, not an npm publish. `package.json` carries
-`"private": true` **precisely so the `@local/`-scoped name can never be published by
-accident** — that guard is what makes the current name safe, and it is the flag to remove at
-the moment of any real publication (see [Publishing to npm](#publishing-to-npm-future-work-not-yet-done)).
+The install method is a **`link:`** dependency, and the package is **also published to npm**
+as `@quill507/dsh-orchestrator-preset` (current version `0.1.6`, the `latest` dist-tag).
+`package.json` carries **no** `"private"` key. A profile projects the bundle under **the same
+name** the registry publishes it under, so a local projection and the published package are
+told apart by **where they point**, not by their names — see
+[Publishing to npm](#publishing-to-npm) for what that costs and why it was accepted.
 The package declares **no** `dependencies` — the host supplies everything at runtime. It does
 declare `peerDependencies`, all four marked `optional`, so that what it was tested against is
 written down without any install being able to fail over it:
@@ -486,35 +488,39 @@ deep `.md` paths currently resolve through Node's legacy no-exports behaviour. A
 
 ---
 
-## Publishing to npm (future work, not yet done)
+## Publishing to npm
 
-**None of this has been done, attempted or tested.** It is recorded so the path is not
-rediscovered from scratch. The runtime specifier is still `@local/`, and that is a
-deliberate deferral, not an oversight: renaming the runtime specifier means re-linking and
-re-verifying a working desktop installation, which is not a cost worth paying for a
-packaging change nobody has asked for yet.
+**This has been done.** The package is published as `@quill507/dsh-orchestrator-preset`;
+`npm view @quill507/dsh-orchestrator-preset versions` lists `0.1.0` through `0.1.6`, and
+`dist-tags.latest` is `0.1.6`. The runtime specifier is the npm name — the `@local/` alias
+is no longer used for this bundle.
 
-If it is wanted later:
-
-- **The package name** it would take is currently undecided; it must match the bundle
-  directory name's tail segment, and it must stop being `@local/`-scoped.
-- **The one line that must change** is `tools/preset-declaration.mjs:45`,
-  `export const bundlePkg = '@quill507/dsh-orchestrator-preset'`. That single constant
-  owns all 12 specifier references in the generated `cordis.patch.yml`; the 12 resolve to 12
-  distinct files (3 `.mjs` and 9 persona `.md`). Change that one line, then run
+- **The one line that owns every specifier** is `tools/preset-declaration.mjs:45`,
+  `export const bundlePkg = '@quill507/dsh-orchestrator-preset'`. That single constant owns
+  all **14** specifier references in the generated `cordis.patch.yml`. Measured with
+  `grep -o '@quill507/dsh-orchestrator-preset/[A-Za-z0-9._/-]*' cordis.patch.yml | sed 's|@quill507/dsh-orchestrator-preset/||' | sort -u`,
+  which returns 14 distinct paths: **3 `.mjs`** (`lane-composition.mjs`,
+  `plan-aware-persona.mjs`, `routing-sections.mjs`), **2 `.js`** (`extensions/dsh/index.js`,
+  `extensions/dsh/aegis-prefix.js`) and **9 persona `.md`**. Change that one line, then run
   `node tools/gen-cordis-patch.mjs` — no other edit is needed, and no persona file is
   affected. (`personas/orchestrator.md` is inlined rather than file-resolved, so it is
   correctly absent from that list.)
-- **Two things beyond that are unsolved**: the four skills under `skills/` are plain Markdown
-  with no npm story and would need a postinstall step to copy them into a profile's skills
-  directory; and `package.json` carries `"private": true`, which npm refuses to publish.
-  The `exports` map and the second-package question are both settled — the map exists, and
-  the companion plugin was folded into `extensions/dsh/aegis-prefix.js` rather than shipped
-  as its own package.
-- **`"private": true` must be removed** at the moment of publication. It is the guard that
-  currently makes the name safe to have.
-- **The npm account does not exist yet** on the public registry, so publication is blocked
-  on account setup, not on the code.
+- **One thing beyond that remains unsolved**: the four skills under `skills/` are plain
+  Markdown with no npm story and would need a postinstall step to copy them into a profile's
+  skills directory. This matters more now that the package is on the registry, because an
+  npm install delivers the Markdown without placing it anywhere a profile reads. The
+  `exports` map and the second-package question are both settled — the map exists, and the
+  companion plugin was folded into `extensions/dsh/aegis-prefix.js` rather than shipped as
+  its own package.
+- **The published package and a profile's local projection share one name**, because both
+  are `@quill507/dsh-orchestrator-preset`. Nothing distinguishes them by name; the only
+  difference is the target each resolves to — a profile's `node_modules` symlink points at
+  the locally staged bundle, while the registry copy is a real tarball. This is the exact
+  concern recorded in `tools/verify-install.sh:96-105`, where the original design kept the
+  keys distinct (`@local/…` versus the npm name) so that a resolver returning the published
+  package instead of the local projection could not happen silently. Unifying on the npm
+  name is a **deliberate, user-approved exception** to that rule; the cost it accepts is
+  recorded next to that comment. A reader should not take the shared name for a coincidence.
 
 ### The skill-provider architecture — adopted, deliberately not built
 

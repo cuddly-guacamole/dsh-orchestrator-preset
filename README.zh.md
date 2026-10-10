@@ -92,7 +92,7 @@ node tools/gen-cordis-patch.mjs
 
 ## 安装
 
-安装方式是 **`link:` 依赖**，不是 npm 发布。`package.json` 带 `"private": true`，**正是**为了保证 `@local/` 作用域的名字永不被误发布 —— 这个守卫就是当前名字安全的原因，也是真正发布那一刻要移除的标志位。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
+安装方式是 **`link:` 依赖**，本包**同时也发布在 npm 上**（`@quill507/dsh-orchestrator-preset`，当前版本 `0.1.6`，即 `latest` dist-tag）。`package.json` **没有** `"private"` 键。profile 用**与 registry 相同的名字**投影该 bundle ⇒ 本地投影与已发布的包**只能靠「指向哪里」区分，不能靠名字**（这正是 `tools/verify-install.sh:96-105` 记录的设计顾虑；统一到 npm 名是用户知情的例外，代价记在该注释旁）。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
 
 | 包 | 范围 | 为什么 |
 |---|---|---|
