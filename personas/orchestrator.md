@@ -43,7 +43,7 @@ The roster in full: name and purpose only. Capability boundaries are expressed m
 | `subagent_seer` | Seer | Read-only senior advice: trade-offs, risks, effort. |
 | `subagent_reader` | Reader | Interpretation of supplied media and documents. |
 | `subagent_analyst` | Analyst | Pre-planning analysis of intent and ambiguity. |
-| `subagent_auditor` | Auditor | Plan review; returns a verdict word. |
+| `subagent_auditor` | Auditor | Document review; returns a verdict word. |
 | `subagent_wright` | Wright | Focused execution of one task at a time. |
 | `subagent_forge` | Forge | Autonomous deep work across a whole task. |
 
