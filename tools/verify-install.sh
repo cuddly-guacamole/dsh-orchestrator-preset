@@ -175,6 +175,54 @@ if [ ! -d "$PROFILE_DIR" ]; then
 fi
 
 # ===========================================================================
+# Does THIS profile have to select this preset?
+# ===========================================================================
+# The selection checks (1 and 5's selection leg) ask a real question — "is this
+# preset the one this profile runs?" — but the answer is not always "yes", and
+# conflating the two states is what made `web` look broken while it was healthy.
+#
+#   * `desktop` runs this preset: its patch says
+#     `selectedDefault: dsh-orchestrator-preset`, and if that line ever disappears
+#     the preset has silently stopped being what the user actually runs. FAIL.
+#   * `web` deliberately selects the shipped `standard` preset instead. That is a
+#     choice the user made in their own profile, not a defect in this package:
+#     `~/.dsh/profiles/**` is off-limits to install.sh, and DSH presets are chosen
+#     per workspace, so `selectedDefault` there is only the fallback an API-created
+#     session gets. Asserting this preset is selected would be asserting the user's
+#     configuration is wrong. WARN.
+#
+# So the expectation is DECLARED per profile, and it fails closed: a profile not
+# named here must select this preset. A blanket downgrade of check 1/5 to WARN
+# would have been the other way to make `web` green, and it would have blinded
+# this script to the one regression it exists to catch — desktop losing its
+# selection. Adding a profile that legitimately selects something else means
+# adding it here, on purpose, with a reason.
+case "$PROFILE" in
+  web)
+    SELECTION_EXPECTED=0
+    SELECTION_WHY="profile 'web' selects the shipped 'standard' preset on purpose (user's own profile; presets are chosen per workspace, so this key is only the API fallback)"
+    ;;
+  *)
+    SELECTION_EXPECTED=1
+    SELECTION_WHY="profile '$PROFILE' is not declared as selecting another preset, so it must select this one"
+    ;;
+esac
+
+# One place decides how a failed selection expectation is reported, so check 1 and
+# check 5 cannot drift into disagreeing about it.
+selection_verdict() {  # $1 = message, $2 = indented evidence line(s)
+  if [ "$SELECTION_EXPECTED" = "1" ]; then
+    bad "$1"
+    note "why this is required: $SELECTION_WHY"
+  else
+    warn "$1"
+    note "not a failure: $SELECTION_WHY"
+  fi
+  [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/      /'
+  return 0
+}
+
+# ===========================================================================
 head_ "check 1 — the profile patch selects this preset (unchanged form)"
 # ===========================================================================
 # Still valid exactly as originally written. The row lives in the profile's own
@@ -183,7 +231,9 @@ n="$(grep -c 'selectedDefault: dsh-orchestrator-preset$' "$PATCH_YML" 2>/dev/nul
 if [ "$n" = "1" ]; then
   ok "check 1  selectedDefault: dsh-orchestrator-preset occurs exactly once in the profile patch"
 else
-  bad "check 1  expected exactly 1 occurrence, found $n  ($PATCH_YML)"
+  selection_verdict \
+    "check 1  expected exactly 1 occurrence, found $n  ($PATCH_YML)" \
+    "$(grep -n 'selectedDefault:' "$PATCH_YML" 2>/dev/null || echo '(no selectedDefault line at all)')"
 fi
 
 # ===========================================================================
@@ -343,7 +393,13 @@ else
   if [ "$c_sel" -ge 1 ]; then
     ok "check 5  the composed tree really selects dsh-orchestrator-preset ($c_sel row(s))"
   else
-    bad "check 5  the composed tree does NOT select this preset"
+    # Same declared expectation as check 1 — one decision, reported in both places.
+    # ⚠️ Only the SELECTION leg is conditional. The two legs below are about this
+    #    package's own artifact (a stale name, a missing row) and stay hard for
+    #    every profile: they are wrong regardless of which preset the profile runs.
+    selection_verdict \
+      "check 5  the composed tree does NOT select this preset" \
+      "$(grep -n 'selectedDefault:' "$TMP/composed.yml" 2>/dev/null | head -3 || echo '(no selectedDefault line in the composed tree)')"
   fi
   if [ "$c_stale" = "0" ]; then
     ok "check 5  no occurrence of the pre-rename name 'new-orchestration'"
@@ -932,15 +988,28 @@ INSTALLED_JSON="$BUNDLE_LINK/cordis.patch.yml"
 if [ ! -f "$DENY_JSON" ]; then
   bad "check 13  no artifact to evaluate at $DENY_JSON — nothing was evaluated"
 else
-  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" node --input-type=module -e '
+  # The "old host" base: a directory that exists but carries no node_modules, so
+  # resolving @deepseek-ai/dsh-tool-schedule from it fails — the shape of a
+  # 0.2.0-rc.2 install. Made fresh so the check never depends on a leftover path.
+  mkdir -p "$TMP/deny-empty"
+  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" DSH_PKG_ROOT="$DSH_PKG_ROOT" DENY_EMPTY_BASE="$TMP/deny-empty" node --input-type=module -e '
 import { loadOverlayPatches } from "@deepseek-ai/dsh-app-boot"
 
 // Names every machine has because rows this preset itself mounts register them.
+// ⚠️ `schedule_*` are in this list only in the CONDITIONAL sense, and the third
+// machine below is what keeps that honest: the four names are named by a row this
+// preset mounts (tool-schedule), and the deny tail that adds them is gated on the
+// SAME fact that gates that row (can `@deepseek-ai/dsh-tool-schedule` be resolved
+// from this host). Host 0.2.0-rc.2 — npm `latest`, and the runtime the Desktop app
+// bundles — does not ship that package at all, so on such a host neither the row
+// nor the four deny names may appear; that is asserted, not assumed.
+const SCHEDULE_NAMES = ["schedule_create", "schedule_delete", "schedule_list", "schedule_update"]
 const PORTABLE = ["write", "edit", "todo_write", "ask_user_question", "exit_plan_mode",
   "send_message", "interrupt_agent", "list_agents",
   "subagent_children", "subagent_send", "subagent_interrupt", "subagent_fork",
   "subagent_scout", "subagent_archivist", "subagent_seer", "subagent_reader",
-  "subagent_analyst", "subagent_auditor", "subagent_wright", "subagent_forge", "subagent_planner"]
+  "subagent_analyst", "subagent_auditor", "subagent_wright", "subagent_forge", "subagent_planner",
+  ...SCHEDULE_NAMES]
 const portable = new Set(PORTABLE)
 
 // A machine with no MCP server at all: no loader row, so no mcp_* name exists.
@@ -951,9 +1020,18 @@ const MCP_ROW = { disabled: false, options: { id: "mcp-loader", name: "dsh-mcp-l
   singleToolThreshold: 0, servers: { playwright: {}, jlceda: { mode: "lazy" }, "cloudflare-browser": {},
     "desktop-touch": {}, "eager-one": { mode: "eager" }, renamed: { loaderName: "custom_loader" } } } } }
 const EXPECTED_MCP = ["mcp_playwright", "mcp_jlceda", "mcp_cloudflare-browser", "mcp_desktop-touch", "custom_loader"]
+// The third axis: whether this HOST ships @deepseek-ai/dsh-tool-schedule. It is a
+// property of the host, not of the user config, so it is a third machine rather
+// than a third server in MCP_ROW. `baseUrl` is the Loader entry context base the
+// real `!!js` expressions see (cordis-plugin-loader: `Entry.ctx = loader.ctx.extend({ baseUrl })`).
+// The "old" host points at a directory that exists but has no node_modules, which
+// is exactly the shape of a 0.2.0-rc.2 install: resolution fails.
+const HOST_WITH_SCHEDULE = { baseUrl: process.env.DSH_PKG_ROOT + "/package.json" }
+const HOST_WITHOUT_SCHEDULE = { baseUrl: process.env.DENY_EMPTY_BASE + "/package.json" }
 const machines = {
-  none: { get: () => undefined, loader: { entries: () => [] } },
-  mcp: { get: () => undefined, loader: { entries: () => [MCP_ROW] } },
+  none: { ...HOST_WITH_SCHEDULE, get: () => undefined, loader: { entries: () => [] } },
+  mcp: { ...HOST_WITH_SCHEDULE, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
+  oldhost: { ...HOST_WITHOUT_SCHEDULE, get: () => undefined, loader: { entries: () => [] } },
 }
 
 const patches = loadOverlayPatches("verify-install", process.env.ARTIFACT)
@@ -990,16 +1068,47 @@ for (const lane of denyLanes) {
       out[key] = undefined
     }
   }
-  if (out.none === undefined || out.mcp === undefined) continue
+  if (out.none === undefined || out.mcp === undefined || out.oldhost === undefined) continue
   for (const name of out.none) {
     if (!portable.has(name)) fail("on a machine with no MCP server the deny list names " + name + ", which no machine is guaranteed to register")
   }
-  for (const name of EXPECTED_MCP) {
-    if (!out.mcp.includes(name)) fail("with MCP servers configured the deny list lost " + name + " (the boundary must survive where the tool exists)")
+  // The MCP legs apply to every deny row EXCEPT the fork control row, which by design
+  // carries only the schedule tail (a forked child is a generic fork: narrowing its
+  // other tools would be a behaviour change outside the 2026-10-10 decision). The
+  // exception is named by id rather than inferred from the value — inferring it would
+  // make "this lane silently lost the MCP closure" look like "this is the fork row",
+  // which is exactly the regression these legs exist to catch.
+  const FORK_CONTROL_ID = "tool-subagent-fork"
+  if (lane.id === FORK_CONTROL_ID) {
+    if (out.mcp.some((n) => EXPECTED_MCP.includes(n))) {
+      fail("the fork control row carries MCP names — it is meant to carry ONLY the schedule tail (its tool surface is not narrowed beyond reminders)")
+    }
+  } else {
+    for (const name of EXPECTED_MCP) {
+      if (!out.mcp.includes(name)) fail("with MCP servers configured the deny list lost " + name + " (the boundary must survive where the tool exists)")
+    }
+    if (out.mcp.includes("mcp_eager-one")) fail("the deny list names the loader of an eager server, which the startup probe disposes")
   }
-  if (out.mcp.includes("mcp_eager-one")) fail("the deny list names the loader of an eager server, which the startup probe disposes")
-  if (out.none.join(",") === out.mcp.join(",")) fail("both machines produced the same list — the deny value is not computed per machine")
+  // At least one axis must move the value. For the lanes that is the MCP axis; for the
+  // fork row it is the host axis. A value that moves on neither is a static list
+  // wearing a `!!js` costume, and a static list is what this whole check rejects.
+  if (out.none.join(",") === out.mcp.join(",") && out.none.join(",") === out.oldhost.join(",")) {
+    fail("the deny value is identical on all three simulated machines — it is not computed per machine")
+  }
+  // The host axis. Both directions matter, and each one alone is a real defect:
+  //   * dropping the names on a host that HAS the package would silently widen
+  //     every lane (the boundary the user asked for would be gone);
+  //   * keeping them on a host that lacks it would throw `names unknown global
+  //     tool` at the first delegation — which is every lane, on npm `latest`.
+  for (const name of SCHEDULE_NAMES) {
+    if (!out.none.includes(name)) fail("on a host that ships dsh-tool-schedule the deny list lost " + name + " — every lane would silently gain reminder tools (user decision: Lead only)")
+    if (out.oldhost.includes(name)) fail("on a host WITHOUT dsh-tool-schedule the deny list still names " + name + " — restrict() throws `names unknown global tool`, so every lane delegation on 0.2.0-rc.2 would fail")
+  }
+  if (out.oldhost.join(",") !== out.none.filter((n) => !SCHEDULE_NAMES.includes(n)).join(",")) {
+    fail("the old-host deny list differs from the no-MCP list by something other than the schedule names: " + JSON.stringify(out.oldhost) + " vs " + JSON.stringify(out.none))
+  }
   console.log("OK " + lane.id + " static=" + out.none.length + " mcp=" + out.mcp.length
+    + " oldhost=" + out.oldhost.length
     + " added=" + out.mcp.filter((n) => !portable.has(n)).join("|"))
 }
 console.log("BAD=" + bad)
@@ -1012,12 +1121,14 @@ process.exit(bad === 0 && denyLanes.length >= 8 ? 0 : 1)
   else
     d_deny_bad="$(sed -n '/^BAD /p' "$TMP/deny13.txt")"
     d_head="$(sed -n '/^LANES=/p' "$TMP/deny13.txt")"
-    d_added="$(sed -n 's/^OK .* added=//p' "$TMP/deny13.txt" | head -1)"
+    # ⚠️ 取**第一个非空**的 `added=`：fork 控制行按设计不带 MCP 闭包，它的 `added=` 是空的，
+    #    而它在产物里排在 9 条 lane 之前 ⇒ 取第一行会拿到空串，把「本机 MCP 贡献了哪些名字」这句话弄没。
+    d_added="$(sed -n 's/^OK .* added=//p' "$TMP/deny13.txt" | grep -v '^$' | head -1)"
     if [ -n "$d_deny_bad" ]; then
       bad "check 13  a lane deny list is not portable (it names tools a machine without those MCP servers would not have):"
       printf '%s\n' "$d_deny_bad" | sed 's/^/      /'
     else
-      ok "check 13  8 lane deny lists are portable: static names only + the machine MCP loaders ($d_head)"
+      ok "check 13  every deny row is portable: static names + the machine MCP loaders + the host-gated schedule names ($d_head)"
     fi
     if [ "$deny_rc" -ne 0 ] && [ -z "$d_deny_bad" ]; then
       bad "check 13  the probe exited $deny_rc without naming a bad lane — treat an unexplained non-zero as a failure"
@@ -1026,6 +1137,9 @@ process.exit(bad === 0 && denyLanes.length >= 8 ? 0 : 1)
     # are, and which names the second one contributed. The residual the mechanism
     # still has belongs here, where the next reader meets this check.
     note "check 13  simulated machine A has no MCP server; machine B has the four configured servers plus one eager and one loaderName override, contributing: $d_added"
+    # The third axis is a HOST property, not a user-config one, so it gets its own
+    # machine rather than another server in machine B.
+    note "check 13  simulated machine C is a host WITHOUT @deepseek-ai/dsh-tool-schedule (0.2.0-rc.2 — npm latest, and the Desktop app's bundled runtime): the four schedule_* names must be absent there, and present on A and B"
     note "check 13  residual: an auto-mode server with singleToolThreshold >= 1 that exposes <= that many tools is registered eagerly and loses its loader, so its computed name would not exist at dispatch time — set singleToolThreshold: 0 (or a runtime guard) to close that"
   fi
 fi

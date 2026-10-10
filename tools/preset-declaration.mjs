@@ -1,8 +1,8 @@
 // ============================================================================
-// preset-declaration.mjs — 新 preset 的 30 个 row 的唯一来源（声明清单）
+// preset-declaration.mjs — 新 preset 的 31 个 row 的唯一来源（声明清单）
 // ============================================================================
 //
-// 定位：把「30 个 row」从散文描述变成机器可读的单一来源，让 cordis.patch.yml 可再生成
+// 定位：把「31 个 row」从散文描述变成机器可读的单一来源，让 cordis.patch.yml 可再生成
 //       （DESIGN.md §14 D9「引入生成器」的对价；计划 T06 的产物）。
 //
 // 消费者：
@@ -37,7 +37,7 @@
 //    禁止在生成器里用它断言 / 拦截 deny / allow 名单（「生成期闭集断言」机制已按用户裁决删除，
 //    见 DESIGN.md §3.3.4 的 ⛔ 段）。它只供人读 + 产物自检。新的兜底 = 「首次派发时 loud 失败」。
 
-// 15 个顶层 row（13 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行；口径见 topRows 处）
+// 16 个顶层 row（14 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行；口径见 topRows 处）
 // 3 个 group · 3 个 delegation 控制行 · 9 个 lane 行
 
 export const presetId = 'dsh-orchestrator-preset'
@@ -118,18 +118,68 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 //   但 dsh-mcp-loader 的**默认命名规则**（src/index.ts:74）或 **eager 判定**（src/index.ts:1008-1025、
 //   1038）若变了，必须改 MCP_CLOSURE_EXPR —— 它就是这两个事实的镜像。
 
-// 只读 lane（**21** 项静态 + 按机器算的 MCP 闭包）—— 控制面 3 名（DESIGN.md §3.3.4 的裁决：只读 lane 不得操纵/杀死他 lane）
+// ── `schedule_*`：**条件**闭包（宿主 0.2.0-rc.2 上这个包根本不存在）─────────────
+// 2026-10-10 用户裁决：**放开 tool-schedule，但只给 Lead，9 个 lane 全部 deny**
+// （「选项1，只给主代理，不给子agent」）。这一节的难点不是「要不要 deny」，是**在哪几版上能 deny**。
+//
+// ① **事实（逐版实测，三条独立证据）**：`@deepseek-ai/dsh-tool-schedule` 在 npm 上只有
+//    `0.0.1-rc.2`（2026-08-11，依赖 `^0.0.1-rc.2` 那一代，与 0.2.x 宿主不同代）、`0.2.1-alpha.1`、
+//    `0.2.1-alpha.2` 三个版本 —— **没有 `0.2.0-rc.2`**。而且：
+//      · `dsh@0.2.0-rc.2` 的 dependencies 里**没有**它（`npm view @deepseek-ai/dsh@0.2.0-rc.2 dependencies`）；
+//      · `dsh-base` / `dsh-web-app` / `dsh-sdk-app` / `dsh-headless` / `dsh-acp-app` 的 rc.2 版也都**没有**；
+//      · rc.2 的官方 `standard.patch.yml` **没有** `tool-schedule` 行（alpha.1 与 alpha.2 有）。
+//    ⇒ 在一份干净的 rc.2 安装里，这个包**不在 node_modules 里**。rc.2 那一代的提醒能力由
+//    `@deepseek-ai/dsh-experimental-schedule-bundle@0.2.0-rc.2`（可选、默认关）提供，它 insert 的是
+//    `time-context` / `schedule` / `ui-schedule` **三行，没有 `tool-schedule`**。
+// ② **为什么不能无脑声明**：`restrict()` 对未知名字是 **throw**（`dsh-tools/lib/index.js:2895-2908`，
+//    rc.2 与 alpha.2 **行为一致**，已逐版核对）⇒ 若 9 条 lane 的 deny 写死 `schedule_*`，而 rc.2 上
+//    那个包装不上、4 个名字没注册，则**每次 lane 派发都在 child setup 抛**
+//    `names unknown global tool`（`dsh-subagent/lib/index.js:401` 的 `restrict()` 无 try/catch）。
+//    ⇒ 那会把 rc.2 —— 也就是 npm 的 `latest`、以及 Desktop 应用自带 runtime 的版本 —— 上**所有** lane 打死。
+// ③ **做法（与 MCP_CLOSURE_EXPR 同一条既有机制，不是新机制）**：把这 4 个名字从**静态**名单里拿出来，
+//    改为**按机器求值**：包能解析 ⇒ 交出这 4 个名字；不能 ⇒ 交出 `[]`。行的 `disabled` 用同一个判据。
+//    ⇒ rc.2 上：行不挂（`disabled` 先于 import 求值，`refresh()` 见 `cordis-plugin-loader/lib/index.js:363`
+//    直接 return，连 import 都不试，所以**不留错误日志**），deny 也不列那 4 个名字 ⇒ 一切照旧；
+//    alpha.1 / alpha.2 上：行挂上，Lead 拿到提醒，lane 被 deny。
+//    ⚠️ **为什么用「能否解析」而不是「loader 树里有没有那一行」**：本行与 lane 行在**同一个
+//    `plugins[]` 里**，按树查会依赖「本行是否已先于 lane 行装载」这个顺序前提；而
+//    `createRequire(baseUrl).resolve(...)` 是**与顺序无关**的事实判定，且 `baseUrl` 在求值 ctx 里
+//    （同一 ctx 已在 `personaExpr` 里用同一手法，见 `gen-cordis-patch.mjs`）。
+// ④ **残余风险（已知并接受，写在这里而不是留给下一个人发现）**：rc.2 **且**用户手动启用了
+//    `dsh-experimental-schedule-bundle` 时，rc.2 的 `dsh-schedule` 自己会注册这 4 个工具名，
+//    而本判据（按 `dsh-tool-schedule` 能否解析）在那种机器上仍返回 `[]` ⇒ lane **可能**拿到提醒工具。
+//    这是「按包解析」而不是「按注册表」判定的必然代价；要彻底消除需要运行时 guard（新增插件文件），
+//    不在本轮面内。它比「把 rc.2 全部 lane 打死」小得多，故接受。
+export const SCHEDULE_TOOLS = ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update']
+// 单引号、无 `: `、无 `#`、无反斜杠、无双引号 —— 这是 `!!js` **plain scalar** 的边界约束
+// （由 `gen-cordis-patch.mjs` 的 denyExpr 与 check 13 的求值测试共同兜住）。
+const SCHEDULE_RESOLVE = "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-tool-schedule')"
+// 行的 `disabled`：**解析不到就禁用**（true = 禁用）。catch 兜住一切异常 ⇒ 失败方向是「不挂」，
+// 而不是「把整个 preset 的装载弄崩」。
+export const SCHEDULE_ABSENT_EXPR = `(() => { try { ${SCHEDULE_RESOLVE}; return false } catch (e) { return true } })()`
+// lane deny 的条件尾巴：解析得到 ⇒ 这 4 个名字；否则 ⇒ 空数组（= 不 deny 不存在的名字）。
+export const SCHEDULE_DENY_EXPR = `(() => { try { ${SCHEDULE_RESOLVE}; return [${SCHEDULE_TOOLS.map((n) => `'${n}'`).join(', ')}] } catch (e) { return [] } })()`
+
+// fork 控制行的 id —— **唯一来源**。生成器按它认行，给它挂上「只有那条条件尾巴」的 `toolFilter.deny`
+// （理由见 `groups` 里 delegation 组的 ⛔ 段）。写成常量而不是在两处各写一遍字面量：那样改名时
+// 会有一处静默失效 —— 而失效方向是「fork child 悄悄拿到提醒工具」，正是本条要防的事。
+export const forkControlRowId = 'tool-subagent-fork'
+
+// 只读 lane（**21** 项静态 + 按机器算的 MCP 闭包 + `schedule_*` 条件尾巴）
+//   —— 控制面 3 名（DESIGN.md §3.3.4 的裁决：只读 lane 不得操纵/杀死他 lane）
 //   ⚠️ **+3 项（T16 / lane-composition.mjs）**：`subagent_children` / `subagent_send` / `subagent_interrupt`
 //   —— 它们是自写绑定器注册进 **Lead own scope** 的 lane 寻址名；scope 自己的层会被**其下每个 agent 继承**
 //   （`dsh-scope:162-171` `chainLayers` + `dsh-tools:2959-2974`）⇒ 不 deny 就会出现在 lane 的工具面里。
 //   这 3 名对 lane 是**继承来的** ⇒ 落在 `restrictableNames` 内 ⇒ deny **合法且生效**（不会抛掉整条 filter）。
+//   ⚠️ reader 用 `allow: ['read','read_image']` ⇒ 白名单天然不含 `schedule_*`，**不重复列**（列了反而越界，
+//   见 `patch-contract.test.mjs` 第 10 条：allow 面出现越界名即失败）。
 export const READONLY_DENY = ['write', 'edit', 'todo_write', 'ask_user_question', 'exit_plan_mode',
   'send_message', 'interrupt_agent', 'list_agents',
   'subagent_children', 'subagent_send', 'subagent_interrupt',
   'subagent_fork',
   'subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
   'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
-// wright（**18** 项静态 + 同一份 MCP 闭包）—— 同上，叶子执行者不需要控制面
+// wright（**18** 项静态 + 同一份 MCP 闭包 + 同一份 `schedule_*` 条件尾巴）—— 同上，叶子执行者不需要控制面
 //   （可写、可用 todo_write / skill）；⚠️ T16 的 3 个 lane 寻址名同样 deny（理由见上）
 export const WRIGHT_DENY = ['ask_user_question', 'exit_plan_mode',
   'send_message', 'interrupt_agent', 'list_agents',
@@ -137,9 +187,10 @@ export const WRIGHT_DENY = ['ask_user_question', 'exit_plan_mode',
   'subagent_fork',
   'subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
   'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
-// forge（**13** 项静态 + 同一份 MCP 闭包）—— 保留 list_agents + send_message（它要管自己派出的只读孙代）；
-//   deny interrupt_agent。**MCP 也 deny**（理由见上）。⚠️ T16 的 3 个 lane 寻址名同样 deny：
-//   本轮裁决是「这 3 件不出现在**任何 lane** 的工具面里」（见 T16 目标句）—— lane 用「派人」而不是「寻址」。
+// forge（**13** 项静态 + 同一份 MCP 闭包 + 同一份 `schedule_*` 条件尾巴）—— 保留 list_agents + send_message
+//   （它要管自己派出的只读孙代）；deny interrupt_agent。**MCP 也 deny**（理由见上）。
+//   ⚠️ T16 的 3 个 lane 寻址名同样 deny：本轮裁决是「这 3 件不出现在**任何 lane** 的工具面里」
+//   （见 T16 目标句）—— lane 用「派人」而不是「寻址」。
 export const FORGE_DENY = ['ask_user_question', 'exit_plan_mode', 'interrupt_agent',
   'subagent_children', 'subagent_send', 'subagent_interrupt',
   'subagent_fork',
@@ -432,10 +483,28 @@ export const PLAN_MODE_SECTION = ''   // ← **有意的实现期取值槽**：�
                                       //    本常量属于**有意的取值槽**（见 §5.2 第 2 项的限定说明）。
 
 // ── 9 个 lane（顺序与 toolName 见 DESIGN.md §3.3.3；toolFilter 见 §3.3.4 的最终名单）──
-// ⚠️ DESIGN.md §3.3.3 的「共同约定」：全部 lane 固定 `provider: 'spawn'` +
-//    `backgroundMode: 'continuable'`（与旧 bundle 一致）。这两项**不在** T06 契约块的 LANES
-//    条目里（契约只给 tool / persona / maxDepth / deny|allow）⇒ 由 T07 渲染时按 LANE_COMMON 补齐。
-export const LANE_COMMON = { provider: 'spawn', backgroundMode: 'continuable' }
+// ⚠️ DESIGN.md §3.3.3 的「共同约定」：全部 lane 固定 `provider: 'spawn'`（与旧 bundle 一致）。
+//    这一项**不在** T06 契约块的 LANES 条目里（契约只给 tool / persona / maxDepth / deny|allow）
+//    ⇒ 由 T07 渲染时按 LANE_COMMON 补齐。
+//
+// ⛔ **`backgroundMode: 'continuable'` 已删除（host 0.2.1-alpha.2 实测）**。它曾在这里与 9 条
+//    lane 行上一共出现 10 次，现在**一个字节都不该留**。理由分两层，两层都实测过：
+//    ① **宿主已不认识这个键**：`@deepseek-ai/dsh-tool-subagent` 的 `Config`（`lib/index.js:251-267`）
+//       在 0.2.1-alpha.2 上只有 provider / toolName / modelSelectionSettings / agentOptions /
+//       persona / toolFilter / maxDepth —— `backgroundMode` 不在其中（0.2.1-alpha.1 的同一 schema
+//       在 `lib/index.js:257` 有它）。schemastery 对未知键**不抛**（实测：带该键与不带该键的输入
+//       都原样通过），所以这是一条**静默死键**，不是启动错误 —— 正因为静默，它只能靠人删。
+//    ② **意图没有被丢掉，只是搬了家**：continuable 现在是 provider 的**能力**而非行的配置。
+//       `apply()`（`lib/index.js:323`）按 `subagentProvider.prepareContinuable !== undefined`
+//       决定工具描述，spawn provider 在 0.2.1-alpha.1 **与** 0.2.1-alpha.2 上都实现了
+//       `prepareContinuable`（`dsh-subagent-spawn-in-process/lib/index.js:33` / `:37`）。
+//       ⇒ 删掉这个键**不会**让 lane 退回 one-shot；lane 的「第二轮是同一 durable id 的一轮」
+//       （personas/orchestrator.md 的 I6）依据仍在。
+//    ⚠️ 若将来某版 spawn provider 不再实现 `prepareContinuable`，lane 会**静默**退回 one-shot：
+//       那时 `subagent_children` 会把所有子代理投影成不可续（`lane-composition.mjs` 的
+//       `projectChild` 丢弃 `mode !== 'continuable'`），而不是报错。这一条是本次删除的残余风险，
+//       已知并接受 —— 它比留一个宿主不读的键更诚实。
+export const LANE_COMMON = { provider: 'spawn' }
 
 export const LANES = [
   { tool: 'subagent_scout',     persona: 'scout.md',     maxDepth: 1, deny: READONLY_DENY },
@@ -451,11 +520,28 @@ export const LANES = [
 
 // ── 15 个顶层 row（13 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行）──────────────────────────
 // ⚠️ 权威骨架 standard.patch.yml **自身带** 6 个 row（command-goal / tool-goal / workflow-ptc /
-//    tool-workflow / tool-ralph / present）⇒ 本 preset **不得**含这 6 个（DESIGN.md §2.3「删除项」）。
+//    tool-workflow / present / tool-plugin-manager）⇒ 本 preset **不得**含这 6 个（DESIGN.md §2.3「删除项」）。
 //    ⚠️ **第 2 个新增挂载行 = `lane-composition`（T16，2026-09-25）**：它注册 Lead own-scope 的 3 个
 //    lane 寻址工具（`subagent_children` / `subagent_send` / `subagent_interrupt`），形态照 `routing-sections`。
+//
+// ⛔ **`persona` 行不再带 `suffix`（host 0.2.1-alpha.2 实测）**。它曾经是
+//    `config: { suffix: 'Your working directory is {{cwd}}.' }`，现在**必须为空**。
+//    ① **`{{cwd}}` 这个提示词变量在 0.2.1-alpha.2 上已不存在**。`dsh-agent-loop` 的注册表：
+//       0.2.0-rc.2 与 0.2.1-alpha.1 都注册 `provider` / `model` / **`cwd`**（各版 `:1564-1566`），
+//       0.2.1-alpha.2 只剩 `provider` / `model`（`:1591-1592`）。上游 `dsh-system-prompt` 的
+//       `interpolate()` 对**未知**变量是 **throw**，不是留空 —— 实测（用已装宿主自己的
+//       `renderPrompt`）：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。
+//       该错误发生在**任何模型请求之前**，所以它不是降级，是装配期硬失败。
+//       上游 `dsh-system-prompt/README.md:78` 已经把这件事写成对使用者的要求：
+//       「Remove the `Your working directory is {{cwd}}.` clause … Omit or clear an otherwise empty suffix.」
+//    ② **删掉不丢信息**：目录上下文由 `dsh-working-directory` 服务供给（它自 0.2.0-rc.2 起就在
+//       `dsh-base` 的骨架里，`cordis.patch.yml:161-165`；0.2.1-alpha.2 新增的 `working_directory`
+//       工具是它的接口）。README 那段指引的落点正是这里。
+//    ⚠️ **这个删除在三版上都安全**：rc.2 / alpha.1 认得 `{{cwd}}`，但**不要求**任何行去用它；
+//       一个没有 suffix 的 persona 行在旧版上与新版上都是合法配置（suffix 的 schema 默认 `''`）。
+//       ⇒ 支持矩阵是三版时，只有这一种写法是三版通用的。
 export const topRows = [
-  { id: 'persona',            name: bundlePkg + '/plan-aware-persona.mjs', config: { suffix: 'Your working directory is {{cwd}}.' } },
+  { id: 'persona',            name: bundlePkg + '/plan-aware-persona.mjs' },
   { id: 'routing-sections',   name: bundlePkg + '/routing-sections.mjs' },
   { id: 'lane-composition',   name: bundlePkg + '/lane-composition.mjs' },
   { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
@@ -465,6 +551,30 @@ export const topRows = [
   { id: 'tool-fs',            name: '@deepseek-ai/dsh-tool-fs' },
   { id: 'tool-fs-search',     name: '@deepseek-ai/dsh-tool-fs-search',     config: { sampleOverCapGlobResults: false } },
   { id: 'tool-jobs',          name: '@deepseek-ai/dsh-tool-jobs' },
+  // ⚠️ **`tool-schedule`（2026-10-10 用户裁决：放开，只给 Lead）**。位置逐字跟随官方
+  //    `standard.patch.yml`（`tool-jobs` 之后、`skill-filesystem` 之前，alpha.2 的 `:33-39`），
+  //    config 为空 —— 与官方那一行同形（裸一行，无 config）。
+  //    ① **它是什么**：`schedule_create/delete/list/update` 四个**持久提醒**工具（不是「时间感知」——
+  //       时间感知是 `time-context`，自 0.1.4 起已在 `topRows` 第 5 行）。上游
+  //       `dsh-tool-schedule/README.md`：它是 `@deepseek-ai/dsh-schedule` 服务的**面向模型的消费者**，
+  //       在**挂载它的 preset 或 Agent scope** 里注册这四个工具 ⇒ 谁拿到由**装配**决定。
+  //    ② **为什么现在才加**：0.1.5 那一轮明确把它留作**待裁决项**（见
+  //       `.dsh/evidence/host-0.2.1-alpha.2-followup.md` 第六节）。用户 2026-10-10 裁决「放开」，
+  //       并在被问及范围时选定「**只给 Lead，lane 全部 deny**」。
+  //    ③ **连带义务（不是可选项）**：挂载它 = 这四个名字对**每个** child 都进了可继承的工具面
+  //       ⇒ 9 个 lane 的 deny 必须同步带上它们（走 `SCHEDULE_DENY_EXPR` 的条件尾巴，见上方
+  //       SCHEDULE_* 段）。官方骨架做的就是这件事：preset 级挂 `tool-schedule`，同时在
+  //       `tool-subagent` 与 `tool-subagent-fork` 两行 deny 全四个名字。**只做前一半 = 把提醒能力
+  //       静默发给所有 lane。**
+  //    ④ **`disabled` 门（本行与官方行唯一的形状差异，必须留）**：官方骨架只在 **alpha.1 及以后**
+  //       才有这一行 —— `@deepseek-ai/dsh-tool-schedule` **没有 0.2.0-rc.2 版本**，rc.2 宿主也不依赖它
+  //       （三条独立证据见上方 SCHEDULE_* 段）。而 rc.2 既是 npm 的 `latest`，又是 Desktop 应用
+  //       自带的 runtime。⇒ 在解析不到这个包的机器上把本行**禁用**：`disabled` 先于 import 求值
+  //       （`cordis-plugin-loader/lib/index.js:363`），所以连 import 都不会试、不留错误日志；
+  //       同一判据让 lane 的 deny 交出空数组（否则 `restrict()` 会抛 unknown tool，把 rc.2 上
+  //       **每一次 lane 派发**打死）。⇒ 三版支持矩阵**不变**：rc.2 上少的是提醒能力本身，
+  //       而那个能力在 rc.2 上本来就不存在。
+  { id: 'tool-schedule',      name: '@deepseek-ai/dsh-tool-schedule',     disabled: SCHEDULE_ABSENT_EXPR },
   { id: 'skill-filesystem',   name: '@deepseek-ai/dsh-skill-filesystem' },
   { id: 'tool-skill',         name: '@deepseek-ai/dsh-tool-skill' },
   { id: 'tool-ask-user',      name: '@deepseek-ai/dsh-tool-ask-user' },
@@ -487,5 +597,18 @@ export const groups = [
   { id: 'delegation', rows: [
       { id: 'tool-subagent-control',    name: '@deepseek-ai/dsh-tool-subagent-control' },
       { id: 'tool-subagent-list-agents',name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
-      { id: 'tool-subagent-fork',       name: '@deepseek-ai/dsh-tool-subagent', config: { provider: 'fork', toolName: 'subagent_fork', backgroundMode: 'continuable' } },
+      // ⚠️ `backgroundMode` 与 9 条 lane 行一同删除（同一理由，见 LANE_COMMON 上方的 ⛔ 段）：
+      //    宿主 0.2.1-alpha.2 的 tool-subagent Config 里已无此键。fork provider 同样实现了
+      //    `prepareContinuable`（`dsh-subagent-fork-in-process/lib/index.js:47`）⇒ 续话能力不丢。
+      //
+      // ⛔ **本行也 deny 那 4 个 `schedule_*`（条件尾巴，2026-10-10 补）** —— fork child **同样是子 agent**，
+      //    而用户裁决是「只给主代理，不给子agent」。官方 `standard` 骨架就是在 **spawn 与 fork 两行**
+      //    都 deny 全四个名字（alpha.2 `:101-104` 与 `:112-115`），只改 9 条具名 lane 会留下一个口子：
+      //    经 `subagent_fork` 派出的 child 仍会继承提醒工具（lane 自己 fork 不了 —— 它们的 deny 里含
+      //    `subagent_fork`；但 Lead 可以）。⇒ 本行带 `toolFilter.deny`，内容**只有**那条条件尾巴。
+      //    ⚠️ **它刻意不带 MCP 闭包**：fork child 是通用 fork，除提醒之外的工具面本轮**不**收窄 ——
+      //    把 MCP 名也 deny 掉是一处面外的行为变更，不是这个裁决的一部分。
+      //    ⚠️ 渲染规则（`!!js ([]).concat(<SCHEDULE_DENY_EXPR>)`）在生成器的 `groupEntry` 里，按
+      //    `forkControlRowId` 认行；值本身仍只有本文件一个来源。
+      { id: forkControlRowId,           name: '@deepseek-ai/dsh-tool-subagent', config: { provider: 'fork', toolName: 'subagent_fork' } },
       ...LANES ] } ]

@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1%20%7C%200.2.1--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [中文](README.zh.md) · [Notices](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -128,6 +128,11 @@ claims about someone else's runtime.
 | Exact layer order: bundle patches in `dsh.profile.bundles` order, then the profile's own `cordis.patch.yml`, then `$DSH_HOME/cordis.patch.yml`, then each `--patch` overlay. | **Verified on host version 0.2.0-rc.1.** Not confirmed against upstream documentation. |
 | A profile lives at `~/.dsh/profiles/<name>/` containing `cordis.yml`, `cordis.patch.yml` and `package.json`. | **Verified on host version 0.2.0-rc.1.** Not confirmed against upstream documentation. |
 | `config.selectedDefault` is in the preset schema and is the effective value; the schema also carries `config.default`, and `defaultId` resolves `selectedDefault ?? default`. | **Verified on host version 0.2.0-rc.1**, against `@deepseek-ai/dsh-agent-preset-registry`. |
+| `{{cwd}}` is a registered prompt variable; an unknown `{{…}}` reference throws during assembly. | **Version-dependent, and measured on each version.** Registered on `0.2.0-rc.2` and `0.2.1-alpha.1` (`dsh-agent-loop` registers `provider`/`model`/`cwd`), **absent on `0.2.1-alpha.2`** (only `provider`/`model`). Reproduced against the installed host's own `renderPrompt`: `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`. Upstream `dsh-system-prompt/README.md` now tells users to remove the clause. |
+| `tool-subagent`'s `Config` accepts `backgroundMode`. | **Version-dependent.** Present on `0.2.1-alpha.1` (`lib/index.js:257`), **absent on `0.2.1-alpha.2`**. schemastery tolerates the unknown key, so the removal is silent — verified by feeding both forms through the installed schema. Continuable is now decided by the provider's `prepareContinuable` (`lib/index.js:323`), implemented by spawn and fork on both versions. |
+| The `standard` preset skeleton is the authority for which rows exist. | **Verified on each version.** It shrank from 162 lines (`0.2.0-rc.2`, `0.2.1-alpha.1`) to 137 (`0.2.1-alpha.2`), dropping `tool-ralph`, `tool-subagent-codex` and `tool-subagent-claude-code`; `tool-schedule` was added — **on alpha.1, not on rc.2**. |
+| `@deepseek-ai/dsh-tool-schedule` exists on every supported host. | **False, and it is the reason this preset's only version-gated row exists.** npm publishes it at `0.0.1-rc.2` (a different generation), `0.2.1-alpha.1` and `0.2.1-alpha.2` — there is **no `0.2.0-rc.2`**. `dsh@0.2.0-rc.2` does not depend on it, none of its app packages do, and rc.2's skeleton has no such row; rc.2's reminder tools are the *optional, off-by-default* `dsh-experimental-schedule-bundle`, which inserts `time-context`/`schedule`/`ui-schedule` and **not** `tool-schedule`. |
+| A lane `toolFilter.deny` naming a tool the host does not register fails loudly at delegation, not at mount. | **Verified on `0.2.0-rc.2` and `0.2.1-alpha.2`, identical behaviour.** `tools.restrict()` throws `names unknown global tool` (`dsh-tools/lib/index.js:2895-2908`), and `dsh-subagent` calls it unguarded when a child is composed (`lib/index.js:401`) — so a hardcoded `schedule_*` deny list would break **every lane delegation** on `latest`. |
 
 DeepSeek Harness is MIT-licensed: [`github.com/deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness).
 Unrelated projects sharing a similar name are not a source for anything in this repository.
@@ -187,12 +192,33 @@ written down without any install being able to fail over it:
 
 The lower bounds name **the oldest host version this is supported on** — 0.2.0-rc.2, which is
 also what `latest` still resolves to — not an earlier one the design happened to reference,
-and not the newest, because the preset is supported on 0.2.1-alpha.1 too (see
-[Host version gate](#0-host-version-gate)). The upper bounds follow the convention the published
-`@quill507/dsh-auto-approval-llm` uses on the same host packages. `optional: true` is what
-keeps the declaration honest: the coupling here is deep — `ctx.skills.registerProvider` is a
-host API — so a major change could break this silently, and saying so is worth more than
+and not the newest, because the preset is supported on 0.2.1-alpha.1 **and 0.2.1-alpha.2** too
+(see [Host version gate](#0-host-version-gate)). The upper bounds follow the convention the
+published `@quill507/dsh-auto-approval-llm` uses on the same host packages. `optional: true` is
+what keeps the declaration honest: the coupling here is deep — `ctx.skills.registerProvider` is
+a host API — so a major change could break this silently, and saying so is worth more than
 pretending the range is enforced. It is not.
+
+**The supported set is three versions, and that is a measured claim, not a copied one.** Each
+was checked against its own published tarball rather than assumed to follow from its neighbour:
+0.2.1-alpha.2 removed two things the preset had been relying on (`{{cwd}}` as a registered
+prompt variable, and the `backgroundMode` key on `tool-subagent`). Nothing that differs between
+the three versions is silently tolerated — where a row had to change, it changed to the form
+that is legal on **all three** (see [Sourcing](#sourcing-what-is-upstream-what-was-measured-here)),
+because a preset that is only correct on its newest host is not supported on the other two.
+
+One capability is **host-gated instead of uniform**, and it is worth knowing which: the Lead's
+durable reminders (`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`)
+come from `@deepseek-ai/dsh-tool-schedule`, which **does not exist on `0.2.0-rc.2`**. The row
+that mounts it is therefore declared with a `disabled` expression that asks the host whether
+that package resolves; the lanes' deny tail asks the same question and adds the four names only
+where they exist. On `0.2.0-rc.2` the preset behaves exactly as 0.1.5 did — the capability is
+simply absent there, because it is absent from that host. On `0.2.1-alpha.1` and `0.2.1-alpha.2`
+the Lead has the reminders, and **no delegated child does**: the nine named lanes deny them, and
+so does the `subagent_fork` control row (a forked child is a child too — the same shape the
+host's own `standard` preset uses on both of its subagent rows).
+`tools/verify-install.sh`'s check 13 simulates the host without the package and fails if those
+names appear on it, so this cannot regress quietly.
 
 ### 0. Host version gate
 
@@ -202,27 +228,44 @@ dsh --version          # install.sh refuses below 0.1.7-rc.1
 
 This is a hard check inside `install.sh`, and it is deliberately **looser** than the
 `peerDependencies` above: 0.1.7-rc.1 is the version the design was written against. The
-preset has since been **run on 0.2.1-alpha.1**, and it is supported on **both 0.2.0-rc.2
-and 0.2.1-alpha.1**. The honest "untested" band the old wording described — the stretch
-between the design version and the first run version — is closed from the top; it is no
-longer a gap you can fall into by installing the current release.
+preset has since been **run on 0.2.1-alpha.1**, and it is supported on **0.2.0-rc.2,
+0.2.1-alpha.1 and 0.2.1-alpha.2**. The honest "untested" band the old wording described — the
+stretch between the design version and the first run version — is closed from the top; it is
+no longer a gap you can fall into by installing the current release.
 
-The two supported versions ship on **different npm dist-tags**, which is the part worth
+The three supported versions ship on **different npm dist-tags**, which is the part worth
 knowing before you pick one:
 
 | Host version | npm dist-tag | What you get |
 |---|---|---|
 | `0.2.0-rc.2` | `latest` (also `next`) | what a plain `npm i -g @deepseek-ai/dsh` installs |
-| `0.2.1-alpha.1` | `alpha` | **not** on `latest` — you must ask for the tag explicitly |
+| `0.2.1-alpha.1` | — | superseded by alpha.2 on the same tag; install it by exact version |
+| `0.2.1-alpha.2` | `alpha` | the newest release; **not** on `latest` — ask for the tag explicitly |
 
-That second row is the reason the old wording needed two numbers at all. It is also why the
-badge above lists both versions rather than one: neither is the single "current" release.
+The `alpha` tag moved from alpha.1 to alpha.2 while alpha.1 remained the version this preset
+had actually been exercised on, which is why the table keeps a row for a version no tag points
+at any more. The badge above lists all three: none of them is the single "current" release.
 
-Dual support is not a guess. Every config key this preset hands to a host package — checked
-field-by-field against both published versions, not inferred — exists on each with the same
-type, the same default and the same schema shape, and `plan-mode` rejects unknown keys on
-both, so the declared `section` text cannot be silently dropped by a schema that tolerates
+Support is not a guess. Every config key this preset hands to a host package — checked
+field-by-field against all three published versions, not inferred — exists on each with the
+same type, the same default and the same schema shape, and `plan-mode` rejects unknown keys on
+all three, so the declared `section` text cannot be silently dropped by a schema that tolerates
 stray keys. `install.sh --check` runs the version gate and writes nothing.
+
+**Two keys did not survive that check, and the preset no longer writes them.** They are worth
+naming because both failed *silently*, which is the only interesting way for a config key to
+fail:
+
+| Key | Where it went | Why it is not a downgrade |
+|---|---|---|
+| `suffix: 'Your working directory is {{cwd}}.'` on the `persona` row | `{{cwd}}` is a registered prompt variable on rc.2 and alpha.1, and **is not one on alpha.2**. `dsh-system-prompt` throws on an unknown variable, so this was not a missing clause — it was a **hard failure during prompt assembly, before any model request**. Upstream now instructs users to delete the clause outright. | The directory is supplied by the `dsh-working-directory` service, which has been in the `dsh-base` skeleton since rc.2 and which alpha.2 exposes through the new `working_directory` tool. The suffix was redundant with it on every version. |
+| `backgroundMode: continuable` on the ten subagent rows | alpha.2's `tool-subagent` `Config` no longer has the key at all (alpha.1's did). schemastery does not reject unknown keys, so it became a dead key that nothing read. | Continuable is now a **provider capability**, not a row setting: `apply()` reads `subagentProvider.prepareContinuable`, and both the spawn and fork providers implement it on alpha.1 and alpha.2. The lanes keep their durable-id continuation. |
+
+Both removals are safe on all three versions, which is the point: the clause-free `persona` row
+and the `backgroundMode`-free lane row are legal everywhere, whereas the old forms were legal
+only on the older hosts. `tools/patch-contract.test.mjs` now fails if `{{cwd}}` reappears in the
+artifact, so this one cannot come back by accident.
+
 
 ### 1–4. Install
 

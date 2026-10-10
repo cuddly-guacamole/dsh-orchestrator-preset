@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1%20%7C%200.2.1--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [归属与来源](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -101,7 +101,11 @@ node tools/gen-cordis-patch.mjs
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | 插件契约；这是真实的大版本边界 |
 | `@deepseek-ai/schemastery` | `>=3.18.0 <4` | 设置卡片据以生成的 `Config` schema |
 
-**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 0.2.1-alpha.1 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
+**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 0.2.1-alpha.1 **与 0.2.1-alpha.2** 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
+
+**受支持集合是三个版本，而这是一条实测结论，不是抄来的。** 每一个都是对着它自己那份已发布 tarball 核过的，没有假设它可以从邻居推出来：0.2.1-alpha.2 拿掉了本包此前依赖的两样东西（`{{cwd}}` 这个已注册的提示词变量，以及 `tool-subagent` 上的 `backgroundMode` 键）。三版之间的差异**没有一处**是被静默容忍的 —— 凡是必须改的行，都改成了**三版都合法**的写法（两张键的去留见本节末尾的键变更表），因为一个只在最新宿主上正确的 preset，在另外两版上就不叫受支持。
+
+有一项能力是**按宿主分档**而不是三版齐平的，值得单独点名：Lead 的持久提醒（`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`）来自 `@deepseek-ai/dsh-tool-schedule`，而**这个包在 `0.2.0-rc.2` 上不存在**。所以挂载它的那一行带一个 `disabled` 表达式，问宿主「这个包解析得到吗」；9 条 lane 的 deny 尾巴问同一个问题，只在包存在的地方加上那 4 个名字。在 `0.2.0-rc.2` 上本 preset 的行为与 0.1.5 完全一致 —— 那项能力只是不在那儿，因为它本来就不在那台宿主上。在 `0.2.1-alpha.1` 与 `0.2.1-alpha.2` 上，Lead 有提醒，而**任何被派出的子代理都没有**：9 条具名 lane deny 它们，`subagent_fork` 控制行也 deny（fork 出来的 child 同样是子代理 —— 与官方 `standard` 骨架在它两条 subagent 行上的做法同形）。`tools/verify-install.sh` 的 check 13 会**模拟**那台没有这个包的宿主，并在那 4 个名字出现时失败 ⇒ 这件事不会悄悄回归。
 
 ### 0. 宿主版本门
 
@@ -109,18 +113,28 @@ node tools/gen-cordis-patch.mjs
 dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 ```
 
-这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本。此后本包**已在 0.2.1-alpha.1 上实跑**，并且**同时支持 0.2.0-rc.2 与 0.2.1-alpha.1**。旧措辞里那段诚实的「未测」区间 —— 设计版本与首次实跑版本之间的那一段 —— 已经从上方封口；装当前发布版不再可能掉进去。
+这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本。此后本包**已在 0.2.1-alpha.1 上实跑**，并且**同时支持 0.2.0-rc.2、0.2.1-alpha.1 与 0.2.1-alpha.2**。旧措辞里那段诚实的「未测」区间 —— 设计版本与首次实跑版本之间的那一段 —— 已经从上方封口；装当前发布版不再可能掉进去。
 
-两个受支持的版本发布在**不同的 npm dist-tag** 上，这一点值得在动手选之前先知道：
+三个受支持的版本发布在**不同的 npm dist-tag** 上，这一点值得在动手选之前先知道：
 
 | 宿主版本 | npm dist-tag | 你会拿到什么 |
 |---|---|---|
 | `0.2.0-rc.2` | `latest`（同时也是 `next`） | `npm i -g @deepseek-ai/dsh` 直接装到的版本 |
-| `0.2.1-alpha.1` | `alpha` | **不在 `latest` 上** —— 必须显式指定该 tag |
+| `0.2.1-alpha.1` | — | 已被同一 tag 上的 alpha.2 取代；要装就按精确版本号装 |
+| `0.2.1-alpha.2` | `alpha` | 最新发布版；**不在 `latest` 上** —— 必须显式指定该 tag |
 
-第二行正是旧措辞需要两个数字的原因，也是顶部徽章并列两个版本而不是只写一个的原因：两者都不是唯一的「当前发布版」。
+`alpha` tag 从 alpha.1 移到 alpha.2 的时候，alpha.1 仍是本包实际演练过的那个版本 —— 这就是表里为「已没有任何 tag 指向」的版本保留一行的原因。顶部徽章并列三个版本：三者都不是唯一的「当前发布版」。
 
-双线支持不是推断出来的。本包交给宿主包的每一个 config 字段 —— 都是对着两个已发布版本逐字段核对过的，不是推测 —— 在两版上都存在，类型、默认值与 schema 形状一致；且 `plan-mode` 在两版上都拒绝未知键，所以声明的 `section` 文本不会被一个容忍多余键的 schema 悄悄丢掉。`install.sh --check` 只跑版本门，不写任何东西。
+支持不是猜的。本包交给宿主包的每一个 config 字段 —— 都是对着**三个**已发布版本逐字段核对过的，不是推测 —— 在每一版上都存在，类型、默认值与 schema 形状一致；且 `plan-mode` 在三版上都拒绝未知键，所以声明的 `section` 文本不会被一个容忍多余键的 schema 悄悄丢掉。`install.sh --check` 只跑版本门，不写任何东西。
+
+**有两个键没能通过那次核对，本包现在不再写它们。** 值得点名，因为两者都是**静默**失效的 —— 而静默恰恰是 config 键唯一有意思的失效方式：
+
+| 键 | 它去了哪 | 为什么不算能力降级 |
+|---|---|---|
+| `persona` 行上的 `suffix: 'Your working directory is {{cwd}}.'` | `{{cwd}}` 在 rc.2 与 alpha.1 上是已注册的提示词变量，在 **alpha.2 上不是**。`dsh-system-prompt` 对未知变量是**抛错**，所以这不是「少了一句话」，而是**提示词装配期的硬失败，发生在任何模型请求之前**。上游现已直接要求使用者删掉这个子句。 | 目录由 `dsh-working-directory` 服务供给 —— 它自 rc.2 起就在 `dsh-base` 骨架里，alpha.2 又通过新增的 `working_directory` 工具把它暴露出来。这个 suffix 在每一版上都与它重复。 |
+| 十条 subagent 行上的 `backgroundMode: continuable` | alpha.2 的 `tool-subagent` `Config` 里**根本没有这个键**（alpha.1 有）。schemastery 不拒绝未知键，于是它变成一条没人读的死键。 | continuable 现在是**provider 的能力**而非行的设置：`apply()` 读 `subagentProvider.prepareContinuable`，而 spawn 与 fork 两个 provider 在 alpha.1 与 alpha.2 上都实现了它。lane 的 durable-id 续话能力保留。 |
+
+这两处删除在三版上都安全，而这正是要点：无子句的 `persona` 行与无 `backgroundMode` 的 lane 行**处处合法**，而旧写法只在较旧的宿主上合法。`tools/patch-contract.test.mjs` 现在会在产物里重新出现 `{{cwd}}` 时失败，所以这一条不会再被误加回来。
 
 ### 1–4. 安装
 

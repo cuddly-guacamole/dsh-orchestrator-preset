@@ -194,21 +194,39 @@ function officialIds() {
 const laneRowId = (lane) => `tool-subagent-${lane.tool.replace(/^subagent_/, '').replace(/_/g, '-')}`
 
 /**
- * DESIGN.md §2.3「删除项」表逐行抄下来的 10 个官方 row id。
+ * DESIGN.md §2.3「删除项」表里，**官方骨架至今仍有**的 row id。
  * ⚠️ 这份清单**不是**「官方 id 不得出现在产物里」——那种断言在本项目里是错的：
  * §2.1 说 DSH 没有 preset 继承，官方行**必须**逐行重新声明，所以 `tool-fs` / `plan-mode` /
  * `compaction-basic` 这些官方 id 出现在产物里是**设计要求**，不是碰撞。
  * 真正的约束是反过来的：本 preset 主动删掉的那几行**不许复活**（DESIGN.md §2.3 + §15 R16:
  * 「不挂载 ⇒ 不存在」比「存在但 deny」更彻底）。
+ *
+ * ⚠️ **`tool-ralph` 从这里移到了下面那份清单**（host 0.2.1-alpha.2 实测）：上游自己把这一行
+ * 从 `standard.patch.yml` 删了（rc.2/alpha.1 是 162 行，alpha.2 是 137 行），于是本断言
+ * 「官方骨架里必须有它」不再成立 —— 报错文案本身就是结论：**该更新的是这份清单，不是让测试让步**。
  */
 const DELETED_BY_DESIGN_2_3 = [
   'command-goal', 'tool-goal',
   'present',
   'tool-plugin-manager',
-  'tool-ralph',
-  'tool-subagent-codex', 'tool-subagent-claude-code',
   'workflow-ptc', 'tool-workflow',
   'tool-subagent',
+]
+
+/**
+ * 曾经由 §2.3 主动删除、**如今连官方骨架也不再提供**的 row id（host 0.2.1-alpha.2 起）。
+ *
+ * 它们与上表是**两种不同的理由**，所以分成两份清单，判据也反过来：
+ * 上表要的是「骨架**有**、产物**无**」；这份要的是「两边**都无**」。合成一份会让
+ * 「上游删了」和「本包删了」看起来像同一件事 —— 而它们的可证伪性方向正好相反。
+ *
+ * ⚠️ 这份清单**只在宿主 ≥ 0.2.1-alpha.2 上成立**。在 rc.2 / alpha.1 上这三行**仍在**骨架里，
+ * 所以本断言会失败 —— 那是**正确**的失败：支持矩阵一旦回退到旧版，这份清单就该跟着回退。
+ * ⇒ 本包的支持声明（README「Host version gate」）与本文件是**同一件事的两处记录**，改一处要改两处。
+ */
+const GONE_UPSTREAM_TOO = [
+  'tool-ralph',
+  'tool-subagent-codex', 'tool-subagent-claude-code',
 ]
 
 /**
@@ -291,11 +309,16 @@ test('计数口径自洽：声明 row 数 / plugins[] 条目数 / 文件内 `- i
 // ============================================================================
 // 4. 与官方 preset 的关系：主动删掉的行不许复活
 // ============================================================================
-test('DESIGN §2.3 标记删除的 10 个官方 row 不在产物里', () => {
+test('DESIGN §2.3 标记删除的官方 row 不在产物里；上游也已删掉的那几个两边都无', () => {
   const official = officialIds()
   for (const id of DELETED_BY_DESIGN_2_3) {
     assert.equal(official.has(id), true, `${id} 已不在权威骨架里 —— 这份删除清单过期了，先核对 DESIGN §2.3 与骨架`)
     assert.equal(rows().some((r) => r.id === id), false, `${id} 是 DESIGN §2.3 明确删除的行，不该出现在 cordis.patch.yml`)
+  }
+  for (const id of GONE_UPSTREAM_TOO) {
+    assert.equal(official.has(id), false,
+      `${id} 又在权威骨架里了 —— 上游把它加了回来，先核对本包的支持矩阵（README「Host version gate」）再决定这份清单的去留`)
+    assert.equal(rows().some((r) => r.id === id), false, `${id} 不该出现在 cordis.patch.yml`)
   }
 })
 
@@ -368,11 +391,38 @@ test('preset 内的本包自写挂载行是这 3 条、都挂本包 specifier；
 })
 
 // ============================================================================
+// 6b. persona 行不得再引用 `{{cwd}}`（值级别；这条是 0.2.1-alpha.2 回归的守卫）
+// ============================================================================
+test('persona 行的 config 为空，且产物里没有任何 {{cwd}} 引用', () => {
+  // 这条断言保护一个**装配期硬失败**，不是风格偏好。`{{cwd}}` 在 host 0.2.1-alpha.2 上
+  // 不再是已注册的提示词变量（`dsh-agent-loop` 只注册 provider / model），而
+  // `dsh-system-prompt` 的 `interpolate()` 对未知变量是 throw ⇒ 每次装配都抛，
+  // **在任何模型请求之前**。旧版（rc.2 / alpha.1）认得它，所以「在旧版上绿」不构成证据 ——
+  // 这正是它能潜伏到宿主升级才爆的原因。
+  //
+  // 判据写成「产物里一个 {{cwd}} 都没有」而不是「persona 行没有 suffix」：前者连
+  // 将来有人在 lane persona、section 文本或 toolFilter 里重新引入它也会拦住，而后者只查一处。
+  // 它可证伪：把 suffix 加回 topRows 再重新生成，本断言必失败。
+  assert.equal(committed.includes('{{cwd}}'), false,
+    'cordis.patch.yml 里出现了 {{cwd}} —— 该变量在 host 0.2.1-alpha.2 上已不存在，装配期会抛 '
+    + 'unknown prompt variable（见 tools/preset-declaration.mjs 的 topRows 注释）')
+  // 反向也查一遍：persona 行**必须没有** config。空 config 在渲染时会被省略成裸一行；
+  // 若渲染器将来开始输出 `config: {}`，这条会失败，而那正是该被看见的形状变化。
+  const persona = parseRows(committed).find((r) => r.id === 'persona')
+  assert.notEqual(persona, undefined, '产物里找不到 persona 行')
+  const body = committed.split('\n').slice(persona.startLine, persona.startLine + 4)
+  assert.equal(body.some((l) => /^\s+config:/.test(l)), false,
+    'persona 行带上了 config —— 它应当是一行裸挂载（plan-aware-persona.mjs 自带 prefix，suffix 已按上游要求清空）')
+})
+
+// ============================================================================
 // 7. 每个 lane 行恰好一个 toolFilter：allow 与 deny 二选一
 // ============================================================================
 test('每个 lane 行恰好有 toolFilter.allow 或 toolFilter deny 之一；只有 reader 用 allow', () => {
   const lines = committed.split('\n')
-  // lane 行 = 由 LANES 铸出的那 9 个（fork 是 delegation 控制行，没有 toolFilter，不在此列）
+  // lane 行 = 由 LANES 铸出的那 9 个。⚠️ `tool-subagent-fork` **也有** toolFilter（只 deny 那条
+  // `schedule_*` 条件尾巴，见第 10b 条），但它不是 lane：它没有 persona / maxDepth，也不该被
+  // 这条「只有 reader 用 allow」的房规约束 ⇒ 用 laneIds 把它排除，而不是用「有没有 toolFilter」。
   const laneIds = d.LANES.map(laneRowId)
   const laneRows = parseRows(committed).filter((r) => r.indent === 14 && laneIds.includes(r.id))
   assert.equal(laneRows.length, d.LANES.length, '产物里的 lane 行数与声明不符')
@@ -468,6 +518,71 @@ test('lane 寻址的 3 个工具名在每个 lane 的工具面里都不出现（
       }
     }
   }
+})
+
+// ============================================================================
+// 10b. tool-schedule：只给 Lead，且只在宿主真有这个包时（0.2.0-rc.2 没有）
+// ============================================================================
+const SCHEDULE_TOOLS = ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update']
+
+test('tool-schedule 行：Lead 挂载、带宿主门；lane 的 deny 按同一判据条件带上那 4 个名字', () => {
+  // 依据：用户 2026-10-10 裁决「选项1，只给主代理，不给子agent」。三个承重点各一条断言，
+  // 每条都能单独失败。宿主面的事实与三条独立证据写在 tools/preset-declaration.mjs 的 SCHEDULE_* 段：
+  // `@deepseek-ai/dsh-tool-schedule` **没有 0.2.0-rc.2 版本**，rc.2 宿主也不依赖它、骨架里也没有它。
+  const block = blockOf(committed, 'tool-schedule')
+  assert.notEqual(block, null,
+    '产物里没有 tool-schedule 行 —— 该行是 2026-10-10 用户裁决的落点（放开提醒能力，只给 Lead）')
+  assert.equal(scalarOf(block, 'name'), '@deepseek-ai/dsh-tool-schedule',
+    'tool-schedule 行挂的不是那个包')
+  // ① 宿主门。0.2.0-rc.2（npm `latest`，也是 Desktop 应用自带的 runtime）上这个包根本不存在：
+  //    没有门 ⇒ 那台机器上 lane 的 deny 会命名 4 个没注册的工具 ⇒ restrict() 抛 unknown tool，
+  //    **每一次 lane 派发**都失败（dsh-subagent/lib/index.js:401 的 restrict() 无 try/catch）。
+  const disabled = scalarOf(block, 'disabled')
+  assert.notEqual(disabled, undefined,
+    'tool-schedule 行没有 disabled 宿主门 —— 在 0.2.0-rc.2 上这个包不存在（npm 无该版本、宿主也不依赖它）')
+  assert.equal(disabled.startsWith('!!js '), true, `disabled 不是 !!js 表达式：${disabled}`)
+  assert.equal(disabled.includes('@deepseek-ai/dsh-tool-schedule'), true,
+    '宿主门的判据里没有包名 —— 它必须按「这个包在这台宿主上能不能解析」判定')
+  // ② lane 侧：deny 面必须带**声明里那一条**条件尾巴；allow 面（reader）不得出现这些名字。
+  for (const lane of d.LANES) {
+    const laneBlock = blockOf(committed, laneRowId(lane))
+    assert.notEqual(laneBlock, null, `产物里找不到 lane 行 ${laneRowId(lane)}`)
+    const denyLine = laneBlock.find((l) => /^\s+deny: /.test(l))
+    if (denyLine === undefined) {
+      for (const name of SCHEDULE_TOOLS) {
+        assert.equal(laneBlock.some((l) => l.includes(name)), false,
+          `lane ${lane.tool} 用 allow 白名单，白名单里出现了 ${name} ⇒ 越界（裁决：只给 Lead）`)
+      }
+      continue
+    }
+    assert.equal(denyLine.includes(d.SCHEDULE_DENY_EXPR), true,
+      `lane ${lane.tool} 的 deny 尾巴不是声明里的 SCHEDULE_DENY_EXPR ⇒ 「只给 Lead」的边界在这条 lane 上失效`)
+    // ③ 反向：这 4 个名字**不得**出现在静态段里。静态段是「每台机器都有」的名单，写死它
+    //    = 在没有这个包的宿主上 restrict() 抛 unknown tool。判据取第一个 `).concat(` 之前的部分。
+    const staticPart = denyLine.slice(0, denyLine.indexOf(').concat('))
+    assert.equal(staticPart.includes(').concat('), false, `deny 行里找不到静态段边界：${denyLine.slice(0, 120)}`)
+    for (const name of SCHEDULE_TOOLS) {
+      assert.equal(staticPart.includes(name), false,
+        `lane ${lane.tool} 把 ${name} 写进了静态 deny 段 —— 没有这个包的宿主上 restrict() 会抛 unknown tool`)
+    }
+  }
+  // ④ **fork 控制行也必须 deny 那 4 个名字**。fork child **同样是子 agent**，而裁决是
+  //    「只给主代理，不给子agent」；官方 `standard` 骨架就是在 spawn 与 fork 两行都 deny
+  //    （alpha.2 `:101-104` 与 `:112-115`）。只改 9 条具名 lane 会留下口子：lane 自己 fork 不了
+  //    （它们的 deny 里含 `subagent_fork`），但 **Lead 可以** ⇒ 经 fork 派出的 child 会继承提醒工具。
+  const forkBlock = blockOf(committed, d.forkControlRowId)
+  assert.notEqual(forkBlock, null, `产物里找不到 fork 控制行 ${d.forkControlRowId}`)
+  const forkDeny = forkBlock.find((l) => /^\s+deny: /.test(l))
+  assert.notEqual(forkDeny, undefined,
+    'fork 控制行没有 toolFilter.deny —— 经 subagent_fork 派出的 child 会继承 schedule_*（裁决是只给主代理）')
+  assert.equal(forkDeny.includes(d.SCHEDULE_DENY_EXPR), true,
+    'fork 控制行的 deny 尾巴不是声明里的 SCHEDULE_DENY_EXPR')
+  // ⚠️ 反向：fork 行**不得**带 MCP 闭包 —— fork child 是通用 fork，除提醒之外的工具面本轮不收窄。
+  //    带上它会静默改掉所有 fork child 的工具面，那是这个裁决之外的行为变更。
+  assert.equal(forkDeny.includes(d.MCP_CLOSURE_EXPR), false,
+    'fork 控制行的 deny 带上了 MCP 闭包 —— fork child 的 MCP 工具面不该被这条裁决收窄')
+  assert.equal(/^\s+deny: !!js \(\[\]\)\.concat\(/.test(forkDeny), true,
+    `fork 控制行的 deny 形状不是「空静态段 + 条件尾巴」：${forkDeny.trim().slice(0, 80)}`)
 })
 
 // ============================================================================

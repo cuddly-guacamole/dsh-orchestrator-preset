@@ -170,10 +170,12 @@ export function extractPlanModeSection(path = SKELETON) {
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`          // 字符串值：单引号 + '' 转义
 const RAW = (text) => ({ __raw: text })                        // 整行原样（如 `!!js ...` / `cordis:group`）
 const BLOCK = (lines) => ({ __block: lines })                  // 块标量（内容行缩进 = 键缩进 + 2）
-// 这三个键的字符串值**裸写**（与权威骨架 standard.patch.yml:92-102 及旧 bundle 一致）。
+// 这两个键的字符串值**裸写**（与权威骨架 standard.patch.yml:92-102 及旧 bundle 一致）。
 // 理由（可机械核对）：T08 自检 `grep -o "toolName: subagent_[a-z]*"` 期望 **10** 命中
 //   （9 lane + fork）⇒ 若写成 `toolName: 'subagent_fork'` 则该断言恒 0（又一个假通过面）。
-const BARE_STRING_KEYS = new Set(['provider', 'toolName', 'backgroundMode'])
+// ⚠️ `backgroundMode` 曾在此列；lane 行不再写它（见 laneRow），保留它只会让「这个键还有人写」
+//    看起来仍然成立。若将来恢复该键，把它加回这里，否则会渲染成带引号的字符串。
+const BARE_STRING_KEYS = new Set(['provider', 'toolName'])
 
 function pushValue(lines, indent, key, value) {
   const pad = ' '.repeat(indent)
@@ -235,26 +237,40 @@ const personaExpr = (bundlePkg, file) =>
 //   当成 flow sequence（那是 resolve 不掉的 `!!js`）。闭包体内**不得**出现 `: ` / `#` / 反斜杠 /
 //   双引号 —— 那是 plain scalar 的边界；这条约束由 T13/check 13 的求值测试兜住。
 const jsString = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
-const denyExpr = (names, closure) => {
+const denyExpr = (names, closure, scheduleClosure) => {
   if (typeof closure !== 'string' || closure.length === 0) {
     throw new Error('MCP_CLOSURE_EXPR 缺失 / 非字符串 ⇒ 停（不得把 MCP 名退回静态名单：那正是「新机器上不可用」的成因）')
   }
-  return `!!js ([${names.map(jsString).join(', ')}]).concat(${closure})`
+  // ⚠️ **第二条尾巴 = `schedule_*` 的版本条件**（host 0.2.0-rc.2 上 `dsh-tool-schedule` 根本不存在，
+  //    见 preset-declaration.mjs 的 SCHEDULE_* 段）。它与 MCP 闭包**同一条机制**（按机器求值的
+  //    `!!js` 尾巴），但回答的是另一个问题：MCP 问「这台机器配了哪些 server」，它问「这台宿主有没有
+  //    这个包」。合成一份会让「机器配置漂移」与「宿主版本差异」看起来像同一件事，而两者的翻转条件相反。
+  //    同一条 plain-scalar 边界约束适用于它（无 `: ` / `#` / 反斜杠 / 双引号），由 check 13 兜住。
+  if (typeof scheduleClosure !== 'string' || scheduleClosure.length === 0) {
+    throw new Error('SCHEDULE_DENY_EXPR 缺失 / 非字符串 ⇒ 停（不得把 schedule_* 退回静态名单：rc.2 上那些名字不存在，restrict() 会抛）')
+  }
+  return `!!js ([${names.map(jsString).join(', ')}]).concat(${closure}).concat(${scheduleClosure})`
 }
 
 export function laneRow(lane, d) {
   const common = d.LANE_COMMON          // ⚠️ 必须复用声明里的那对值，不得另写一份
   const filter = lane.deny !== undefined
-    ? { deny: RAW(denyExpr(lane.deny, d.MCP_CLOSURE_EXPR)) }
+    ? { deny: RAW(denyExpr(lane.deny, d.MCP_CLOSURE_EXPR, d.SCHEDULE_DENY_EXPR)) }
     : { allow: lane.allow }
   return {
     id: `tool-subagent-${lane.tool.replace(/^subagent_/, '').replace(/_/g, '-')}`,
     name: '@deepseek-ai/dsh-tool-subagent',
     config: {
-      // provider / toolName / backgroundMode 的字符串值由 BARE_STRING_KEYS 规则**裸写**（见上）
+      // provider / toolName 的字符串值由 BARE_STRING_KEYS 规则**裸写**（见上）
       provider: common.provider,
       toolName: lane.tool,
-      backgroundMode: common.backgroundMode,
+      // ⚠️ `backgroundMode` **不再无条件写入**（host 0.2.1-alpha.2 起宿主已无此键）。
+      //    它改为「声明里有才写」—— 声明现在是 `{ provider: 'spawn' }`，所以产物里没有它。
+      //    写死在这里曾让它无法被声明侧移除：删掉 LANE_COMMON 的键只会得到
+      //    `配置值缺失：backgroundMode`（pushValue 的 loud 停），而不是一条干净的行。
+      //    ⚠️ 若将来要恢复它（例如宿主重新引入，或某个 provider 需要显式声明），
+      //    **改声明即可**，不必再动这里 —— 这就是把它变成可选键的全部目的。
+      ...(common.backgroundMode !== undefined ? { backgroundMode: common.backgroundMode } : {}),
       maxDepth: lane.maxDepth,
       persona: RAW(personaExpr(d.bundlePkg, lane.persona)),
       toolFilter: filter,
@@ -269,8 +285,25 @@ const withSection = (row, section) =>
 export function groupEntry(group, d, section) {
   const entry = { id: group.id, name: RAW('cordis:group'), group: true }
   if (group.isolate !== undefined) entry.isolate = group.isolate
-  entry.children = group.rows.map((r) => withSection(r.tool !== undefined ? laneRow(r, d) : r, section))
+  entry.children = group.rows.map((r) => withSection(
+    r.tool !== undefined ? laneRow(r, d) : (r.id === d.forkControlRowId ? forkControlRow(r, d) : r),
+    section,
+  ))
   return entry
+}
+
+// ── fork 控制行：只 deny 那条 `schedule_*` 条件尾巴 ──────────────────────────
+// fork child 同样是「子 agent」，而用户 2026-10-10 的裁决是「只给主代理，不给子agent」。
+// 官方 `standard` 骨架在 **spawn 与 fork 两行**都 deny 全四个名字 ⇒ 只改 9 条具名 lane 会留下口子
+// （Lead 可以 fork；经 fork 派出的 child 会继承提醒工具）。
+// ⚠️ **它刻意不带 MCP 闭包**：fork child 是通用 fork，除提醒之外的工具面本轮不收窄。
+//    写成 `([]).concat(<尾巴>)` 而不是裸尾巴：静态段为空这件事要**看得见**（它不是「漏了静态名单」，
+//    而是「本行没有静态名单」），且与 lane 的 deny 保持同一种 `!!js` 形状。
+const forkControlRow = (row, d) => {
+  if (typeof d.SCHEDULE_DENY_EXPR !== 'string' || d.SCHEDULE_DENY_EXPR.length === 0) {
+    throw new Error('SCHEDULE_DENY_EXPR 缺失 / 非字符串 ⇒ 停（fork 控制行的 deny 尾巴取不到值）')
+  }
+  return { ...row, config: { ...row.config, toolFilter: { deny: RAW(`!!js ([]).concat(${d.SCHEDULE_DENY_EXPR})`) } } }
 }
 
 export const countRows = (d) =>
