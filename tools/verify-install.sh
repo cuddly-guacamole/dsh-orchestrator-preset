@@ -95,14 +95,21 @@ COMPOSED_CORDIS_YML="$PROFILE_DIR/cordis.yml"
 
 # ── Which KEY is the bundle linked under? ────────────────────────────────────
 # ⚠️ The key is an ALIAS, and it is deliberately not the same string everywhere.
-#    `install.sh` stages the bundle locally and links it as
-#    `@local/dsh-orchestrator-preset-bundle` on purpose: a locally staged copy that
-#    occupied the already-published key could not be told apart from the npm
-#    package of the same name, and a resolver that quietly returned the published
-#    one instead of the local projection would be silently wrong. A profile may
-#    instead carry the npm name itself as the key — also fine. Both work at
-#    runtime; only ONE of them satisfies a hardcoded path, which is how this script
-#    used to fail a perfectly healthy web profile while desktop passed.
+#    A locally staged copy that occupied the already-published key could not be
+#    told apart from the npm package of the same name, and a resolver that quietly
+#    returned the published one instead of the local projection would be silently
+#    wrong. That is the reason the keys were kept distinct, and it stands as the
+#    general rule.
+#    ⚠️ This repository now takes a DELIBERATE, user-approved exception to it:
+#    `install.sh` stages the bundle locally and links it under the npm name itself
+#    — `@quill507/dsh-orchestrator-preset` — so every profile carries ONE key and
+#    the hardcoded `@local/…` path (which is how this script used to fail a
+#    perfectly healthy web profile while desktop passed) is gone at the source.
+#    The cost of the exception is real and accepted: a local projection under the
+#    published name is told apart from the npm package by WHERE IT POINTS, not by
+#    its name, so a resolver that returns the published one stays silent. Both
+#    forms still work at runtime; a profile may carry `@quill507/…`, `@local/…`, or
+#    a third key.
 #    ⇒ So we do NOT guess a key. We DISCOVER the link and judge it by IDENTITY:
 #      (1) a REAL symlink exists under this profile's node_modules — `test -L`,
 #          not `test -e`, because a link some tool silently degraded into a copy

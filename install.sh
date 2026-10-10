@@ -30,7 +30,11 @@ set -euo pipefail
 
 MIN_HOST_VERSION="0.1.7-rc.1"
 BUNDLE_DIRNAME="dsh-orchestrator-preset-bundle"
-BUNDLE_SCOPE="@local/${BUNDLE_DIRNAME}"
+# The module KEY a profile resolves this bundle by. It is deliberately NOT derived
+# from BUNDLE_DIRNAME: the on-disk directory keeps the bundle-dirname, while the key
+# is the package's npm name — profiles that carry the npm name as the key are
+# accepted by verify-install.sh, and unifying on it removes the @local/ alias.
+BUNDLE_KEY="@quill507/dsh-orchestrator-preset"
 SKILLS="orch-delegation-brief orch-discussion-protocol orch-evidence-protocol orch-real-path-testing"
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
@@ -126,7 +130,7 @@ info "synced ${STAGED} entries; ${DSH_HOME}/plugins/${BUNDLE_DIRNAME} now holds 
 # The bundle is resolved BY NAME from a profile's node_modules, so the symlink
 # belongs in each profile — not inside the bundle. `pnpm install` creates it from
 # the profile's `link:` dependency; this step verifies it and says what is missing.
-say "2. verify the ${BUNDLE_SCOPE} symlink in each profile"
+say "2. verify the ${BUNDLE_KEY} symlink in each profile"
 PROFILES="${DSH_HOME}/profiles"
 if [ ! -d "$PROFILES" ]; then
   info "no ${PROFILES} yet — nothing to verify."
@@ -137,7 +141,7 @@ else
     pname="$(basename "$pdir")"
     case "$pname" in node_modules|shared) continue;; esac
     FOUND_PROFILE=1
-    link="${pdir}node_modules/@local/${BUNDLE_DIRNAME}"
+    link="${pdir}node_modules/${BUNDLE_KEY}"
     if [ -L "$link" ]; then
       # test -L, never test -e: Git Bash can silently degrade a link into a copy,
       # and a copy passes test -e while freezing every later edit to the bundle.
@@ -190,14 +194,14 @@ cat <<EOF
 
    (a) In ~/.dsh/profiles/<profile>/package.json — add the dependency:
 
-         "${BUNDLE_SCOPE}": "link:${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
+         "${BUNDLE_KEY}": "link:${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 
        and add the same string to the dsh.profile.bundles array, keeping its
        position. Then run, in that profile directory:
 
          pnpm install
 
-       which creates the real symlink under node_modules/@local/.
+       which creates the real symlink under node_modules/@quill507/.
 
    (b) In ~/.dsh/profiles/<profile>/cordis.patch.yml — select the preset:
 
