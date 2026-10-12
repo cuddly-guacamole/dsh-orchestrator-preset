@@ -395,6 +395,39 @@ full re-assembly of the running host. The script prints the edits instead of mak
 `aegis` is an upstream dependency, not something this repository ships. Install it through
 the host, and pin the same released tag in both profiles.
 
+**Turning aegis's automatic injection off, without losing the routing table.**
+
+aegis arms a routing bootstrap for every session: one 4443-character block (with the default
+`tdd_mode = "off"`), delivered once the session emits its first `tool/call` or
+`assistant/message` and re-armed by `compaction/end`. It is one block of text for the
+session's main agent — subagent sessions are skipped by design — while this preset routes by
+domain and lane, so on this preset it is a second routing authority saying something else.
+aegis gates it on a setting in its **own** config file, not in a DSH patch layer:
+
+```toml
+# ~/.config/aegis/config.toml
+activation_mode = "explicit"
+```
+
+`explicit` makes `installBootstrap()` return `null` before it reads or builds anything, so
+nothing is injected. `auto` — the default — is what arms it.
+
+**This does not cost you the 22 routing rows.** The two are separate mechanisms in the same
+plugin, and the skills provider is registered first and unconditionally: in aegis's own
+`extensions/dsh/index.js`, `applyFilesystemProvider(...)` is lines 22–27 and the
+`installBootstrap(ctx, …)` call is line 29. So all 23 skills still register, and the 22 names
+`routing-sections.mjs` points at still resolve. Measured on this host: 23 provided, 22
+referenced, nothing referenced that is not provided. `activation_mode` gates the injected
+text and only that.
+
+Two things to know before you edit it:
+
+- **It is user-global, with no per-project granularity.** The path resolves from your home
+  directory, so one edit reaches every workspace on both the `web` and `desktop` profiles.
+- **`AEGIS_ACTIVATION_MODE` overrides the file, but only if it is already set when the host
+  starts.** The value is read once, during plugin apply at boot, so exporting it in a shell
+  afterwards changes nothing. Either way, restart the host.
+
 ---
 
 ## Troubleshooting

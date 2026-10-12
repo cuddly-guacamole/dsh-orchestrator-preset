@@ -61,6 +61,15 @@ warn() { printf 'WARN  %s\n' "$*"; }
 note() { printf '      %s\n' "$*"; }
 head_() { printf '\n== %s\n' "$*"; }
 
+# --- the two artifacts this script compares, each overridable --------------
+# DENY_JSON is check 13's subject (the artifact the generator writes) and check 9's
+# source for the bridge switch; INSTALLED_JSON is the installed snapshot, resolved
+# further down once the bundle link is known. Each has an override so the
+# comparisons themselves can be driven with a deliberately broken copy — this
+# script's own rule is that a check which cannot fail is not a check, and that
+# applies to its own gates as much as to the host's.
+DENY_JSON="${VERIFY_DENY_JSON:-$REPO_ROOT/cordis.patch.yml}"
+
 # --- resolve the DSH home and the dsh package root, dynamically ------------
 # Neither is hardcoded: both move between machines, and a check that only works on
 # one of them is not a check.
@@ -688,7 +697,45 @@ head_ "check 9 — the routing table's aegis-* targets are actually provided"
 # Falsifiable: rename a skill upstream, or stop shipping the bridge, and this goes
 # red — which is the failure that is otherwise silent, because a routing row
 # pointing at nothing simply never matches and nothing complains.
-if [ -f "$REPO_ROOT/extensions/dsh/aegis-prefix.js" ]; then
+#
+# ⚠️ CHANGED FORM (F2). The bridge is a FILE **plus a SWITCH**, and this check
+#    used to test only the file. `apply()` reads `prefixAegisSkills` and returns
+#    before renaming anything when it is false (aegis-prefix.js:299-302), so the
+#    file being present while the switch is off leaves every routing row dangling
+#    — and the old predicate PASSED on exactly that state. "The bridge is
+#    installed" is not "the bridge runs".
+#
+#    Which layer the switch is read from: the ARTIFACT, not the declaration.
+#    `preset-declaration.mjs` is the single source of truth, but its only route to
+#    a running host is through the rendered row the Loader evaluates — the
+#    declaration's value never reaches the host by itself. Check 4 already gates
+#    declaration→artifact sync, so reading the declaration here as well would put
+#    the same fact in two places and answer a question this check does not own.
+#    The artifact is read with the host's own patch parser, so the `!!js` dialect
+#    and the indentation are the ones the Loader reads.
+PREFIX_PLUGIN="$REPO_ROOT/extensions/dsh/aegis-prefix.js"
+PREFIX_SWITCH=""
+if [ -f "$PREFIX_PLUGIN" ] && [ -f "$DENY_JSON" ]; then
+  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" node --input-type=module -e '
+import { loadOverlayPatches } from "@deepseek-ai/dsh-app-boot"
+const patches = loadOverlayPatches("verify-install", process.env.ARTIFACT)
+const rows = []
+const walk = (node) => {
+  if (Array.isArray(node)) { for (const item of node) walk(item); return }
+  if (node === null || typeof node !== "object") return
+  if (typeof node.id === "string") rows.push(node)
+  for (const value of Object.values(node)) walk(value)
+}
+walk(patches)
+const row = rows.find((r) => r.id === "orch-aegis-prefix")
+if (!row) { console.log("SWITCH=<no-row>"); process.exit(0) }
+const value = (row.config || {}).prefixAegisSkills
+console.log("SWITCH=" + (typeof value === "boolean" ? value : "<not-a-boolean: " + JSON.stringify(value) + ">"))
+' ) >"$TMP/bridge.txt" 2>"$TMP/bridge.err"
+  PREFIX_SWITCH="$(sed -n 's/^SWITCH=//p' "$TMP/bridge.txt" | head -1)"
+fi
+
+if [ -f "$PREFIX_PLUGIN" ] && [ "$PREFIX_SWITCH" = "true" ]; then
   AEGIS_PKG="$PROFILE_DIR/node_modules/aegis/skills"
   if [ ! -d "$AEGIS_PKG" ]; then
     warn "check 9  aegis pack not found under the profile — routing targets unverified"
@@ -720,7 +767,15 @@ if [ -f "$REPO_ROOT/extensions/dsh/aegis-prefix.js" ]; then
     fi
   fi
 else
-  bad "check 9  extensions/dsh/aegis-prefix.js is missing — the routing table has no bridge to the bare names"
+  # Three distinct states, three distinct messages — collapsing them would hide
+  # which one is true. A missing FILE and a present-but-disabled SWITCH both leave
+  # the routing table dangling, and both are now red.
+  if [ ! -f "$PREFIX_PLUGIN" ]; then
+    bad "check 9  extensions/dsh/aegis-prefix.js is missing — the routing table has no bridge to the bare names"
+  else
+    bad "check 9  the bridge is installed but its switch is NOT ON in $DENY_JSON (orch-aegis-prefix prefixAegisSkills=${PREFIX_SWITCH:-<unreadable>}) — apply() returns before renaming anything, so every routing target is dangling"
+    [ -s "$TMP/bridge.err" ] && note "$(head -3 "$TMP/bridge.err" | tr '\n' ' ')"
+  fi
 fi
 
 # ===========================================================================
@@ -985,13 +1040,13 @@ head_ "check 13 — the lane deny lists name no tool that only THIS machine is g
 # names a tool it does not have"; deleting the closure from the generator tripped
 # "the MCP machine lost mcp_playwright"; dropping the mode check tripped "names
 # the loader of an eager server, which the startup probe disposes".
-DENY_JSON="$REPO_ROOT/cordis.patch.yml"
 # The artifact this check reads is the one the generator writes (check 4 proves it
-# is in sync). The INSTALLED bundle is a separate copy of this tree, and a copy can
+# is in sync); `DENY_JSON` was resolved at the top because check 9 reads the same
+# artifact for the bridge switch. The INSTALLED bundle is a separate copy of this tree, and a copy can
 # lag: the same defect then still ships from the installed preset while the source
 # is clean. That is not this gate's verdict — but it is the one fact a green check
 # here would otherwise hide, so it is printed beside it.
-INSTALLED_JSON="$BUNDLE_LINK/cordis.patch.yml"
+INSTALLED_JSON="${VERIFY_INSTALLED_JSON:-$BUNDLE_LINK/cordis.patch.yml}"
 if [ ! -f "$DENY_JSON" ]; then
   bad "check 13  no artifact to evaluate at $DENY_JSON — nothing was evaluated"
 else
@@ -1155,8 +1210,53 @@ fi
 # refreshed the defect above still ships from the installed preset while the source
 # is clean. Not a verdict — the source artifact is what check 13 gates — but the
 # one fact a green check here would otherwise hide.
-if [ -f "$INSTALLED_JSON" ] && ! cmp -s "$INSTALLED_JSON" "$DENY_JSON"; then
-  warn "check 13  the INSTALLED bundle artifact differs from the repo artifact — refresh the install, or the old deny list is still what runs: $INSTALLED_JSON"
+#
+# ⚠️ CHANGED FORM (F3). This used a bare `cmp -s` on the whole file, and the
+#    artifact is not machine-independent byte for byte: its provenance line
+#    (`# Shell source: …`) is derived on the machine that generated it, so the
+#    installed copy and the repo copy differ BY CONSTRUCTION on any other machine.
+#    Measured on this host: raw byte-equal = false, machine-independent = true for
+#    both profiles. The result was a standing "refresh the install" on every run —
+#    advice that is not just noise but wrong, since the generator's own
+#    `provenanceWarnings()` states the gate has passed and that re-generating to
+#    silence it would only swap one machine's fingerprint for another's.
+#    ⇒ Compare the way the generator compares: `compareMachineIndependent`, the
+#      single owner of "which lines do not participate in the byte comparison"
+#      (it is the same function `--check` and patch-contract.test.mjs use — a
+#      second copy of that rule here would be a second home for one fact).
+#      A real divergence in the installed copy still fires, and now the first
+#      differing line is named instead of the whole file being called stale.
+if [ -f "$INSTALLED_JSON" ]; then
+  ( cd -- "$REPO_ROOT" && INSTALLED_JSON="$INSTALLED_JSON" DENY_JSON="$DENY_JSON" node --input-type=module -e '
+import { readFileSync } from "node:fs"
+import { compareMachineIndependent, provenanceFields, provenanceLineOf, PROVENANCE_FIELDS } from "./tools/gen-cordis-patch.mjs"
+const installed = readFileSync(process.env.INSTALLED_JSON, "utf8")
+const repo = readFileSync(process.env.DENY_JSON, "utf8")
+const verdict = compareMachineIndependent(installed, repo)
+console.log("VERDICT=" + (verdict.ok ? "same" : "differs"))
+if (verdict.ok) {
+  const fi = provenanceFields(provenanceLineOf(installed))
+  const fr = provenanceFields(provenanceLineOf(repo))
+  const moved = PROVENANCE_FIELDS.filter((k) => fi[k] !== fr[k])
+  console.log("PROVENANCE=" + (moved.length === 0 ? "<identical>"
+    : moved.map((k) => k + ": installed=" + (fi[k] ?? "<none>") + " repo=" + (fr[k] ?? "<none>")).join("  ")))
+} else {
+  console.log("DIFFERENCE=" + String(verdict.difference).split("\n").join(" | "))
+}
+' ) >"$TMP/installed.txt" 2>"$TMP/installed.err"
+  installed_verdict="$(sed -n 's/^VERDICT=//p' "$TMP/installed.txt" | head -1)"
+  if [ -z "$installed_verdict" ]; then
+    # Unreadable is not equal. Same rule as everywhere else here: a comparison that
+    # did not run must not be reported as one that passed.
+    warn "check 13  the installed artifact could not be compared ($INSTALLED_JSON)"
+    [ -s "$TMP/installed.err" ] && note "$(head -3 "$TMP/installed.err" | tr '\n' ' ')"
+  elif [ "$installed_verdict" = "differs" ]; then
+    warn "check 13  the INSTALLED bundle artifact differs from the repo artifact in machine-independent content — refresh the install, or the old deny list is still what runs: $INSTALLED_JSON"
+    note "$(sed -n 's/^DIFFERENCE=//p' "$TMP/installed.txt" | head -1)"
+  else
+    note "check 13  the installed bundle artifact matches the repo artifact (machine-independent content; provenance line excluded — it is derived per machine)"
+    note "check 13  provenance line (not a refresh signal): $(sed -n 's/^PROVENANCE=//p' "$TMP/installed.txt" | head -1)"
+  fi
 fi
 
 # ===========================================================================

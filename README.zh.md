@@ -244,6 +244,24 @@ patch 是**整行替换**而非深度合并，所以上面那段是完整的一�
 
 `aegis` 是上游依赖，不由本仓库分发。通过宿主安装，两个 profile 钉同一个 tag。
 
+**关掉 aegis 的自动注入，同时保住路由表。**
+
+aegis 会为每个会话上膛一段路由 bootstrap：默认 `tdd_mode = "off"` 时是 4443 字符的一块文本，在会话发出首个 `tool/call` 或 `assistant/message` 之后投递一次，并被 `compaction/end` 重新上膛。它是给会话**主 agent** 的一段文本 —— subagent 会话按设计被跳过 —— 而本 preset 按域与 lane 路由，所以在它之上这是第二套路由权威，说的却不是同一件事。aegis 用**它自己**配置文件里的一个开关来门控，不是 DSH 的 patch 层：
+
+```toml
+# ~/.config/aegis/config.toml
+activation_mode = "explicit"
+```
+
+`explicit` 让 `installBootstrap()` 在读取或构建任何东西**之前**返回 `null`，于是什么都不注入。`auto` —— 默认值 —— 才是上膛的那个。
+
+**这不以那 22 行路由为代价。** 两者是同一个插件里的两套机制，而且技能 provider 先注册、且无条件注册：在 aegis 自己的 `extensions/dsh/index.js` 里，`applyFilesystemProvider(...)` 是第 22–27 行，`installBootstrap(ctx, …)` 在第 29 行。所以 23 个技能照常注册，`routing-sections.mjs` 点名的 22 个照常解析。本机实测：23 提供、22 被点名，没有任何「被点名却没提供」。`activation_mode` 门控的只是那段注入文本，仅此而已。
+
+改之前要知道两件事：
+
+- **它是用户全局的，没有按项目的粒度。** 路径由 home 目录解析，所以一次改动会波及 `web` 与 `desktop` 两个 profile 上的**所有** workspace。
+- **`AEGIS_ACTIVATION_MODE` 覆盖该文件，但前提是宿主启动时它已经存在。** 该值在启动期的插件 apply 阶段被读取一次，之后在 shell 里再 export 不起作用。两条路都一样：重启宿主。
+
 ---
 
 ## 故障排查
