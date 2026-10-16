@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1%20%7C%200.2.1--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.3%20%7C%200.2.1--alpha.4-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [中文](README.zh.md) · [Notices](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -128,11 +128,13 @@ claims about someone else's runtime.
 | Exact layer order: bundle patches in `dsh.profile.bundles` order, then the profile's own `cordis.patch.yml`, then `$DSH_HOME/cordis.patch.yml`, then each `--patch` overlay. | **Verified on host version 0.2.0-rc.1.** Not confirmed against upstream documentation. |
 | A profile lives at `~/.dsh/profiles/<name>/` containing `cordis.yml`, `cordis.patch.yml` and `package.json`. | **Verified on host version 0.2.0-rc.1.** Not confirmed against upstream documentation. |
 | `config.selectedDefault` is in the preset schema and is the effective value; the schema also carries `config.default`, and `defaultId` resolves `selectedDefault ?? default`. | **Verified on host version 0.2.0-rc.1**, against `@deepseek-ai/dsh-agent-preset-registry`. |
-| `{{cwd}}` is a registered prompt variable; an unknown `{{…}}` reference throws during assembly. | **Version-dependent, and measured on each version.** Registered on `0.2.0-rc.2` and `0.2.1-alpha.1` (`dsh-agent-loop` registers `provider`/`model`/`cwd`), **absent on `0.2.1-alpha.2`** (only `provider`/`model`). Reproduced against the installed host's own `renderPrompt`: `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`. Upstream `dsh-system-prompt/README.md` now tells users to remove the clause. |
-| `tool-subagent`'s `Config` accepts `backgroundMode`. | **Version-dependent.** Present on `0.2.1-alpha.1` (`lib/index.js:257`), **absent on `0.2.1-alpha.2`**. schemastery tolerates the unknown key, so the removal is silent — verified by feeding both forms through the installed schema. Continuable is now decided by the provider's `prepareContinuable` (`lib/index.js:323`), implemented by spawn and fork on both versions. |
-| The `standard` preset skeleton is the authority for which rows exist. | **Verified on each version.** It shrank from 162 lines (`0.2.0-rc.2`, `0.2.1-alpha.1`) to 137 (`0.2.1-alpha.2`), dropping `tool-ralph`, `tool-subagent-codex` and `tool-subagent-claude-code`; `tool-schedule` was added — **on alpha.1, not on rc.2**. |
-| `@deepseek-ai/dsh-tool-schedule` exists on every supported host. | **False, and it is the reason this preset's only version-gated row exists.** npm publishes it at `0.0.1-rc.2` (a different generation), `0.2.1-alpha.1` and `0.2.1-alpha.2` — there is **no `0.2.0-rc.2`**. `dsh@0.2.0-rc.2` does not depend on it, none of its app packages do, and rc.2's skeleton has no such row; rc.2's reminder tools are the *optional, off-by-default* `dsh-experimental-schedule-bundle`, which inserts `time-context`/`schedule`/`ui-schedule` and **not** `tool-schedule`. |
-| A lane `toolFilter.deny` naming a tool the host does not register fails loudly at delegation, not at mount. | **Verified on `0.2.0-rc.2` and `0.2.1-alpha.2`, identical behaviour.** `tools.restrict()` throws `names unknown global tool` (`dsh-tools/lib/index.js:2895-2908`), and `dsh-subagent` calls it unguarded when a child is composed (`lib/index.js:401`) — so a hardcoded `schedule_*` deny list would break **every lane delegation** on `latest`. |
+| `{{cwd}}` is a registered prompt variable; an unknown `{{…}}` reference throws during assembly. | **Version-dependent, and measured on each version.** Registered on `0.2.0-rc.2` (`dsh-agent-loop` registers `provider`/`model`/`cwd`), **absent from `0.2.1-alpha.2` onward** (only `provider`/`model` — re-checked on the installed `0.2.1-alpha.4`). Reproduced against the installed host's own `renderPrompt`: `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`. Upstream `dsh-system-prompt/README.md` now tells users to remove the clause. This is why the `persona` row carries no `suffix` on **any** supported version — see [Host version gate](#0-host-version-gate). |
+| `tool-subagent`'s `Config` accepts `backgroundMode`. | **Version-dependent.** Present on `0.2.1-alpha.1` (`lib/index.js:257`), **absent from `0.2.1-alpha.2` onward**. schemastery tolerates the unknown key, so the removal is silent — verified by feeding both forms through the installed schema. Continuable is now decided by the provider's `prepareContinuable`, implemented by both the spawn and fork providers on every supported version (re-checked on the installed `0.2.1-alpha.4`). The lane rows therefore write no `backgroundMode` at all. |
+| The `standard` preset skeleton is the authority for which rows exist. | **Verified on each version.** It shrank from 162 lines (`0.2.0-rc.2`, `0.2.1-alpha.1`) to 137 (`0.2.1-alpha.2`), dropping `tool-ralph`, `tool-subagent-codex` and `tool-subagent-claude-code`; `tool-schedule` was added — **on alpha.1, not on rc.2**. Re-measured on the installed `0.2.1-alpha.4`: 128 lines, still carrying `time-context` and `tool-schedule`, still without the three dropped rows. |
+| `@deepseek-ai/dsh-tool-schedule` exists on every supported host. | **False, and it is the reason this preset's only version-gated row exists.** npm publishes it at `0.0.1-rc.2` (a different generation) and at `0.2.1-alpha.1` … `0.2.1-alpha.4` — there is **no `0.2.0-rc.2`**. `dsh@0.2.0-rc.2` does not depend on it, none of its app packages do, and rc.2's skeleton has no such row; rc.2's reminder tools are the *optional, off-by-default* `dsh-experimental-schedule-bundle`, which inserts `time-context`/`schedule`/`ui-schedule` and **not** `tool-schedule`. |
+| A lane `toolFilter.deny` naming a tool the host does not register fails loudly at delegation, not at mount. | **Verified on `0.2.0-rc.2` and `0.2.1-alpha.2`, identical behaviour.** `tools.restrict()` throws `names unknown global tool` (`dsh-tools/lib/index.js:2895-2908`), and `dsh-subagent` calls it unguarded when a child is composed (`lib/index.js:401`) — so a hardcoded `schedule_*` deny list would break **every lane delegation** on `latest`. This still holds on `0.2.1-alpha.3`/`alpha.4`, where it is the reason the legacy branch's deny tail stays conditional. |
+| `tool-subagent`'s row `Config` still accepts `persona` and `toolFilter`. | **False from `0.2.1-alpha.3` onward, and this is the second version-gated mechanism.** `dsh-tool-subagent/lib/index.js:311` no longer declares either key, and `:355` hard-throws on both at mount. The bundle therefore ships **two lane forms** behind one host gate — see [The alpha.3 lane migration](#the-alpha3-lane-migration). |
+| An Agent Preset can express a tool **exclusion**. | **False, and it is why the bundle ships `lane-tool-gate.mjs`.** A preset's `plugins[]` can only ADD. Measured on `0.2.1-alpha.3`: a persona-only preset gave the child **25** tools including `edit`/`bash`/`send_message`/`interrupt_agent`, and marking `tool-bash` `disabled: true` inside the preset left `bash` present (23 tools). `toolFilter` is also unreachable on that path: fresh dispatch sends `composition: { agentPreset }` only (`dsh-subagent/lib/index.js:1452`), and the single consumer at `:395` reads the field the **resume** path restores from a persisted descriptor (`:2177`). |
 
 DeepSeek Harness is MIT-licensed: [`github.com/deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness).
 Unrelated projects sharing a similar name are not a source for anything in this repository.
@@ -150,6 +152,7 @@ Unrelated projects sharing a similar name are not a source for anything in this 
 | `plan-aware-persona.mjs` | Swaps the persona between Orchestrator and Planner per assembly. |
 | `routing-sections.mjs` | The four resident routing sections. |
 | `lane-composition.mjs` | The three durable-agent-id child-addressing tools. |
+| `lane-tool-gate.mjs` | **New on `0.2.1-alpha.3`.** The lane tool gate: `tools.guard()`, mounted inside each lane's Agent Preset, because a preset cannot express a tool exclusion. See [The alpha.3 lane migration](#the-alpha3-lane-migration). |
 | `personas/` | Ten persona files: orchestrator, planner, and one per lane. |
 | `skills/` | The four self-authored `orch-*` skills. This directory is the authoritative list of them. |
 | `extensions/dsh/` | The bundle's two plugins: the skills provider, and the aegis prefix bridge. |
@@ -194,31 +197,48 @@ written down without any install being able to fail over it:
 
 The lower bounds name **the oldest host version this is supported on** — 0.2.0-rc.2, which is
 also what `latest` still resolves to — not an earlier one the design happened to reference,
-and not the newest, because the preset is supported on 0.2.1-alpha.1 **and 0.2.1-alpha.2** too
-(see [Host version gate](#0-host-version-gate)). The upper bounds follow the convention the
+and not the newest, because the preset is supported on `0.2.1-alpha.3` **and `0.2.1-alpha.4`**
+too (see [Host version gate](#0-host-version-gate)). The upper bounds follow the convention the
 published `@quill507/dsh-auto-approval-llm` uses on the same host packages. `optional: true` is
 what keeps the declaration honest: the coupling here is deep — `ctx.skills.registerProvider` is
 a host API — so a major change could break this silently, and saying so is worth more than
 pretending the range is enforced. It is not.
 
 **The supported set is three versions, and that is a measured claim, not a copied one.** Each
-was checked against its own published tarball rather than assumed to follow from its neighbour:
-0.2.1-alpha.2 removed two things the preset had been relying on (`{{cwd}}` as a registered
-prompt variable, and the `backgroundMode` key on `tool-subagent`). Nothing that differs between
-the three versions is silently tolerated — where a row had to change, it changed to the form
-that is legal on **all three** (see [Sourcing](#sourcing-what-is-upstream-what-was-measured-here)),
-because a preset that is only correct on its newest host is not supported on the other two.
+was checked against its own published tarball rather than assumed to follow from its neighbour.
+Two host releases broke something this preset relied on, and they broke it in two different
+ways — which is the whole reason the artifact now has a gate in it:
 
-One capability is **host-gated instead of uniform**, and it is worth knowing which: the Lead's
+- **`0.2.1-alpha.2` removed two keys.** `{{cwd}}` stopped being a registered prompt variable,
+  and `backgroundMode` disappeared from `tool-subagent`'s `Config`. Both removals were
+  *absorbable*: the preset stopped writing either one, and the resulting `persona` row and lane
+  row are legal on **every** supported version. One form, three hosts.
+- **`0.2.1-alpha.3` removed the mechanism, not a key.** `persona` and `toolFilter` left
+  `tool-subagent`'s row `Config` entirely, and `apply()` now hard-throws if either is present.
+  That one is **not** absorbable: the replacement (an Agent Preset) does not exist before
+  alpha.3, and it cannot express a tool *exclusion* at all. So the lane rows ship in **two
+  forms behind one host gate**, and the new form carries a self-authored gate plugin. See
+  [The alpha.3 lane migration](#the-alpha3-lane-migration).
+
+Nothing that differs between the three versions is silently tolerated (see
+[Sourcing](#sourcing-what-is-upstream-what-was-measured-here)), because a preset that is only
+correct on its newest host is not supported on the other two — and a preset that is only
+correct on its newest host *while appearing to load* is worse than one that fails.
+
+One **capability** is host-gated instead of uniform, and it is worth knowing which: the Lead's
 durable reminders (`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`)
 come from `@deepseek-ai/dsh-tool-schedule`, which **does not exist on `0.2.0-rc.2`**. The row
 that mounts it is therefore declared with a `disabled` expression that asks the host whether
 that package resolves; the lanes' deny tail asks the same question and adds the four names only
 where they exist. On `0.2.0-rc.2` the preset behaves exactly as 0.1.5 did — the capability is
-simply absent there, because it is absent from that host. On `0.2.1-alpha.1` and `0.2.1-alpha.2`
-the Lead has the reminders, and **no delegated child does**: the nine named lanes deny them, and
-so does the `subagent_fork` control row (a forked child is a child too — the same shape the
-host's own `standard` preset uses on both of its subagent rows).
+simply absent there, because it is absent from that host. On the two alpha hosts the Lead has
+the reminders, and **no delegated child does**: the nine named lanes deny them, and so does the
+`subagent_fork` control row (a forked child is a child too — the same shape the host's own
+`standard` preset uses on both of its subagent rows). This gate is older than the lane
+migration and independent of it: it survives on all three supported versions, and on
+`0.2.0-rc.2` it is the only reason the reminder row and the lanes' deny tail are conditional.
+It is not the only gate in the artifact any more — the lane form has one of its own, described
+in the next section. The two ask different questions and must not be conflated.
 `tools/verify-install.sh`'s check 13 simulates the host without the package and fails if those
 names appear on it, so this cannot regress quietly.
 
@@ -229,24 +249,28 @@ dsh --version          # install.sh refuses below 0.1.7-rc.1
 ```
 
 This is a hard check inside `install.sh`, and it is deliberately **looser** than the
-`peerDependencies` above: 0.1.7-rc.1 is the version the design was written against. The
-preset has since been **run on 0.2.1-alpha.1**, and it is supported on **0.2.0-rc.2,
-0.2.1-alpha.1 and 0.2.1-alpha.2**. The honest "untested" band the old wording described — the
-stretch between the design version and the first run version — is closed from the top; it is
-no longer a gap you can fall into by installing the current release.
+`peerDependencies` above: 0.1.7-rc.1 is the version the design was written against, and it is
+the floor for installing at all — not a claim of support. The honest "untested" band the old
+wording described, the stretch between the design version and the first version actually
+exercised, is closed from the top; it is no longer a gap you can fall into by installing the
+current release.
 
-The three supported versions ship on **different npm dist-tags**, which is the part worth
-knowing before you pick one:
+**The supported set is exactly three host versions:**
 
 | Host version | npm dist-tag | What you get |
 |---|---|---|
-| `0.2.0-rc.2` | `latest` (also `next`) | what a plain `npm i -g @deepseek-ai/dsh` installs |
-| `0.2.1-alpha.1` | — | superseded by alpha.2 on the same tag; install it by exact version |
-| `0.2.1-alpha.2` | `alpha` | the newest release; **not** on `latest` — ask for the tag explicitly |
+| `0.2.0-rc.2` | `latest` (also `next`) | what a plain `npm i -g @deepseek-ai/dsh` installs, and the runtime the Desktop app bundles |
+| `0.2.1-alpha.3` | — | superseded on the `alpha` tag; install it by exact version |
+| `0.2.1-alpha.4` | `alpha` | the newest release; **not** on `latest` — ask for the tag explicitly |
 
-The `alpha` tag moved from alpha.1 to alpha.2 while alpha.1 remained the version this preset
-had actually been exercised on, which is why the table keeps a row for a version no tag points
-at any more. The badge above lists all three: none of them is the single "current" release.
+`0.2.1-alpha.1` and `0.2.1-alpha.2` are **no longer in the supported set**. They are not
+broken — they belong to the legacy lane branch and keep working — but they are not tested here
+any more, and the badge above lists the three that are.
+
+The `alpha` tag has moved three times, alpha.1 → alpha.2 → alpha.3 → alpha.4, so the table
+keeps a row for a version no tag points at any more: `0.2.1-alpha.3` is the version that
+introduced the lane migration, and it is the one worth being able to install deliberately.
+None of the three is the single "current" release.
 
 Support is not a guess. Every config key this preset hands to a host package — checked
 field-by-field against all three published versions, not inferred — exists on each with the
@@ -260,13 +284,89 @@ fail:
 
 | Key | Where it went | Why it is not a downgrade |
 |---|---|---|
-| `suffix: 'Your working directory is {{cwd}}.'` on the `persona` row | `{{cwd}}` is a registered prompt variable on rc.2 and alpha.1, and **is not one on alpha.2**. `dsh-system-prompt` throws on an unknown variable, so this was not a missing clause — it was a **hard failure during prompt assembly, before any model request**. Upstream now instructs users to delete the clause outright. | The directory is supplied by the `dsh-working-directory` service, which has been in the `dsh-base` skeleton since rc.2 and which alpha.2 exposes through the new `working_directory` tool. The suffix was redundant with it on every version. |
-| `backgroundMode: continuable` on the ten subagent rows | alpha.2's `tool-subagent` `Config` no longer has the key at all (alpha.1's did). schemastery does not reject unknown keys, so it became a dead key that nothing read. | Continuable is now a **provider capability**, not a row setting: `apply()` reads `subagentProvider.prepareContinuable`, and both the spawn and fork providers implement it on alpha.1 and alpha.2. The lanes keep their durable-id continuation. |
+| `suffix: 'Your working directory is {{cwd}}.'` on the `persona` row | `{{cwd}}` was a registered prompt variable on rc.2 and alpha.1, and **is not one on alpha.2 or anything newer**. `dsh-system-prompt` throws on an unknown variable, so this was not a missing clause — it was a **hard failure during prompt assembly, before any model request**. Upstream now instructs users to delete the clause outright. | The directory is supplied by the `dsh-working-directory` service, which has been in the `dsh-base` skeleton since rc.2 and which alpha.2 exposes through the new `working_directory` tool. The suffix was redundant with it on every version. |
+| `backgroundMode: continuable` on the ten subagent rows | alpha.2's `tool-subagent` `Config` no longer has the key at all (alpha.1's did), and it is absent on alpha.3 and alpha.4 too. schemastery does not reject unknown keys, so it became a dead key that nothing read. | Continuable is now a **provider capability**, not a row setting: `apply()` reads `subagentProvider.prepareContinuable`, and both the spawn and fork providers implement it on every supported version. The lanes keep their durable-id continuation. |
 
 Both removals are safe on all three versions, which is the point: the clause-free `persona` row
 and the `backgroundMode`-free lane row are legal everywhere, whereas the old forms were legal
 only on the older hosts. `tools/patch-contract.test.mjs` now fails if `{{cwd}}` reappears in the
 artifact, so this one cannot come back by accident.
+
+The measurements above name alpha.1 and alpha.2 because that is where they were taken, and they
+are kept verbatim for that reason: they are the evidence for two decisions that still stand on
+every supported version. Neither version is supported any more — see the table above.
+
+### The alpha.3 lane migration
+
+`0.2.1-alpha.3` did not remove a config key. It removed the **mechanism** a lane used to declare
+its own persona and tool surface, and replaced it with one that cannot express the same thing.
+This section is the contract, not the history: it is what the artifact looks like on the two
+alpha hosts, and why.
+
+**What changed.** `persona` and `toolFilter` are gone from `dsh-tool-subagent`'s row `Config`
+(`dsh-tool-subagent/lib/index.js:311` no longer declares either), and `apply()` hard-throws on
+both (`:355`):
+
+```
+tool-subagent: persona is no longer supported; configure persona and tool plugins
+in an Agent Preset and select it with agentPreset (spawn only)
+```
+
+That is a **per-entry activation failure, not a startup crash**: the session still starts, and
+every affected lane silently fails to activate. On a host where the bundle still wrote the old
+form, all nine lanes would be dead at once while the session looked healthy.
+
+**What replaced it.** Each lane's persona and tool surface now live in an **Agent Preset**,
+selected from the lane row by `agentPreset`. That brings two hard requirements with it:
+
+| Requirement | Why |
+|---|---|
+| `allowedAgentPresets` must contain the `agentPreset` id | `dsh-tool-subagent/lib/index.js:209` throws `agentPreset must be included in allowedAgentPresets` at mount otherwise. The two keys must be written **as a pair**. |
+| The `agent-presets` service must be mounted | `:357` throws `agent preset selection requires the agent-presets service` otherwise. Not every profile provides it. |
+
+**Why there are two lane forms.** The preset mechanism does not exist before alpha.3, and the
+row-config mechanism is rejected from alpha.3 onward. There is no single row shape that is legal
+on both, so `tools/gen-cordis-patch.mjs` renders each lane in **two forms behind one host gate**
+and `tools/preset-declaration.mjs` declares both:
+
+| | Legacy form (`0.2.0-rc.2`) | New form (`0.2.1-alpha.3`, `0.2.1-alpha.4`) |
+|---|---|---|
+| Gate reads | `Config = z.object({…})` **contains** `persona:` | it **does not** |
+| Persona | `persona: !!js …` on the lane row | a `@deepseek-ai/dsh-persona` plugin inside the lane's preset |
+| Tool narrowing | `toolFilter.deny` / `.allow` on the lane row | `lane-tool-gate.mjs` inside the lane's preset |
+| Narrowing reaches the child via | `tools.restrict()`, called by `dsh-subagent` | `tools.guard()`, evaluated along the calling agent's scope chain |
+
+The gate is a **structural fact, not a text guess**: it reads whether the `Config` object literal
+declares `persona:`. The two obvious alternatives were measured and rejected — probing the schema
+always answers "supported", because schemastery accepts unknown keys and only `apply()` throws;
+matching the throw's wording is fragile against an upstream reword. The gate is checked in both
+directions by `tools/patch-contract.test.mjs`.
+
+**Failure direction.** If the gate cannot resolve `@deepseek-ai/dsh-tool-subagent` at all, it
+evaluates to **legacy**. That is deliberate: the legacy form fails **loudly** on a new host (the
+lanes do not activate, and the host says why), whereas guessing the new form on a host that has
+no preset mechanism would leave the lanes composed with **no narrowing at all** — a silent grant
+of write access. A loud failure is the direction to fail in.
+
+**Two known degradations, stated plainly.** The new form is not an equivalent replacement for
+the old one. Both of these are deliberate, accepted, and visible in the artifact:
+
+- **`reader`'s allow-list has no equivalent.** `tools.guard()` is deny-only — there is no
+  `allow`. The old form gave the `reader` lane `allow: ['read', 'read_image']`, meaning "keep
+  only these". The new form can only enumerate names to refuse, and that list would have to be
+  the entire host tool surface minus two, which drifts with every host release. So on alpha.3
+  and alpha.4 the `reader` lane's gate blocks only the lane-addressing names, and its **general
+  tool surface is wider than it was on the legacy hosts**. The addressing names *are* blocked
+  unconditionally (`LANE_ADDRESSING_DENY`), because the old allow-list excluded them by
+  construction and letting them through would be a grant, not a degradation.
+- **The gate hides nothing.** The new form's gate keeps a denied tool **visible and refuses it
+  at call time**, with a readable reason. The legacy `restrict({deny})` **removed it from the
+  visible surface** instead. This is not a like-for-like swap: a lane on alpha.3+ can see a tool
+  it may not use. It is the strongest means alpha.3+ offers — a preset's `plugins[]` can only
+  ADD plugins, so there is no declarative way to exclude a host tool at all.
+
+The two forms are gated by one expression and asserted on both sides, so neither can regress
+into the other's host silently.
 
 
 ### 1–4. Install
@@ -535,11 +635,11 @@ is no longer used for this bundle.
 
 - **The one line that owns every specifier** is `tools/preset-declaration.mjs:45`,
   `export const bundlePkg = '@quill507/dsh-orchestrator-preset'`. That single constant owns
-  all **14** specifier references in the generated `cordis.patch.yml`. Measured with
+  all **15** specifier references in the generated `cordis.patch.yml`. Measured with
   `grep -o '@quill507/dsh-orchestrator-preset/[A-Za-z0-9._/-]*' cordis.patch.yml | sed 's|@quill507/dsh-orchestrator-preset/||' | sort -u`,
-  which returns 14 distinct paths: **3 `.mjs`** (`lane-composition.mjs`,
-  `plan-aware-persona.mjs`, `routing-sections.mjs`), **2 `.js`** (`extensions/dsh/index.js`,
-  `extensions/dsh/aegis-prefix.js`) and **9 persona `.md`**. Change that one line, then run
+  which returns 15 distinct paths: **4 `.mjs`** (`lane-composition.mjs`,
+  `plan-aware-persona.mjs`, `routing-sections.mjs`, `lane-tool-gate.mjs`), **2 `.js`**
+  (`extensions/dsh/index.js`, `extensions/dsh/aegis-prefix.js`) and **9 persona `.md`**. Change that one line, then run
   `node tools/gen-cordis-patch.mjs` — no other edit is needed, and no persona file is
   affected. (`personas/orchestrator.md` is inlined rather than file-resolved, so it is
   correctly absent from that list.)

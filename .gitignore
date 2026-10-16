@@ -42,6 +42,7 @@
 
 # --- 2. re-admit the preset's own plugin modules (shipped at the root) ------
 !/lane-composition.mjs
+!/lane-tool-gate.mjs
 !/plan-aware-persona.mjs
 !/routing-sections.mjs
 

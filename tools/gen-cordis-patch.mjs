@@ -194,7 +194,29 @@ function pushValue(lines, indent, key, value) {
   }
   if (Array.isArray(value)) {                                   // 列表项**裸写**（加引号会让抽取正则恒空）
     lines.push(`${pad}${key}:`)
-    for (const item of value) lines.push(`${' '.repeat(indent + 2)}- ${item}`)
+    for (const item of value) {
+      // ⚠️ 列表项有两种形状，必须分开处理：
+      //   标量（`allow: [read, read_image]`）⇒ 裸写，**不加引号**（加引号会让抽取正则恒空）；
+      //   映射（Agent Preset 的 `plugins[]`：`{id, name, config}`）⇒ 首键与 `- ` 同行，
+      //   其余键按同一缩进层级续写 —— 这是 YAML 的块序列映射写法。
+      //   曾漏掉这一支：对象被字符串化成 `- [object Object]`，产物**静默**坏掉（不是抛错）。
+      if (item !== null && typeof item === 'object' && !('__raw' in item) && !('__block' in item)) {
+        const inner = ' '.repeat(indent + 2)
+        const entries = Object.entries(item)
+        const [firstKey, firstValue] = entries[0]
+        const head = []
+        pushValue(head, 0, firstKey, firstValue)
+        lines.push(`${inner}- ${head[0]}`)
+        for (const l of head.slice(1)) lines.push(`${inner}  ${l}`)
+        for (const [k, v] of entries.slice(1)) {
+          const tail = []
+          pushValue(tail, 0, k, v)
+          for (const l of tail) lines.push(`${inner}  ${l}`)
+        }
+        continue
+      }
+      lines.push(`${' '.repeat(indent + 2)}- ${item}`)
+    }
     return
   }
   lines.push(`${pad}${key}:`)                                   // 嵌套映射
@@ -225,8 +247,13 @@ function pushRow(lines, row, indent) {
   }
 }
 
+// ⚠️ **返回的是「裸表达式」，不含 `!!js ` 前缀**。调用方负责加那一次前缀
+//    （`RAW('!!js ' + …)` 或嵌进更大的 `!!js` 表达式里）。
+//    这里曾经**自带** `!!js `，于是任何把它嵌进另一个 `!!js …` 的地方都会得到
+//    `… return !!js process.…` —— **不是**语法错误被当场拦住，而是产出一条宿主求值时才炸的
+//    字符串（实测：`Unexpected identifier 'process'`）。一个前缀只能有一个家。
 const personaExpr = (bundlePkg, file) =>
-  `!!js process.getBuiltinModule('node:fs').readFileSync(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('${bundlePkg}/personas/${file}'), 'utf8')`
+  `process.getBuiltinModule('node:fs').readFileSync(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('${bundlePkg}/personas/${file}'), 'utf8')`
 
 // ── lane 的 deny 值 = 静态名单 **拼上**按机器算的 MCP 闭包（不是一份写死的名单）──────
 // 为什么不是列表项：`restrict()` 对**未知名字**直接抛错（dsh-tools/lib/index.js:2895-2910），而
@@ -254,27 +281,108 @@ const denyExpr = (names, closure, scheduleClosure) => {
 
 export function laneRow(lane, d) {
   const common = d.LANE_COMMON          // ⚠️ 必须复用声明里的那对值，不得另写一份
-  const filter = lane.deny !== undefined
-    ? { deny: RAW(denyExpr(lane.deny, d.MCP_CLOSURE_EXPR, d.SCHEDULE_DENY_EXPR)) }
-    : { allow: lane.allow }
-  return {
+  const base = {
     id: `tool-subagent-${lane.tool.replace(/^subagent_/, '').replace(/_/g, '-')}`,
     name: '@deepseek-ai/dsh-tool-subagent',
+  }
+  const shared = {
+    // provider / toolName 的字符串值由 BARE_STRING_KEYS 规则**裸写**（见上）
+    provider: common.provider,
+    toolName: lane.tool,
+    // ⚠️ `backgroundMode` **不再无条件写入**（host 0.2.1-alpha.2 起宿主已无此键）。
+    //    它改为「声明里有才写」—— 声明现在是 `{ provider: 'spawn' }`，所以产物里没有它。
+    //    写死在这里曾让它无法被声明侧移除：删掉 LANE_COMMON 的键只会得到
+    //    `配置值缺失：backgroundMode`（pushValue 的 loud 停），而不是一条干净的行。
+    //    ⚠️ 若将来要恢复它（例如宿主重新引入，或某个 provider 需要显式声明），
+    //    **改声明即可**，不必再动这里 —— 这就是把它变成可选键的全部目的。
+    ...(common.backgroundMode !== undefined ? { backgroundMode: common.backgroundMode } : {}),
+    maxDepth: lane.maxDepth,
+  }
+  // ⚠️ **形态由宿主门决定，且两条分支都必须能把 `config` 写全**：
+  //    旧宿主（`persona` 仍在 Config 里）⇒ persona + toolFilter，与 0.2.1-alpha.2 起的产物逐字一致；
+  //    新宿主（alpha.3+，两个键都被 `apply()` 硬拒）⇒ 改挂该 lane 的 Agent Preset，
+  //    并把 `agentPreset` + `allowedAgentPresets` **成对**写上（`:209` 的硬约束：
+  //    只给前者不给后者 ⇒ 挂载期 throw）。
+  if (d.LANE_LEGACY_EXPR === undefined) {
+    throw new Error('LANE_LEGACY_EXPR 缺失 ⇒ 停（lane 形态的宿主门取不到值；不得猜形态）')
+  }
+  if (lane.presetId === undefined) {
+    throw new Error(`lane ${lane.tool} 没有 presetId ⇒ 停（新形态需要它；声明侧应由 lanePresetId 派生）`)
+  }
+  // ⛔ **不能写三元 `? … : …`**：`!!js` 是 YAML **plain scalar**，而 plain scalar 里
+  //    「`: `」（冒号+空格）是**映射分隔符** ⇒ `!!js (门) ? [1] : undefined` 会被解析成
+  //    **映射** `{"[object Object]":"undefined"}` 而不是 `__jsExpr`。
+  //    实测（宿主自己的 `loadOverlayPatches`）：deny 变成 `{"[object Object]":"undefined"}`
+  //    ⇒ 求值器拿到的不是数组 ⇒ **名单静默失效**；check 13 报 `deny is not a !!js expression`。
+  //    ⇒ 改用 **`if` + `return` 的 IIFE**：无冒号、无 `?`，仍是单个 plain scalar，**两个世界都能用**。
+  //      · 旧宿主：门为真 ⇒ `return <名单数组>`（宿主 schema 要求 `deny` 是数组）
+  //      · 新宿主：门为假 ⇒ `return []`（该行的 toolFilter 被宿主整体忽略，空数组无害）
+  // ⚠️ 新形态下**真正干活的是 preset 里的 `lane-tool-gate`**，不是这条 deny：
+  //    alpha.3 的 `tool-subagent.Config` 没有 `toolFilter` 键，宿主不读它。这里返回 `[]` 只是
+  //    「让表达式在两个世界都求值成功」——**不要**误读成「新宿主上 deny 仍然生效」。
+  const gate = d.LANE_LEGACY_EXPR
+  const denyBody = `([${(lane.deny ?? []).map(jsString).join(', ')}]).concat(${d.MCP_CLOSURE_EXPR}).concat(${d.SCHEDULE_DENY_EXPR})`
+  // `newOnly(expr)`：**新宿主**（门为假）⇒ `expr`；旧宿主 ⇒ `undefined`（= 键不出现）。
+  //    ⛔ **极性是两个方向上的坑，两个都踩过一次**：
+  //      · `agentPreset`/`allowedAgentPresets`/`persona` 是**新形态专用** ⇒ 必须 `if (gate) return undefined`
+  //        （早先写成 `if (!gate) return undefined`，方向反了：alpha.3 上这三个键**全部缺席**
+  //         ⇒ lane 退回继承父 preset、persona 丢失，**而产物看起来完全正常**）。
+  //      · `toolFilter` 是**旧形态专用** ⇒ 用下面的 `legacyOnly`。
+  //    ⚠️ 单侧测试看不出来：只测「旧宿主上产物有没有 persona」会全绿，而新宿主是坏的。
+  //      所以契约测试必须**两个世界都断言**（见 patch-contract 的 7b/7c）。
+  const newOnly = (expr) => `(() => { if (${gate}) { return undefined } return ${expr} })()`
+  const legacyOnly = (expr) => `(() => { if (!(${gate})) { return undefined } return ${expr} })()`
+  return {
+    ...base,
     config: {
-      // provider / toolName 的字符串值由 BARE_STRING_KEYS 规则**裸写**（见上）
-      provider: common.provider,
-      toolName: lane.tool,
-      // ⚠️ `backgroundMode` **不再无条件写入**（host 0.2.1-alpha.2 起宿主已无此键）。
-      //    它改为「声明里有才写」—— 声明现在是 `{ provider: 'spawn' }`，所以产物里没有它。
-      //    写死在这里曾让它无法被声明侧移除：删掉 LANE_COMMON 的键只会得到
-      //    `配置值缺失：backgroundMode`（pushValue 的 loud 停），而不是一条干净的行。
-      //    ⚠️ 若将来要恢复它（例如宿主重新引入，或某个 provider 需要显式声明），
-      //    **改声明即可**，不必再动这里 —— 这就是把它变成可选键的全部目的。
-      ...(common.backgroundMode !== undefined ? { backgroundMode: common.backgroundMode } : {}),
-      maxDepth: lane.maxDepth,
-      persona: RAW(personaExpr(d.bundlePkg, lane.persona)),
-      toolFilter: filter,
+      ...shared,
+      agentPreset: RAW(`!!js ${newOnly(JSON.stringify(lane.presetId))}`),
+      allowedAgentPresets: RAW(`!!js ${newOnly(`[${JSON.stringify(lane.presetId)}]`)}`),
+      persona: RAW(`!!js ${newOnly(personaExpr(d.bundlePkg, lane.persona))}`),
+      // ⛔ **绝对不能出现对象字面量**（`{ deny: … }` / `{ ['deny']: … }` 都算）：
+      //    两种写法里的「`: `」都会把 plain scalar 切成 YAML 映射 —— 实测两种都得到
+      //    `{"[object Object]":"…"}` 或 `bad indentation of a mapping entry`，而**不是** `__jsExpr`。
+      //    ⇒ 唯一在两个世界都成立、且不引入冒号的写法是**先建空对象再赋值**：
+      //      `const o = {}; o.deny = <名单>; return o`。
+      //    （这一条踩过两次：先踩三元，再踩对象字面量。plain scalar 的边界就是「`: `」。）
+      //
+      // ⛔ **`allow` 的 lane（reader）不能走 deny 分支**：声明里 reader 是
+      //    `allow: ['read','read_image']`（白名单 = 「只留这两个」），**没有** `deny`。
+      //    早先无条件写 `o.deny = (lane.deny ?? [])…` ⇒ reader 得到一条**空 deny 名单**
+      //    ⇒ 在旧宿主上读者**不再受限**（拿到 `write`/`bash`/`edit`）。
+      //    那是**权限放大**，而且产物看起来完全正常（deny 键在、值是 `[]`）。
+      //    ⇒ 有 `allow` 就必须写 `allow`，与 `laneRow` 里 `lane.deny !== undefined ? … : { allow }`
+      //      的二分**同一条判据**（一个判据一个家，两处不得各写一份）。
+      toolFilter: RAW(`!!js ${legacyOnly(`(() => { const o = {}; o.${lane.deny !== undefined ? 'deny' : 'allow'} = ${lane.deny !== undefined ? denyBody : `[${lane.allow.map(jsString).join(', ')}]`}; return o })()`)}`),
     },
+  }
+}
+
+// ── 每条 lane 的 Agent Preset 行（**新宿主专用**）──────────────────────────────
+// 旧宿主上这些行必须**整条禁用**：它不认得 `agentPreset`（会被 schemastery 静默收下，
+// 但没有 `agentPresets` 服务 ⇒ `:357` 抛），而且 `dsh-agent-preset` 行本身在 rc.2 上
+// 也不存在。用 `disabled` 而不是不生成：**行数与形态保持可读**，且 `disabled` 先于 import
+// 求值（`cordis-plugin-loader` 的 `refresh()`），所以旧宿主上不留错误日志。
+export function lanePresetRow(row, d) {
+  // `personaFile` 是声明侧的取值槽 ⇒ 渲染成与旧形态同形的运行时 `readFileSync` 表达式，并从 config 里去掉。
+  const plugins = row.config.plugins.map((p) => {
+    if (p.config?.personaFile === undefined) return p
+    const { personaFile, ...rest } = p.config
+    // `personaExpr` 返回裸表达式 ⇒ 这里补上唯一的一次 `!!js ` 前缀（`pushValue` 见到 `__raw`
+    // 会整行原样写出，所以前缀必须由调用方给）。
+    return { ...p, config: { ...rest, prefix: RAW(`!!js ${personaExpr(d.bundlePkg, personaFile)}`) } }
+  })
+  return {
+    id: row.id,
+    name: row.name,
+    // ⚠️ **极性**：`LANE_LEGACY_EXPR` 为真 = 宿主是旧形态（`persona` 仍在 Config 里）
+    //    = **preset 行应当关闭**。所以 `disabled` 直接取该表达式的值，**不加 `!`**。
+    //    （早先写成 `!(…)` 是反的：alpha.3 上 `LANE_LEGACY=false` ⇒ `disabled=true`
+    //     ⇒ **恰好在需要它的宿主上把 preset 关掉**。这类反向错误在单侧测试里看不出来。）
+    // ⚠️ 值必须是**裸表达式字符串**（`pushDisabled` 自己补 `!!js `），且**不能**以 `!` 紧跟
+    //    `!!js` 开头（那会被 YAML 当第二个 tag）。这里以 `(` 开头，安全。
+    disabled: `(${d.LANE_LEGACY_EXPR})`,
+    config: { ...row.config, plugins },
   }
 }
 
@@ -308,6 +416,7 @@ const forkControlRow = (row, d) => {
 
 export const countRows = (d) =>
   d.topRows.length + d.groups.length + d.groups.find((g) => g.id === 'delegation').rows.length
+  + d.lanePresetRows.length
 
 export const countFileEntries = (d) =>
   d.topRows.length + d.groups.length + d.groups.reduce((n, g) => n + g.rows.length, 0)
@@ -338,6 +447,10 @@ export function render(d, section, shellSource) {
   ]
   for (const row of d.topRows) pushRow(lines, withSection(row, section), 10)
   for (const g of d.groups) pushRow(lines, groupEntry(g, d, section), 10)
+  // 每条 lane 的 Agent Preset 行（新宿主专用；旧宿主上 `disabled` 为真）。
+  // ⚠️ 它们与 lane 行**必须在同一个 `- insert:` 里**：lane 行的 `agentPreset` 指向这些 id，
+  //    分层的层（本文件是单层 insert 列表）会让 id 在一次装载里不可见。
+  for (const row of d.lanePresetRows) pushRow(lines, lanePresetRow(row, d), 10)
   // bundle 级 provider 行：与 preset 行**同层**，属顶层 `- insert:`，不嵌进 preset.config.plugins[]。
   // 它挂载本包自己的 skill provider，让四个 orch-* 技能随包自带，不再拷进用户全局目录。
   lines.push(`    - id: ${d.providerRowId}`)
@@ -569,10 +682,15 @@ export async function main(argv = process.argv.slice(2)) {
   const entries = countFileEntries(d)
   // ⚠️ 口径不再歧义（独立裁决的次要项）：`entries` 是 **`plugins[]` 内的条目数**；
   //    文件级 `- id:` 行数**从渲染结果实测**（含 preset row @4），不写死常数。
+  // ⚠️ **两条打印都必须自洽（第 21 轮修）**：`countRows` 含 9 条 lane preset 行，而它们
+  //    **不在 `plugins[]` 里**（preset 行自己挂在 `insert` 顶层，其 `plugins[]` 才是 lane 的组成）
+  //    ⇒ `rows-detail` 的加数必须显式列出这一项，`plugins-entries` 的差值必须与**非 preset 行**
+  //    比。改之前前者打印 `40 = 16 + 3 + 12`（加数只加到 31），后者打印 `-5 extra ... = planning 1
+  //    + compaction 3`（两个数都对不上）—— 两行都只是**打印**、无门依赖，所以全绿地错了整轮。
   const fileIdLines = content.split('\n').filter((l) => /^\s*- id:/.test(l)).length
   const detail = [
-    `rows-detail: ${rows} = ${d.topRows.length} top-level + ${d.groups.length} group + ${d.groups.find((g) => g.id === 'delegation').rows.length} delegation (3 control + ${d.LANES.length} lane)`,
-    `plugins-entries: ${entries} \`plugins[]\` entries (the ${entries - rows} extra vs the ${rows} declared rows = planning 1 + compaction 3 children; they DO render)`,
+    `rows-detail: ${rows} = ${d.topRows.length} top-level + ${d.groups.length} group + ${d.groups.find((g) => g.id === 'delegation').rows.length} delegation (3 control + ${d.LANES.length} lane) + ${d.lanePresetRows.length} lane preset`,
+    `plugins-entries: ${entries} \`plugins[]\` entries (the ${entries - (rows - d.lanePresetRows.length)} extra vs the ${rows - d.lanePresetRows.length} non-preset declared rows = planning 1 + compaction 3 children; they DO render)`,
     `file-id-lines: ${fileIdLines} \`- id:\` lines in the rendered file (measured from content; includes the preset row @4, which is outside \`plugins[]\`)`,
     `reference-list: LEGAL_TOOL_NAMES size ${d.LEGAL_TOOL_NAMES.size} — REFERENCE ONLY, not a gate (deny/allow names are NOT validated here)`,
     `SHELL-SOURCE: ${d.SHELL_SOURCE.source} md5=${d.SHELL_SOURCE.md5}`,

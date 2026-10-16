@@ -7,7 +7,8 @@
 #   ./install.sh --check         # run the gates and report, change nothing
 #
 # What it does, in order:
-#   0. gate   — refuse to continue unless the host is >= 0.1.7-rc.1
+#   0. gate   — refuse to continue unless the host is >= 0.1.7-rc.1 (the install
+#               floor, not the supported set — see the note by MIN_HOST_VERSION)
 #   1. stage  — sync this repository's distributable set into $DSH_HOME/plugins/
 #               on every run, so the copy the host resolves is a projection of
 #               this repository rather than of the first install
@@ -28,6 +29,12 @@
 
 set -euo pipefail
 
+# The FLOOR for installing at all — deliberately looser than the supported set.
+# It is not a support claim: a host at or above this version installs, but the
+# versions this bundle is actually supported on are exactly three, and they are
+# declared in one place — README.md / README.zh.md, section "0. Host version gate".
+# Keeping the two apart is the point: raising this floor to the oldest supported
+# version would refuse to install on hosts that still work.
 MIN_HOST_VERSION="0.1.7-rc.1"
 BUNDLE_DIRNAME="dsh-orchestrator-preset-bundle"
 # The module KEY a profile resolves this bundle by. It is deliberately NOT derived
@@ -115,7 +122,7 @@ DEST="${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 mkdir -p "$DEST"
 DISTRIBUTABLE="LICENSE README.md README.zh.md THIRD_PARTY_NOTICES.md cordis.patch.yml
   package.json personas skills extensions locale tools lane-composition.mjs
-  plan-aware-persona.mjs routing-sections.mjs"
+  plan-aware-persona.mjs routing-sections.mjs lane-tool-gate.mjs"
 STAGED=0
 for item in $DISTRIBUTABLE; do
   [ -e "${REPO_ROOT}/${item}" ] || die "${item} is missing from the repository."

@@ -123,11 +123,11 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 // （「选项1，只给主代理，不给子agent」）。这一节的难点不是「要不要 deny」，是**在哪几版上能 deny**。
 //
 // ① **事实（逐版实测，三条独立证据）**：`@deepseek-ai/dsh-tool-schedule` 在 npm 上只有
-//    `0.0.1-rc.2`（2026-08-11，依赖 `^0.0.1-rc.2` 那一代，与 0.2.x 宿主不同代）、`0.2.1-alpha.1`、
-//    `0.2.1-alpha.2` 三个版本 —— **没有 `0.2.0-rc.2`**。而且：
+//    `0.0.1-rc.2`（2026-08-11，依赖 `^0.0.1-rc.2` 那一代，与 0.2.x 宿主不同代）与
+//    `0.2.1-alpha.1` … `0.2.1-alpha.4` 这一串 —— **没有 `0.2.0-rc.2`**。而且：
 //      · `dsh@0.2.0-rc.2` 的 dependencies 里**没有**它（`npm view @deepseek-ai/dsh@0.2.0-rc.2 dependencies`）；
 //      · `dsh-base` / `dsh-web-app` / `dsh-sdk-app` / `dsh-headless` / `dsh-acp-app` 的 rc.2 版也都**没有**；
-//      · rc.2 的官方 `standard.patch.yml` **没有** `tool-schedule` 行（alpha.1 与 alpha.2 有）。
+//      · rc.2 的官方 `standard.patch.yml` **没有** `tool-schedule` 行（每一版 alpha 都有）。
 //    ⇒ 在一份干净的 rc.2 安装里，这个包**不在 node_modules 里**。rc.2 那一代的提醒能力由
 //    `@deepseek-ai/dsh-experimental-schedule-bundle@0.2.0-rc.2`（可选、默认关）提供，它 insert 的是
 //    `time-context` / `schedule` / `ui-schedule` **三行，没有 `tool-schedule`**。
@@ -140,7 +140,7 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 //    改为**按机器求值**：包能解析 ⇒ 交出这 4 个名字；不能 ⇒ 交出 `[]`。行的 `disabled` 用同一个判据。
 //    ⇒ rc.2 上：行不挂（`disabled` 先于 import 求值，`refresh()` 见 `cordis-plugin-loader/lib/index.js:363`
 //    直接 return，连 import 都不试，所以**不留错误日志**），deny 也不列那 4 个名字 ⇒ 一切照旧；
-//    alpha.1 / alpha.2 上：行挂上，Lead 拿到提醒，lane 被 deny。
+//    每一版 alpha（含本轮的 alpha.3 / alpha.4）上：行挂上，Lead 拿到提醒，lane 被 deny。
 //    ⚠️ **为什么用「能否解析」而不是「loader 树里有没有那一行」**：本行与 lane 行在**同一个
 //    `plugins[]` 里**，按树查会依赖「本行是否已先于 lane 行装载」这个顺序前提；而
 //    `createRequire(baseUrl).resolve(...)` 是**与顺序无关**的事实判定，且 `baseUrl` 在求值 ctx 里
@@ -168,6 +168,67 @@ const SCHEDULE_RESOLVE = "process.getBuiltinModule('node:module').createRequire(
 export const SCHEDULE_ABSENT_EXPR = `(() => { try { ${SCHEDULE_RESOLVE}; return false } catch (e) { return true } })()`
 // lane deny 的条件尾巴：解析得到 ⇒ 这 4 个名字；否则 ⇒ 空数组（= 不 deny 不存在的名字）。
 export const SCHEDULE_DENY_EXPR = `(() => { try { ${SCHEDULE_RESOLVE}; return [${SCHEDULE_TOOLS.map((n) => `'${n}'`).join(', ')}] } catch (e) { return [] } })()`
+
+// ── lane 形态的宿主门：`persona` / `toolFilter` 还在不在 `tool-subagent` 的 Config 里 ──────────
+// 🔻 **背景（宿主 0.2.1-alpha.3 实测，2026-10-14）**：alpha.3 把 `persona` 与 `toolFilter`
+//    **一起**从 `dsh-tool-subagent` 的 Config 里删掉，并在 `apply()` 里对这两个键**硬抛**：
+//      `lib/index.js:355`
+//      ```js
+//      for (const field of ["persona", "toolFilter"])
+//        if (Object.hasOwn(config, field)) throw new Error(`tool-subagent: ${field} is no longer supported; configure persona and tool plugins in an Agent Preset and select it with agentPreset (spawn only)`);
+//      ```
+//    ⇒ 本包 9 条 lane 行**每条都同时带这两个键** ⇒ 挂载期 9 条**全部不激活**
+//      （`dsh --profile headless --patch <旧形态>` 实测：`warning: 1 entry did not activate` +
+//       逐字同上的错误；会话仍能起，但 9 条 lane 全废）。
+//
+// ⛔ **为什么不能「无条件改成新形态」**：新形态要求宿主提供 **`agentPresets` 服务**，
+//    否则 `lib/index.js:357` 抛 `agent preset selection requires the agent-presets service`。
+//    实测谁提供它：`web` **有**（`@deepseek-ai/dsh-web-app` bundle 带入
+//    `@deepseek-ai/dsh-agent-preset-registry`）；`desktop` / `headless` **都没有**。
+//    而 `desktop` 跑 Electron 自带 runtime（`dsh --profile desktop --dump-config` ⇒
+//    `profile "desktop" is managed exclusively by the Electron application`），
+//    官方**没有** desktop 的 alpha ⇒ 它仍在旧契约上，`persona` / `toolFilter` 对它**仍然合法**。
+//    ⇒ 无条件迁移 = 修好 web、**弄坏 desktop** ⇒ 必须按宿主分档。
+//
+// ── 判据的选取（三个候选，实测淘汰两个；详见该轮证据档第十节）────────────────────
+//   ① ❌ **读 `Config` 的键表**（schema 是否“声明”了 persona）：**测不出来**。
+//      schemastery 对未知键**不抛**（`Config({provider, toolName, persona})` 实测**原样通过**），
+//      拒绝发生在 `apply()` 而非 schema ⇒ schema 探针永远返回「支持」。
+//      ⚠️ 这与本包 alpha.2 那次 `backgroundMode` 的「静默死键」是**同一条教训**，别再踩。
+//   ② ⚠️ **源码文本匹配**那句 throw：能用，但脆（上游重排/改措辞即失效）。
+//   ③ ✅ **读 `Config = z.object({…})` 的字段字面量**（本判据）：结构性事实，非文本猜测。
+//      双向实测：alpha.2 的 `persona: true / toolFilter: true`；alpha.3 的 `false / false`。
+//
+// ⚠️ **失败方向**：解析不到 / 读不到文件 ⇒ 返回 `true`（**当作旧形态**）。
+//    理由：旧形态在旧宿主上是**唯一可用**的写法，而在新宿主上它只是**响亮地**失败（9 条不激活，
+//    用户看得见）；反过来若误判成新形态，新宿主上会**静默放权**（见下条）。两害相权取其响。
+// ⚠️ **解析用裸包名**（`resolve('@deepseek-ai/dsh-tool-subagent')` ⇒ 该包的 `main` = `lib/index.js`）。
+//    不要写成 `…/lib/index.js` 子路径：该包的 `exports` 只导出 `"."` / `./package.json` /
+//    `./model-selection-settings` 等，**没有** `./lib/index.js` ⇒ 子路径解析恒抛
+//    `ERR_PACKAGE_PATH_NOT_EXPORTED`，于是本判据**永远**回落旧形态（= 在新宿主上判错，静默）。
+export const LANE_LEGACY_EXPR = "(() => { try { "
+  + "const fs = process.getBuiltinModule('node:fs'); "
+  + "const src = fs.readFileSync(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-tool-subagent'), 'utf8'); "
+  + "const at = src.indexOf('const Config = z.object({'); "
+  + "if (at < 0) return true; "
+  // ⚠️ 括号必须配平：`.test(` 自己也要一对。漏掉最外层那个 `)` ⇒ 整条表达式
+  //    **语法错误**（`missing ) after argument list`），而它被嵌进 `!!js` 后**不会**在
+  //    生成期报错 —— 只会在宿主求值那条 `!!js` 时炸，或在 check 13 的求值测试里炸。
+  + "return /persona:/.test(src.slice(at, src.indexOf('});', at))) "
+  + "} catch (e) { return true } })()"
+
+// ⛔ **为什么新形态必须有 `lane-tool-gate`（不挂它 = 静默的权限放大）**：
+//    alpha.3 把工具组成搬进 Agent Preset，但 preset 的 `plugins[]` **只能加不能减** ——
+//    实测：只挂 persona 的 preset，child 自报拿到 **25** 个工具（含 `edit` / `bash` /
+//    `send_message` / `interrupt_agent`）；在 preset 里把 `tool-bash` 标 `disabled: true`
+//    之后 `bash` **依然在**。而 `toolFilter` 在新路径上**没有可达通道**：
+//    `dsh-subagent/lib/index.js:1452` 的全新派发只带 `composition: { agentPreset }`，
+//    `toolFilter` 只在 `:2177` 的**恢复**路径上从持久化 descriptor 读回；
+//    `:395` 的 `restrict()` 是**唯一**消费点 ⇒ 全新派发的 child **永远不会**被 `toolFilter` 收窄。
+//    ⇒ 若不补 gate，只读 lane（scout/archivist/seer/analyst/auditor/planner）会**拿到写权限**，
+//      而这是**安静**地发生 —— 比旧宿主上「9 条不激活」的**响亮**失败危险得多。
+//    ⇒ 新形态下工具收窄只由 preset 内的 `lane-tool-gate` 承担（`tools.guard()`，按 agent scope 生效）。
+export const laneGatePlugin = bundlePkg + '/lane-tool-gate.mjs'
 
 // fork 控制行的 id —— **唯一来源**。生成器按它认行，给它挂上「只有那条条件尾巴」的 `toolFilter.deny`
 // （理由见 `groups` 里 delegation 组的 ⛔ 段）。写成常量而不是在两处各写一遍字面量：那样改名时
@@ -515,6 +576,14 @@ export const PLAN_MODE_SECTION = ''   // ← **有意的实现期取值槽**：�
 //       已知并接受 —— 它比留一个宿主不读的键更诚实。
 export const LANE_COMMON = { provider: 'spawn' }
 
+// ── 每条 lane 的 Agent Preset id ──────────────────────────────────────────────
+// 新形态（alpha.3+）下 lane 的工具面与 persona 都由一条 **Agent Preset** 声明，
+// lane 行只留 `agentPreset: <id>` + `allowedAgentPresets: [<id>]`。
+// id 由 persona 文件名派生（`scout.md` ⇒ `orch-lane-BROKEN`）：**唯一来源是 LANES 表本身**，
+// 不再手写第二份清单 —— 那样改名时会有一处静默失配。
+// `orch-` 前缀避免与官方 preset id（`standard`）和用户自己的 id 相撞。
+const lanePresetId = (lane) => 'orch-lane-' + lane.persona.replace(/\.md$/, '')
+
 export const LANES = [
   { tool: 'subagent_scout',     persona: 'scout.md',     maxDepth: 1, deny: READONLY_DENY },
   { tool: 'subagent_archivist', persona: 'archivist.md', maxDepth: 1, deny: READONLY_DENY },
@@ -525,7 +594,44 @@ export const LANES = [
   { tool: 'subagent_wright',    persona: 'wright.md',    maxDepth: 1, deny: WRIGHT_DENY },
   { tool: 'subagent_forge',     persona: 'forge.md',     maxDepth: 1, deny: FORGE_DENY },
   { tool: 'subagent_planner',   persona: 'planner.md',   maxDepth: 1, deny: READONLY_DENY },
-]
+].map((lane) => ({ ...lane, presetId: lanePresetId(lane) }))
+
+// ── lane 的 Agent Preset 声明（新形态用；旧形态不生成这些行）────────────────────
+// 每条含两件：该 lane 的 persona（沿用运行时读文件，行为与旧形态的 `persona: !!js …` 一致）
+// 与 `lane-tool-gate`（承接旧形态的 `toolFilter`，原因见上方 ⛔ 段）。
+//
+// ⚠️ **`allow` 的 lane（reader）在新形态下没有等价物**：gate 是「拒绝名单」，表达不了白名单
+//    （`tools.guard()` 只有 deny 语义，没有 allow —— 见 `dsh-tools` 的 `ToolGuard` 类型）。
+//    reader 的旧 `allow: ['read','read_image']` 是**允许名单**，含义是「只留这两个」。
+//    新形态下用 gate 表达它需要**枚举全部要拒的名字**（= 宿主工具面减去两个），而那份名单
+//    随宿主版本漂移 ⇒ 写死会在新宿主上拒掉不存在的名字，或在工具增加时漏放。
+//    ⇒ reader 的 gate **不收窄通用工具面**（它在新宿主上会看到比旧宿主更多的工具）；
+//      这一条退化在 README 的契约表里如实登记。
+//
+// ⛔ **但 lane 寻址名必须无条件挡住**（`LANE_ADDRESSING_DENY`）。这不是顺带的好意：
+//    旧形态下 reader 用 **allow** 白名单，白名单天然不含那 3 个名字 ⇒ 它**本来就**寻址不了别的 lane。
+//    若新形态直接 `lane.deny ?? []`，reader 的 gate 会变成空名单 ⇒ **它反而能寻址 sibling lane**，
+//    即「本来被挡住的能力被解锁」。那是权限放大，不是行为退化 ⇒ 必须显式补上，
+//    且这份名单与 `READONLY_DENY` 里那 3 个名字**同一个来源**，不得另写一份。
+export const LANE_ADDRESSING_DENY = ['subagent_children', 'subagent_send', 'subagent_interrupt']
+
+/** 一条 lane 在新形态下的 gate 名单：声明里的 deny（若有）+ 无条件挡住的寻址名。 */
+const laneGateDeny = (lane) => [...new Set([...(lane.deny ?? []), ...LANE_ADDRESSING_DENY])]
+
+export const lanePresetRows = LANES.map((lane) => ({
+  id: 'preset-' + lane.presetId,
+  name: '@deepseek-ai/dsh-agent-preset',
+  config: {
+    id: lane.presetId,
+    order: 10 + LANES.indexOf(lane),
+    plugins: [
+      // `personaFile` 是**取值槽**：生成器把它渲染成与旧形态同形的运行时 `readFileSync`
+      // 表达式（见 `gen-cordis-patch.mjs` 的 `personaExpr`）。本文件不产 `!!js`。
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { personaFile: lane.persona } },
+      { id: 'lane-gate', name: laneGatePlugin, config: { deny: laneGateDeny(lane) } },
+    ],
+  },
+}))
 
 // ── 15 个顶层 row（13 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行）──────────────────────────
 // ⚠️ 权威骨架 standard.patch.yml **自身带** 6 个 row（command-goal / tool-goal / workflow-ptc /

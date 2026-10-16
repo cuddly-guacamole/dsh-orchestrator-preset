@@ -42,8 +42,10 @@
 
 import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 
 import * as d from './preset-declaration.mjs'
 import {
@@ -98,6 +100,85 @@ function parseRows(text) {
 const rows = () => parseRows(committed)
 const idsAt = (indent) => rows().filter((r) => r.indent === indent).map((r) => r.id)
 
+// ── `!!js` 取值（0.2.1-alpha.3 迁移新增）─────────────────────────────────────────
+// lane 行的 `agentPreset` / `allowedAgentPresets` / `toolFilter` 现在是 `!!js` **表达式**
+// （按宿主分档），不再是字面量 ⇒ 断言不能只看文本形状，要看**求值结果**。
+// 这里刻意**不引第三方 YAML 库**（本文件自定「零第三方包」），也**不调宿主**（保留「无宿主也能跑」）：
+// 只把 `!!js ` 后面的表达式文本抠出来，在**两个固定世界**里各求值一次。
+//
+// 两个世界用 `baseUrl` 区分，与声明侧的判据同源：
+//   · `LEGACY_BASE` 解析不到 `@deepseek-ai/dsh-tool-subagent` ⇒ 门为真 ⇒ **旧形态**
+//   · `NEW_BASE` 指向本仓自己的 `package.json` —— **重要**：不能指向已安装的宿主，
+//     否则这条测试的读数会随「本机装的是哪版 dsh」而变，在 alpha.2 机器上假红。
+//     用本仓 `package.json` 时，`@deepseek-ai/dsh-tool-subagent` 解析**必然失败**
+//     （本包不依赖它）⇒ 门为真 —— 那样两个世界就一样了，测不出分档。
+// ⇒ 所以 `NEW_BASE` 指向一个**只含 dsh-tool-subagent 的翻砂目录**（见下方 stub），
+//   由本文件在临时目录里造出来，内容固定 ⇒ 读数确定、可复现、与宿主安装无关。
+const LEGACY_BASE = 'probe-nonexistent-root/package.json'
+const evaluator = new Function('ctx', 'expr', 'with (ctx) { return eval(expr) }')
+const evalJs = (exprText, baseUrl) => evaluator({ baseUrl, get: () => undefined, loader: { entries: () => [] } }, exprText)
+/** 从一行里抠出 `!!js ` 之后的表达式文本。 */
+const jsExprOf = (line) => {
+  const i = line.indexOf('!!js ')
+  return i === -1 ? null : line.slice(i + 5).trim()
+}
+
+/**
+ * 造两个**固定的**桩世界，让本文件的读数与「本机装的是哪版 dsh」无关。
+ *
+ * `newHost`：一个可解析的 `@deepseek-ai/dsh-tool-subagent`，其 `lib/index.js` 里
+ *   `Config` 字面量**不含** `persona:` ⇒ 门判为「新形态」。
+ * `oldHost`：同样的桩，但 `Config` 字面量**含** `persona:` ⇒ 门判为「旧形态」。
+ *
+ * ⚠️ 为什么不直接指向真宿主：那样这条测试的读数会随本机 dsh 版本漂移 ——
+ *    在 alpha.2 的机器上，「新形态」那组断言会全红，而那些断言**本身是对的**。
+ *    测试要考的是**产物在两个世界里的行为**，不是**本机装了什么**。
+ */
+function makeHostStub(kind) {
+  const root = join(tmpdir(), `orch-contract-${kind}-${process.pid}`)
+  const pkgDir = join(root, 'node_modules', '@deepseek-ai', 'dsh-tool-subagent')
+  mkdirSync(join(pkgDir, 'lib'), { recursive: true })
+  writeFileSync(join(pkgDir, 'package.json'),
+    JSON.stringify({ name: '@deepseek-ai/dsh-tool-subagent', version: '0.0.0-stub', main: 'lib/index.js' }))
+  // 门只读 `const Config = z.object({…})` 这一段字面量里的 `persona:`
+  const body = kind === 'oldHost' ? 'persona: z.string(),\n\ttoolFilter: z.any()' : 'agentPreset: z.string()'
+  writeFileSync(join(pkgDir, 'lib', 'index.js'), `const Config = z.object({\n\t${body}\n});\n`)
+  // `persona` 表达式按**包名**解析本包的 `personas/*.md` ⇒ 桩里也要提供那份包，
+  // 否则求值会 `MODULE_NOT_FOUND`。这里把它做成指向真实 personas 目录的**转发**：
+  // 内容仍取自本仓（测试要考的是产物有没有连对文件，不是桩里放了什么）。
+  const bundleDir = join(root, 'node_modules', '@quill507', 'dsh-orchestrator-preset')
+  mkdirSync(bundleDir, { recursive: true })
+  writeFileSync(join(bundleDir, 'package.json'), JSON.stringify({
+    name: '@quill507/dsh-orchestrator-preset',
+    version: '0.0.0-stub',
+    exports: { './personas/*': './personas/*', './package.json': './package.json' },
+  }))
+  mkdirSync(join(bundleDir, 'personas'), { recursive: true })
+  const realPersonas = join(dirname(fileURLToPath(import.meta.url)), '..', 'personas')
+  for (const f of readdirSync(realPersonas)) {
+    writeFileSync(join(bundleDir, 'personas', f), readFileSync(join(realPersonas, f)))
+  }
+  return join(root, 'package.json')
+}
+const NEW_BASE = makeHostStub('newHost')
+const OLD_BASE = makeHostStub('oldHost')
+
+/**
+ * 第三根桩：`@deepseek-ai/dsh-tool-schedule` **可解析**的宿主。
+ * 用来测 `schedule_*` 那条条件尾巴的**正方向** —— 没有它，就只能断言「名字不在名单里」，
+ * 而「尾巴被整条删掉」这种回归会让边界静默失效却全绿。
+ */
+function makeScheduleStub() {
+  const root = join(tmpdir(), `orch-contract-sched-${process.pid}`)
+  const dir = join(root, 'node_modules', '@deepseek-ai', 'dsh-tool-schedule')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'package.json'),
+    JSON.stringify({ name: '@deepseek-ai/dsh-tool-schedule', version: '0.0.0-stub', main: 'index.js' }))
+  writeFileSync(join(dir, 'index.js'), 'export default {}\n')
+  return join(root, 'package.json')
+}
+const SCHEDULE_BASE = makeScheduleStub()
+
 // ── 行块读取：`- id:` 行到下一条缩进 ≤ 它的 `- id:` 行（或文件尾）─────────────
 // ⚠️ 同样只依赖 render() 固定下来的缩进；不依赖任何 YAML 库（见文件头「零第三方包」）。
 /** 文本里 id 指定的**那一整块**的行；id 不存在返回 null。 */
@@ -112,6 +193,13 @@ function blockOf(text, id) {
   }
   return lines.slice(start)
 }
+
+/**
+ * `blockOf()` 的字符串版本。`blockOf()` 返回**行数组**，断言里想用 `includes()` / 正则
+ * 匹配就得先 join —— 直接对数组调 `assert.match` 会拿到 `TypeError` 或恒假的匹配。
+ * 找不到该 id 时返回 `null`（与 `blockOf` 一致），调用方负责断言非 null。
+ */
+const blockText = (id) => { const b = blockOf(committed, id); return b === null ? null : b.join('\n') }
 
 const unquote = (s) => s.trim().replace(/^'(.*)'$/s, '$1').replace(/''/g, "'")
 
@@ -174,7 +262,13 @@ function childrenOf(text, groupId) {
  * `plugins[]` 顶层应当出现的 row id，按声明顺序（= d.topRows + d.groups）。
  * ⚠️ group 的**子行**在渲染里挂在 `config:` 之下（缩进 14），不属于这一层。
  */
-const expectedPluginsIds = () => [...d.topRows.map((r) => r.id), ...d.groups.map((g) => g.id)]
+const expectedPluginsIds = () => [
+  ...d.topRows.map((r) => r.id),
+  ...d.groups.map((g) => g.id),
+  // 每条 lane 的 Agent Preset 行（新宿主专用）。它们与顶层 row 同层（缩进 10）——
+  // lane 行的 `agentPreset` 指向这些 id，所以必须在**同一个** `- insert:` 里可见。
+  ...d.lanePresetRows.map((r) => r.id),
+]
 /** 每个 group 的子行 id，按 group 顺序。id 由 groupEntry()（生成器自己的铸 id 规则）铸出。 */
 const expectedGroupChildIds = () => d.groups.flatMap((g) => groupEntry(g, d, section).children.map((c) => c.id))
 /**
@@ -268,8 +362,10 @@ test('plugins[] 的 row id 集合与顺序 === 声明清单推导值', () => {
 test('顶层 - insert: 直接挂载 3 条：preset 行 + 两个 bundle 级挂载行', () => {
   assert.deepEqual(idsAt(4), expectedInsertIds())
   const presetRows = rows().filter((r) => r.indent === 4 && r.name === '@deepseek-ai/dsh-agent-preset')
-  assert.equal(presetRows.length, 1, '应当恰好一个 agent-preset 行')
+  assert.equal(presetRows.length, 1, '应当恰好一个 agent-preset 行（本包自己的 preset 声明）')
   assert.equal(presetRows[0].id, `preset-${d.presetId}`)
+  // ⚠️ 另有 9 条 lane 的 Agent Preset 行，但它们挂在 `plugins[]` 之下（缩进 10），不是这一层。
+  //    这一条区分很重要：`- insert:` 顶层只允许这 3 条，多一条就说明层级被改错了。
 })
 
 // ============================================================================
@@ -283,8 +379,13 @@ test('计数口径自洽：声明 row 数 / plugins[] 条目数 / 文件内 `- i
   // ⚠️ 这条比较的两条腿来自**不同来源**（声明 vs 从产物文本数出来的行）——它能在
   //    「生成器把 group 子行挂错层级 / 少渲染」时失败。旧版本把 countRows() 与它自己
   //    函数体的一份字面拷贝比较，那只能在两份拷贝被分别编辑时失败，对真实回归是瞎的。
-  const declaredRows = countRows(d)
-  const renderedPlugins = idsAt(10).length + idsAt(14).length
+  // ⚠️ `countRows(d)` 已含 9 条 lane preset 行（生成器的 `rows-detail` 口径），而这里比较的是
+  //    「plugins[] 里的 row」⇒ 两边都要在**同一个口径**上：减掉 preset 行。
+  const declaredRows = countRows(d) - d.lanePresetRows.length
+  // ⚠️ `idsAt(10)` 现在**同时**含原顶层 row 与 9 条 lane preset 行（两者同层），
+  //    而 `countFileEntries()` 的口径是「topRows + groups + group 子行」⇒ 必须先把
+  //    lane preset 行减掉，否则这条比较会把「新加了一类行」误报成「group 渲染形状变了」。
+  const renderedPlugins = idsAt(10).length + idsAt(14).length - d.lanePresetRows.length
   const foldedIntoGroups = d.groups.filter((g) => g.id !== 'delegation').reduce((n, g) => n + g.rows.length, 0)
   assert.equal(renderedPlugins - declaredRows, foldedIntoGroups,
     `声明口径 ${declaredRows} 与产物口径 ${renderedPlugins} 的差不等于 ${foldedIntoGroups} —— group 子行的渲染形状变了`)
@@ -296,7 +397,13 @@ test('计数口径自洽：声明 row 数 / plugins[] 条目数 / 文件内 `- i
   // plugins[] 条目数 = 顶层 row + group + 全部 group 子行（即「文件里 plugins[] 下的所有 `- id:` 行」）
   assert.equal(renderedPlugins, countFileEntries(d))
   // 文件内 `- id:` 行数 = plugins[] 条目 + preset 行 + 两个 bundle 级挂载行
-  assert.equal(all.length, countFileEntries(d) + 3)
+  //                      + 9 条 lane preset 行
+  //                      + 每条 lane preset 的**嵌套** `plugins[]` 条目（persona + lane-gate）
+  // ⚠️ 最后一项是 0.2.1-alpha.3 迁移新增的：lane preset 的 `plugins[]` 里每条都有自己的 `- id:`，
+  //    所以「文件里 `- id:` 行数」这个口径**不再**等于「顶层可见行数」。不把它算进来，
+  //    这条断言就会在形状正确时报假红 —— 而假红会诱使人去改产物。
+  const nestedPluginIds = d.lanePresetRows.reduce((n, r) => n + r.config.plugins.length, 0)
+  assert.equal(all.length, countFileEntries(d) + 3 + d.lanePresetRows.length + nestedPluginIds)
   // 每个 lane 行的 id 与 toolName 一一对应（§3.3.2 约束 5：具名 lane 的 toolName 必须互不相同）
   const toolNames = [...committed.matchAll(/^ *toolName: (subagent_\w+)$/gm)].map((m) => m[1])
   assert.equal(new Set(toolNames).size, toolNames.length, 'lane 的 toolName 必须互不相同（§3.3.2 约束 5）')
@@ -417,6 +524,9 @@ test('persona 行的 config 为空，且产物里没有任何 {{cwd}} 引用', (
 
 // ============================================================================
 // 7. 每个 lane 行恰好一个 toolFilter：allow 与 deny 二选一
+//    ⚠️ 0.2.1-alpha.3 起本行改成**两形态**断言：旧宿主上 toolFilter 是**无条件**的；
+//       新宿主上它被 `!!js … ? … : undefined` 包住（宿主拒绝该键 ⇒ 形态必须按宿主分档）。
+//       只断言「有 deny」会让新形态的产物**假绿**：那份 deny 在新宿主上是死值。
 // ============================================================================
 test('每个 lane 行恰好有 toolFilter.allow 或 toolFilter deny 之一；只有 reader 用 allow', () => {
   const lines = committed.split('\n')
@@ -430,8 +540,15 @@ test('每个 lane 行恰好有 toolFilter.allow 或 toolFilter deny 之一；只
   for (const r of laneRows) {
     const end = lines.findIndex((l, i) => i >= r.startLine && idLine.test(l))
     const body = lines.slice(r.startLine, end === -1 ? lines.length : end)
-    const hasAllow = body.some((l) => /^ +allow:/.test(l))
-    const hasDeny = body.some((l) => /^ +deny:/.test(l))
+    // ⚠️ **按求值结果断言，不按文本形状**（0.2.1-alpha.3 迁移）：`toolFilter` 现在是
+    //    一条 `!!js` 表达式，文本里看到的 `deny:` 可能只是表达式内部的标识符。
+    //    在**旧形态世界**里求值，才拿到宿主真正会读的那个对象。
+    const tfLine = body.find((l) => /^\s*toolFilter: !!js /.test(l))
+    assert.notEqual(tfLine, undefined, `${r.id}: 找不到 toolFilter 的 !!js 表达式`)
+    const value = evalJs(jsExprOf(tfLine), OLD_BASE)
+    assert.notEqual(value, undefined, `${r.id}: 旧宿主上 toolFilter 求值为 undefined ⇒ 该 lane 在旧宿主上无收窄（回归）`)
+    const hasAllow = value.allow !== undefined
+    const hasDeny = value.deny !== undefined
     // ⚠️ 「不能同时给」是**本项目的房规**，不是宿主的约束。宿主只校验
     //    「配了 toolFilter 就不能 allow/deny 皆空」（`dsh-tool-subagent/lib/index.js:370`
     //    在两者皆 undefined 时抛）—— allow 与 deny 同时给**不**被宿主拒绝，DESIGN §3.3.2
@@ -443,7 +560,75 @@ test('每个 lane 行恰好有 toolFilter.allow 或 toolFilter deny 之一；只
     if (hasAllow) allowLanes.push(r.id)
   }
   // §3.3.3 共同约定（:433）：只读 lane 用 deny；reader 用 allow 白名单（它必须看不到任何别的工具）
-  assert.deepEqual(allowLanes, ['tool-subagent-reader'])
+  // ⚠️ 这里断言的是**旧形态**（上面就是在旧形态世界里求值的）：reader 必须仍然带 allow 白名单。
+  //    新形态下 reader 收窄的退化不在这一条里假装没发生 —— 它由 7c 在新形态世界里单独断言。
+  assert.deepEqual(allowLanes, ['tool-subagent-reader'],
+    '旧形态世界里应当恰好 reader 用 allow 白名单')
+})
+
+// ============================================================================
+// 7b. 形态分档必须**成对**出现：lane 行与 lane preset 行由同一个宿主门驱动
+//     这一条锁的是本轮迁移的核心不变量 —— 两处判据若分叉，会出现
+//     「lane 走新形态、preset 行却被 disable」（lane 指向不存在的 preset ⇒ 派发期失败）
+//     或反过来的静默半迁移。
+// ============================================================================
+test('7b. lane 行与 lane preset 行由**同一个**宿主门驱动（成对，不得分叉）', () => {
+  const text = committed
+  // ⚠️ `blockOf()` 返回**行数组**，不是字符串 ⇒ 用模块级的 `blockText()`（先 join 再匹配）。
+  const presetBlocks = d.lanePresetRows.map((r) => blockText(r.id))
+  for (const [i, block] of presetBlocks.entries()) {
+    assert.notEqual(block, null, `产物里找不到 lane preset 行 ${d.lanePresetRows[i].id}`)
+    // 每条 lane preset 都必须带 disabled 门（新宿主才启用）
+    assert.match(block, /disabled: !!js/, `${d.lanePresetRows[i].id}: 缺宿主门 disabled（旧宿主上会尝试装载一个不存在的服务）`)
+  }
+  // 每条 lane 行的 agentPreset / allowedAgentPresets 都必须存在，
+  // 且在**新形态世界**里求值出正确的 preset id（不是靠文本里有没有那串字符）。
+  for (const lane of d.LANES) {
+    const block = blockText(laneRowId(lane))
+    assert.notEqual(block, null, `产物里找不到 lane 行 ${laneRowId(lane)}`)
+    assert.match(block, /agentPreset: !!js/, `${laneRowId(lane)}: 缺 agentPreset（新宿主上 lane 会退回继承父 preset，工具面失控）`)
+    assert.match(block, /allowedAgentPresets: !!js/, `${laneRowId(lane)}: 缺 allowedAgentPresets ⇒ 宿主 lib/index.js:209 硬抛`)
+    const laneLine = (re) => block.split('\n').find((l) => re.test(l))
+    // ── 新形态世界：agentPreset 必须解出该 lane 的 id，allowedAgentPresets 必须含它 ──
+    const presetValue = evalJs(jsExprOf(laneLine(/^\s*agentPreset: !!js /)), NEW_BASE)
+    assert.equal(presetValue, lane.presetId,
+      `${laneRowId(lane)}: 新宿主上 agentPreset 求值应为 ${lane.presetId}，实测 ${JSON.stringify(presetValue)}`)
+    const allowedValue = evalJs(jsExprOf(laneLine(/^\s*allowedAgentPresets: !!js /)), NEW_BASE)
+    assert.deepEqual(allowedValue, [lane.presetId],
+      `${laneRowId(lane)}: 新宿主上 allowedAgentPresets 必须恰好含自己的 id（宿主 :209 要求包含关系）`)
+    // persona 在新宿主上必须解出非空正文（丢了它 = lane 没有身份）
+    const personaValue = evalJs(jsExprOf(laneLine(/^\s*persona: !!js /)), NEW_BASE)
+    assert.equal(typeof personaValue, 'string',
+      `${laneRowId(lane)}: 新宿主上 persona 没有解出字符串`)
+    assert.equal(personaValue.trim().length > 0, true,
+      `${laneRowId(lane)}: 新宿主上 persona 解出空串 ⇒ lane 没有身份`)
+    // ── 旧形态世界：这三个键必须**都不出现**（求值为 undefined）──
+    for (const key of ['agentPreset', 'allowedAgentPresets', 'persona']) {
+      const v = evalJs(jsExprOf(laneLine(new RegExp(`^\\s*${key}: !!js `))), OLD_BASE)
+      assert.equal(v, undefined,
+        `${laneRowId(lane)}: 旧宿主上 ${key} 求值应为 undefined（该键在旧宿主 Config 里不存在，带上会让宿主按未知键处理），实测 ${JSON.stringify(v)}`)
+    }
+    // 反向：产物里必须真有一条同 id 的 preset 行（否则 lane 指向一个不存在的 preset）
+    assert.notEqual(blockText(`preset-${lane.presetId}`), null,
+      `${laneRowId(lane)} 指向 ${lane.presetId}，但产物里没有 preset-${lane.presetId} 行`)
+  }
+  // 成对性：lane 行的门表达式**内核**与 preset 行的门表达式内核必须是同一段文本。
+  // ⚠️ 不写整行正则 —— 门表达式很长且含 `=>` / `{}` / 括号，逐字符锚定会让「上游一改措辞
+  //    这条检查就假红」。这里只断言两者都含同一个「读 Config 字面量」判据内核。
+  const CORE = "src.indexOf('const Config = z.object({')"
+  assert.equal(blockText(laneRowId(d.LANES[0])).includes(CORE), true,
+    'lane 行的门没有读 Config 字面量 ⇒ 与 preset 行不是同一条判据')
+  assert.equal(blockText(d.lanePresetRows[0].id).includes(CORE), true,
+    'preset 行的门没有读 Config 字面量 ⇒ 与 lane 行不是同一条判据')
+  // ── preset 行的 disabled 极性：新形态世界里必须为 **false**（启用），旧形态世界里为 true ──
+  //    ⚠️ 这一条专抓「极性写反」：反了之后新宿主上 preset 全被禁用，而产物文本完全正常。
+  const presetBlock = blockText(d.lanePresetRows[0].id)
+  const disabledLine = presetBlock.split('\n').find((l) => /^\s*disabled: !!js /.test(l))
+  assert.notEqual(disabledLine, undefined, 'preset 行没有 disabled 门')
+  assert.equal(evalJs(jsExprOf(disabledLine), NEW_BASE), false,
+    '新形态世界里 lane preset 被禁用了（极性反了）⇒ 新宿主上 9 条 lane 全部拿不到 persona 与工具收窄')
+  assert.equal(evalJs(jsExprOf(disabledLine), OLD_BASE), true,
+    '旧形态世界里 lane preset 没有被禁用 ⇒ 旧宿主上会尝试装载 agent-preset 行')
 })
 
 // ============================================================================
@@ -507,15 +692,29 @@ test('lane 寻址的 3 个工具名在每个 lane 的工具面里都不出现（
     assert.notEqual(r, undefined, `产物里找不到 lane 行 ${laneRowId(lane)}`)
     const end = lines.findIndex((l, i) => i >= r.startLine && idLine.test(l))
     const body = lines.slice(r.startLine, end === -1 ? lines.length : end)
-    const usesDeny = body.some((l) => /^ +deny:/.test(l))
+    const tfLine = body.find((l) => /^\s*toolFilter: !!js /.test(l))
+    assert.notEqual(tfLine, undefined, `${laneRowId(lane)}: 找不到 toolFilter 表达式`)
+    // ⚠️ **按求值结果断言，不按文本**：名单现在住在 `!!js` 表达式里，文本匹配会漏。
+    const filter = evalJs(jsExprOf(tfLine), OLD_BASE)
+    // ⚠️ **0.2.1-alpha.3 起名单住两个地方**，两处都必须挡住这 3 个名字：
+    //    · **旧形态**：lane 行的 `toolFilter.deny`（deny lane）或 `toolFilter.allow`（白名单天然不含 ⇒ 合法）
+    //    · **新形态**：该 lane 的 preset 里 `lane-gate` 插件的 `config.deny`
+    //    只查一处会让另一形态**空转**，而那正是「边界静默失效」最该被抓的时刻。
+    const gateRow = d.lanePresetRows.find((x) => x.id === `preset-${lane.presetId}`)
+    assert.notEqual(gateRow, undefined, `产物里找不到 ${lane.presetId} 的 preset 声明（新形态的名单住在那里）`)
+    const gateDeny = gateRow.config.plugins.find((p) => p.id === 'lane-gate').config.deny
     for (const name of LANE_ADDRESSING_TOOLS) {
-      if (usesDeny) {
-        assert.equal(body.some((l) => l.includes(`'${name}'`)), true,
-          `lane ${lane.tool} 的 deny 名单里没有 ${name} ⇒ 它能寻址别的 lane（ADR keep-lane-composition 决定 4）`)
+      if (filter.deny !== undefined) {
+        assert.equal(filter.deny.includes(name), true,
+          `${laneRowId(lane)}: 旧宿主上 deny 名单没有 ${name} ⇒ 它能寻址别的 lane（ADR keep-lane-composition 决定 4）`)
       } else {
-        assert.equal(body.some((l) => l.includes(name)), false,
-          `lane ${lane.tool} 用 allow 白名单，白名单里出现了 ${name} ⇒ 越界（ADR keep-lane-composition 决定 4）`)
+        assert.equal(filter.allow.includes(name), false,
+          `${laneRowId(lane)}: 旧宿主上 allow 白名单里出现了 ${name} ⇒ 越界（ADR keep-lane-composition 决定 4）`)
       }
+      // 新形态：gate 名单必须含这 3 个名字（reader 的 allow 白名单在新形态下不存在，
+      // 所以这一条对 reader 尤其重要 —— 早先 `lane.deny ?? []` 让它的 gate 变成空名单）。
+      assert.equal(gateDeny.includes(name), true,
+        `${lane.presetId}: 新宿主上 lane-gate 的 deny 没有 ${name} ⇒ 该 lane 能寻址别的 lane（权限放大）`)
     }
   }
 })
@@ -544,26 +743,38 @@ test('tool-schedule 行：Lead 挂载、带宿主门；lane 的 deny 按同一�
   assert.equal(disabled.includes('@deepseek-ai/dsh-tool-schedule'), true,
     '宿主门的判据里没有包名 —— 它必须按「这个包在这台宿主上能不能解析」判定')
   // ② lane 侧：deny 面必须带**声明里那一条**条件尾巴；allow 面（reader）不得出现这些名字。
+  //    ⚠️ 按**求值结果**断言（0.2.1-alpha.3 迁移后名单住在 `!!js` 表达式里，文本里没有 `deny: ` 行）。
   for (const lane of d.LANES) {
     const laneBlock = blockOf(committed, laneRowId(lane))
     assert.notEqual(laneBlock, null, `产物里找不到 lane 行 ${laneRowId(lane)}`)
-    const denyLine = laneBlock.find((l) => /^\s+deny: /.test(l))
-    if (denyLine === undefined) {
+    const tfLine = laneBlock.find((l) => /^\s*toolFilter: !!js /.test(l))
+    assert.notEqual(tfLine, undefined, `${laneRowId(lane)}: 找不到 toolFilter 表达式`)
+    const filter = evalJs(jsExprOf(tfLine), OLD_BASE)
+    if (filter.deny === undefined) {
       for (const name of SCHEDULE_TOOLS) {
-        assert.equal(laneBlock.some((l) => l.includes(name)), false,
+        assert.equal(filter.allow.includes(name), false,
           `lane ${lane.tool} 用 allow 白名单，白名单里出现了 ${name} ⇒ 越界（裁决：只给 Lead）`)
       }
       continue
     }
-    assert.equal(denyLine.includes(d.SCHEDULE_DENY_EXPR), true,
-      `lane ${lane.tool} 的 deny 尾巴不是声明里的 SCHEDULE_DENY_EXPR ⇒ 「只给 Lead」的边界在这条 lane 上失效`)
-    // ③ 反向：这 4 个名字**不得**出现在静态段里。静态段是「每台机器都有」的名单，写死它
-    //    = 在没有这个包的宿主上 restrict() 抛 unknown tool。判据取第一个 `).concat(` 之前的部分。
-    const staticPart = denyLine.slice(0, denyLine.indexOf(').concat('))
-    assert.equal(staticPart.includes(').concat('), false, `deny 行里找不到静态段边界：${denyLine.slice(0, 120)}`)
+    // ③ 反向：这 4 个名字**不得**出现在静态段里。静态段 = `).concat(` 之前的那一段。
+    //    判据取**求值后**的名单：它必须由「静态段 + 条件尾巴」拼成，而条件尾在当前世界
+    //    （旧形态桩：`@deepseek-ai/dsh-tool-schedule` 不可解析）求值为 `[]`。
+    //    ⇒ 在**没有该包的宿主**上，这 4 个名字**必须不在**名单里；反过来有该包时必须在。
+    //    两个方向都要测，否则「把 4 个名字写进静态段」这条回归测不出来。
+    const staticPart = jsExprOf(tfLine).slice(0, jsExprOf(tfLine).indexOf(').concat('))
+    assert.notEqual(staticPart, '', `deny 表达式里找不到静态段边界：${jsExprOf(tfLine).slice(0, 120)}`)
     for (const name of SCHEDULE_TOOLS) {
       assert.equal(staticPart.includes(name), false,
         `lane ${lane.tool} 把 ${name} 写进了静态 deny 段 —— 没有这个包的宿主上 restrict() 会抛 unknown tool`)
+      assert.equal(filter.deny.includes(name), false,
+        `lane ${lane.tool}: 旧形态桩上解析不到 @deepseek-ai/dsh-tool-schedule ⇒ ${name} 不应出现在 deny 里（写死 = 在那台宿主上 restrict() 抛）`)
+    }
+    // 正方向：把该包「变成可解析」的那台机器上，这 4 个名字**必须**出现（否则边界失效）
+    const withSchedule = evalJs(jsExprOf(tfLine), SCHEDULE_BASE)
+    for (const name of SCHEDULE_TOOLS) {
+      assert.equal(withSchedule.deny.includes(name), true,
+        `lane ${lane.tool}: 在**有** @deepseek-ai/dsh-tool-schedule 的宿主上 deny 里没有 ${name} ⇒ 子 agent 拿到了提醒工具（裁决：只给 Lead）`)
     }
   }
   // ④ **fork 控制行也必须 deny 那 4 个名字**。fork child **同样是子 agent**，而裁决是

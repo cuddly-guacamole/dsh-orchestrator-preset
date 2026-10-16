@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.1%20%7C%200.2.1--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.3%20%7C%200.2.1--alpha.4-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [归属与来源](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -72,11 +72,13 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 | 精确的层序：先按 `dsh.profile.bundles` 的顺序应用各 bundle patch，然后是 profile 自己的 `cordis.patch.yml`，然后是 `$DSH_HOME/cordis.patch.yml`，最后是每个 `--patch` 覆盖层。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
 | 一个 profile 位于 `~/.dsh/profiles/<name>/`，内含 `cordis.yml`、`cordis.patch.yml` 与 `package.json`。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
 | `config.selectedDefault` 在 preset 的 schema 里，且是生效的那个值；schema 里还有 `config.default`，而 `defaultId` 解析 `selectedDefault ?? default`。 | **在宿主 0.2.0-rc.1 上实测**，对着 `@deepseek-ai/dsh-agent-preset-registry`。 |
-| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测。** 在 `0.2.0-rc.2` 与 `0.2.1-alpha.1` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**在 `0.2.1-alpha.2` 上不存在**（只有 `provider`/`model`）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。 |
-| `tool-subagent` 的 `Config` 接受 `backgroundMode`。 | **随版本而异。** 在 `0.2.1-alpha.1` 上存在（`lib/index.js:257`），**在 `0.2.1-alpha.2` 上不存在**。schemastery 容忍未知键，所以这次移除是静默的 —— 已把两种写法都喂给已装 schema 核过。continuable 现在由 provider 的 `prepareContinuable` 决定（`lib/index.js:323`），spawn 与 fork 在两个版本上都实现了它。 |
-| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测。** 它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。 |
-| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **假的，而这正是本 preset 唯一一条按版本分档的行存在的原因。** npm 上它发布在 `0.0.1-rc.2`（另一代）、`0.2.1-alpha.1` 与 `0.2.1-alpha.2` —— **没有 `0.2.0-rc.2`**。`dsh@0.2.0-rc.2` 不依赖它，它旗下的 app 包也都不依赖，rc.2 的骨架里没有这样一行；rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`。 |
-| lane 的 `toolFilter.deny` 若点了一个宿主没注册的工具，会在派发时响亮失败，而不是在挂载时。 | **在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 上实测，行为一致。** `tools.restrict()` 抛 `names unknown global tool`（`dsh-tools/lib/index.js:2895-2908`），而 `dsh-subagent` 在组合一个 child 时不加保护地调用它（`lib/index.js:401`）—— 所以一份硬编码的 `schedule_*` deny 清单会在 `latest` 上**弄坏每一次 lane 派发**。 |
+| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测。** 在 `0.2.0-rc.2` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**自 `0.2.1-alpha.2` 起不存在**（只有 `provider`/`model` —— 已在已装的 `0.2.1-alpha.4` 上复核）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。这就是 `persona` 行在**任何**受支持版本上都不带 `suffix` 的原因 —— 见[宿主版本门](#0-宿主版本门)。 |
+| `tool-subagent` 的 `Config` 接受 `backgroundMode`。 | **随版本而异。** 在 `0.2.1-alpha.1` 上存在（`lib/index.js:257`），**自 `0.2.1-alpha.2` 起不存在**。schemastery 容忍未知键，所以这次移除是静默的 —— 已把两种写法都喂给已装 schema 核过。continuable 现在由 provider 的 `prepareContinuable` 决定，spawn 与 fork 两个 provider 在**每一个受支持版本**上都实现了它（已在已装的 `0.2.1-alpha.4` 上复核）。⇒ lane 行**完全不写** `backgroundMode`。 |
+| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测。** 它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。已在已装的 `0.2.1-alpha.4` 上复测：128 行，仍带 `time-context` 与 `tool-schedule`，仍没有那三条被删的行。 |
+| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **假的，而这正是本 preset 唯一一条按版本分档的行存在的原因。** npm 上它发布在 `0.0.1-rc.2`（另一代）以及 `0.2.1-alpha.1` … `0.2.1-alpha.4` —— **没有 `0.2.0-rc.2`**。`dsh@0.2.0-rc.2` 不依赖它，它旗下的 app 包也都不依赖，rc.2 的骨架里没有这样一行；rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`。 |
+| lane 的 `toolFilter.deny` 若点了一个宿主没注册的工具，会在派发时响亮失败，而不是在挂载时。 | **在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 上实测，行为一致。** `tools.restrict()` 抛 `names unknown global tool`（`dsh-tools/lib/index.js:2895-2908`），而 `dsh-subagent` 在组合一个 child 时不加保护地调用它（`lib/index.js:401`）—— 所以一份硬编码的 `schedule_*` deny 清单会在 `latest` 上**弄坏每一次 lane 派发**。这条在 `0.2.1-alpha.3`/`alpha.4` 上同样成立，也正是旧形态那条 deny 尾巴必须保持条件化的原因。 |
+| `tool-subagent` 的行 `Config` 仍然接受 `persona` 与 `toolFilter`。 | **自 `0.2.1-alpha.3` 起为假，而这是第二条按版本分档的机制。** `dsh-tool-subagent/lib/index.js:311` 已不再声明这两个键，且 `:355` 在挂载期对两者硬抛。⇒ 本包因此提供**两种 lane 形态**，由一个宿主门分档 —— 见 [alpha.3 的 lane 迁移](#alpha3-的-lane-迁移)。 |
+| Agent Preset 能表达「排除某个工具」。 | **假的，而这正是本包新增 `lane-tool-gate.mjs` 的原因。** preset 的 `plugins[]` **只能加不能减**。`0.2.1-alpha.3` 上实测：只挂 persona 的 preset 让 child 拿到 **25** 个工具（含 `edit`/`bash`/`send_message`/`interrupt_agent`），而在 preset 里把 `tool-bash` 标 `disabled: true` 之后 `bash` **依然在**（23 个工具）。`toolFilter` 在那条路径上也不可达：全新派发只带 `composition: { agentPreset }`（`dsh-subagent/lib/index.js:1452`），而 `:395` 那个唯一消费点读的字段是**恢复**路径从持久化 descriptor 里读回的（`:2177`）。 |
 
 DeepSeek Harness 采用 MIT 许可：[`github.com/deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)。同名但无关的项目，不是本仓库里任何东西的来源。
 
@@ -93,6 +95,7 @@ DeepSeek Harness 采用 MIT 许可：[`github.com/deepseek-ai/deepseek-harness`]
 | `plan-aware-persona.mjs` | 每次装配在 Orchestrator 与 Planner 之间切换 persona。 |
 | `routing-sections.mjs` | 四段常驻路由 section。 |
 | `lane-composition.mjs` | 三个按持久 agent id 的子代寻址工具。 |
+| `lane-tool-gate.mjs` | **`0.2.1-alpha.3` 新增。** lane 的工具闸：`tools.guard()`，挂在每条 lane 的 Agent Preset 内 —— 因为 preset 表达不了「排除某个工具」。见 [alpha.3 的 lane 迁移](#alpha3-的-lane-迁移)。 |
 | `personas/` | 十份 persona：orchestrator、planner，以及每条 lane 一份。 |
 | `skills/` | 四个自研技能。本目录就是它们的权威清单。 |
 | `extensions/dsh/` | 本包的两个插件：技能 provider，以及 aegis 前缀桥。 |
@@ -123,11 +126,16 @@ node tools/gen-cordis-patch.mjs
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | 插件契约；这是真实的大版本边界 |
 | `@deepseek-ai/schemastery` | `>=3.18.0 <4` | 设置卡片据以生成的 `Config` schema |
 
-**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 0.2.1-alpha.1 **与 0.2.1-alpha.2** 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
+**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 `0.2.1-alpha.3` **与 `0.2.1-alpha.4`** 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
 
-**受支持集合是三个版本，而这是一条实测结论，不是抄来的。** 每一个都是对着它自己那份已发布 tarball 核过的，没有假设它可以从邻居推出来：0.2.1-alpha.2 拿掉了本包此前依赖的两样东西（`{{cwd}}` 这个已注册的提示词变量，以及 `tool-subagent` 上的 `backgroundMode` 键）。三版之间的差异**没有一处**是被静默容忍的 —— 凡是必须改的行，都改成了**三版都合法**的写法（见[来源](#来源哪些是上游的哪些是在这里实测的)），因为一个只在最新宿主上正确的 preset，在另外两版上就不叫受支持。
+**受支持集合是三个版本，而这是一条实测结论，不是抄来的。** 每一个都是对着它自己那份已发布 tarball 核过的，没有假设它可以从邻居推出来。有两次宿主发布打断了本包所依赖的东西，而它们打断的方式**完全不同** —— 这正是产物里现在必须有一个门的原因：
 
-有一项能力是**按宿主分档**而不是三版齐平的，值得单独点名：Lead 的持久提醒（`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`）来自 `@deepseek-ai/dsh-tool-schedule`，而**这个包在 `0.2.0-rc.2` 上不存在**。所以挂载它的那一行带一个 `disabled` 表达式，问宿主「这个包解析得到吗」；9 条 lane 的 deny 尾巴问同一个问题，只在包存在的地方加上那 4 个名字。在 `0.2.0-rc.2` 上本 preset 的行为与 0.1.5 完全一致 —— 那项能力只是不在那儿，因为它本来就不在那台宿主上。在 `0.2.1-alpha.1` 与 `0.2.1-alpha.2` 上，Lead 有提醒，而**任何被派出的子代理都没有**：9 条具名 lane deny 它们，`subagent_fork` 控制行也 deny（fork 出来的 child 同样是子代理 —— 与官方 `standard` 骨架在它两条 subagent 行上的做法同形）。`tools/verify-install.sh` 的 check 13 会**模拟**那台没有这个包的宿主，并在那 4 个名字出现时失败 ⇒ 这件事不会悄悄回归。
+- **`0.2.1-alpha.2` 拿掉了两个键。** `{{cwd}}` 不再是已注册的提示词变量，`backgroundMode` 也从 `tool-subagent` 的 `Config` 里消失了。这两处删除**可以被吸收**：本包不再写它们中的任何一个，得到的 `persona` 行与 lane 行在**每一个**受支持版本上都合法。一种写法，三台宿主。
+- **`0.2.1-alpha.3` 拿掉的是机制，不是一个键。** `persona` 与 `toolFilter` 整体离开了 `tool-subagent` 的行 `Config`，而 `apply()` 现在只要见到其中一个就硬抛。这一处**无法被吸收**：替代品（Agent Preset）在 alpha.3 之前根本不存在，而且它**完全无法表达「排除某个工具」**。所以 lane 行以**一个宿主门分档的两种形态**发布，新形态自带一个自写的闸插件。见 [alpha.3 的 lane 迁移](#alpha3-的-lane-迁移)。
+
+三版之间的差异**没有一处**是被静默容忍的（见[来源](#来源哪些是上游的哪些是在这里实测的)），因为一个只在最新宿主上正确的 preset，在另外两版上就不叫受支持 —— 而一个只在最新宿主上正确、**却看起来装载成功**的 preset，比一个响亮失败的更糟。
+
+有一项**能力**是按宿主分档而不是三版齐平的，值得单独点名：Lead 的持久提醒（`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`）来自 `@deepseek-ai/dsh-tool-schedule`，而**这个包在 `0.2.0-rc.2` 上不存在**。所以挂载它的那一行带一个 `disabled` 表达式，问宿主「这个包解析得到吗」；9 条 lane 的 deny 尾巴问同一个问题，只在包存在的地方加上那 4 个名字。在 `0.2.0-rc.2` 上本 preset 的行为与 0.1.5 完全一致 —— 那项能力只是不在那儿，因为它本来就不在那台宿主上。在两台 alpha 宿主上，Lead 有提醒，而**任何被派出的子代理都没有**：9 条具名 lane deny 它们，`subagent_fork` 控制行也 deny（fork 出来的 child 同样是子代理 —— 与官方 `standard` 骨架在它两条 subagent 行上的做法同形）。这个门比 lane 迁移更早，且与它无关：它在三个受支持版本上都成立，而在 `0.2.0-rc.2` 上它是提醒行与 lane deny 尾巴必须条件化的唯一原因。它**已不是**产物里唯一的门 —— lane 形态有它自己的一个门，见下一节。两者问的是不同的问题，不可混为一谈。`tools/verify-install.sh` 的 check 13 会**模拟**那台没有这个包的宿主，并在那 4 个名字出现时失败 ⇒ 这件事不会悄悄回归。
 
 ### 0. 宿主版本门
 
@@ -135,17 +143,19 @@ node tools/gen-cordis-patch.mjs
 dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 ```
 
-这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本。此后本包**已在 0.2.1-alpha.1 上实跑**，并且**同时支持 0.2.0-rc.2、0.2.1-alpha.1 与 0.2.1-alpha.2**。旧措辞里那段诚实的「未测」区间 —— 设计版本与首次实跑版本之间的那一段 —— 已经从上方封口；装当前发布版不再可能掉进去。
+这是 `install.sh` 内部的硬检查，而且它**刻意比上面的 `peerDependencies` 更宽松**：0.1.7-rc.1 是设计所依据的版本，它只是「能装」的下限 —— **不是**一条支持声明。旧措辞里那段诚实的「未测」区间（设计版本与首次实跑版本之间的那一段）已经从上方封口；装当前发布版不再可能掉进去。
 
-三个受支持的版本发布在**不同的 npm dist-tag** 上，这一点值得在动手选之前先知道：
+**受支持的集合恰好是三个宿主版本：**
 
 | 宿主版本 | npm dist-tag | 你会拿到什么 |
 |---|---|---|
-| `0.2.0-rc.2` | `latest`（同时也是 `next`） | `npm i -g @deepseek-ai/dsh` 直接装到的版本 |
-| `0.2.1-alpha.1` | — | 已被同一 tag 上的 alpha.2 取代；要装就按精确版本号装 |
-| `0.2.1-alpha.2` | `alpha` | 最新发布版；**不在 `latest` 上** —— 必须显式指定该 tag |
+| `0.2.0-rc.2` | `latest`（同时也是 `next`） | `npm i -g @deepseek-ai/dsh` 直接装到的版本，也是 Desktop 应用自带的 runtime |
+| `0.2.1-alpha.3` | — | 在 `alpha` tag 上已被取代；要装就按精确版本号装 |
+| `0.2.1-alpha.4` | `alpha` | 最新发布版；**不在 `latest` 上** —— 必须显式指定该 tag |
 
-`alpha` tag 从 alpha.1 移到 alpha.2 的时候，alpha.1 仍是本包实际演练过的那个版本 —— 这就是表里为「已没有任何 tag 指向」的版本保留一行的原因。顶部徽章并列三个版本：三者都不是唯一的「当前发布版」。
+`0.2.1-alpha.1` 与 `0.2.1-alpha.2` **已不在受支持集合内**。它们没有坏 —— 它们属于旧形态分支，仍然可用 —— 但这里不再对它们做验证，而顶部徽章并列的是仍然受支持的那三个。
+
+`alpha` tag 移过三次（alpha.1 → alpha.2 → alpha.3 → alpha.4），所以表里保留了一行「已没有任何 tag 指向」的版本：`0.2.1-alpha.3` 正是引入 lane 迁移的那一版，值得能够刻意装上它。三者都不是唯一的「当前发布版」。
 
 支持不是猜的。本包交给宿主包的每一个 config 字段 —— 都是对着**三个**已发布版本逐字段核对过的，不是推测 —— 在每一版上都存在，类型、默认值与 schema 形状一致；且 `plan-mode` 在三版上都拒绝未知键，所以声明的 `section` 文本不会被一个容忍多余键的 schema 悄悄丢掉。`install.sh --check` 只跑版本门，不写任何东西。
 
@@ -153,10 +163,52 @@ dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 
 | 键 | 它去了哪 | 为什么不算能力降级 |
 |---|---|---|
-| `persona` 行上的 `suffix: 'Your working directory is {{cwd}}.'` | `{{cwd}}` 在 rc.2 与 alpha.1 上是已注册的提示词变量，在 **alpha.2 上不是**。`dsh-system-prompt` 对未知变量是**抛错**，所以这不是「少了一句话」，而是**提示词装配期的硬失败，发生在任何模型请求之前**。上游现已直接要求使用者删掉这个子句。 | 目录由 `dsh-working-directory` 服务供给 —— 它自 rc.2 起就在 `dsh-base` 骨架里，alpha.2 又通过新增的 `working_directory` 工具把它暴露出来。这个 suffix 在每一版上都与它重复。 |
-| 十条 subagent 行上的 `backgroundMode: continuable` | alpha.2 的 `tool-subagent` `Config` 里**根本没有这个键**（alpha.1 有）。schemastery 不拒绝未知键，于是它变成一条没人读的死键。 | continuable 现在是**provider 的能力**而非行的设置：`apply()` 读 `subagentProvider.prepareContinuable`，而 spawn 与 fork 两个 provider 在 alpha.1 与 alpha.2 上都实现了它。lane 的 durable-id 续话能力保留。 |
+| `persona` 行上的 `suffix: 'Your working directory is {{cwd}}.'` | `{{cwd}}` 在 rc.2 与 alpha.1 上曾是已注册的提示词变量，在 **alpha.2 及更新版本上不是**。`dsh-system-prompt` 对未知变量是**抛错**，所以这不是「少了一句话」，而是**提示词装配期的硬失败，发生在任何模型请求之前**。上游现已直接要求使用者删掉这个子句。 | 目录由 `dsh-working-directory` 服务供给 —— 它自 rc.2 起就在 `dsh-base` 骨架里，alpha.2 又通过新增的 `working_directory` 工具把它暴露出来。这个 suffix 在每一版上都与它重复。 |
+| 十条 subagent 行上的 `backgroundMode: continuable` | alpha.2 的 `tool-subagent` `Config` 里**根本没有这个键**（alpha.1 有），alpha.3 与 alpha.4 上同样没有。schemastery 不拒绝未知键，于是它变成一条没人读的死键。 | continuable 现在是**provider 的能力**而非行的设置：`apply()` 读 `subagentProvider.prepareContinuable`，而 spawn 与 fork 两个 provider 在**每一个受支持版本**上都实现了它。lane 的 durable-id 续话能力保留。 |
 
 这两处删除在三版上都安全，而这正是要点：无子句的 `persona` 行与无 `backgroundMode` 的 lane 行**处处合法**，而旧写法只在较旧的宿主上合法。`tools/patch-contract.test.mjs` 现在会在产物里重新出现 `{{cwd}}` 时失败，所以这一条不会再被误加回来。
+
+上面这些测量之所以点名 alpha.1 与 alpha.2，是因为它们就是在那里测出来的；逐字保留正是为了这一点：它们是两条**至今仍然成立**的决定的证据。这两个版本本身已不再受支持 —— 见上面的表。
+
+### alpha.3 的 lane 迁移
+
+`0.2.1-alpha.3` 拿掉的不是一个 config 键，而是 lane 用来声明自己 persona 与工具面的**机制**，并换上一个无法表达同一件事的替代品。这一节写的是**契约**，不是历史：它说明产物在两台 alpha 宿主上长什么样，以及为什么。
+
+**变了什么。** `persona` 与 `toolFilter` 整体离开了 `dsh-tool-subagent` 的行 `Config`（`dsh-tool-subagent/lib/index.js:311` 已不再声明其中任何一个），且 `apply()` 对两者都硬抛（`:355`）：
+
+```
+tool-subagent: persona is no longer supported: configure persona and tool plugins
+in an Agent Preset and select it with agentPreset (spawn only)
+```
+
+这是**单条 entry 的「未激活」失败，不是启动崩溃**：会话照常起来，而每一条受影响的 lane 都静默地没被激活。在一台本包仍在写旧形态的宿主上，9 条 lane 会同时失效，而会话看上去完全正常。
+
+**替代品是什么。** 每条 lane 的 persona 与工具面现在由一条 **Agent Preset** 声明，lane 行只留 `agentPreset` 去选中它。随之而来的是两条硬约束：
+
+| 约束 | 为什么 |
+|---|---|
+| `allowedAgentPresets` 必须包含那个 `agentPreset` id | 否则 `dsh-tool-subagent/lib/index.js:209` 在挂载期抛 `agentPreset must be included in allowedAgentPresets`。这两个键必须**成对**写。 |
+| `agent-presets` 服务必须已挂载 | 否则 `:357` 抛 `agent preset selection requires the agent-presets service`。并非每个 profile 都提供它。 |
+
+**为什么会有两种 lane 形态。** preset 机制在 alpha.3 之前不存在，而行 config 机制从 alpha.3 起被硬拒。**没有任何一种行写法能同时合法于两边**，所以 `tools/gen-cordis-patch.mjs` 把每条 lane 渲染成**一个宿主门分档的两种形态**，由 `tools/preset-declaration.mjs` 同时声明：
+
+| | 旧形态（`0.2.0-rc.2`） | 新形态（`0.2.1-alpha.3`、`0.2.1-alpha.4`） |
+|---|---|---|
+| 门的读法 | `Config = z.object({…})` **含** `persona:` | **不含** |
+| persona | lane 行上的 `persona: !!js …` | 该 lane preset 内的一行 `@deepseek-ai/dsh-persona` |
+| 工具收窄 | lane 行上的 `toolFilter.deny` / `.allow` | 该 lane preset 内的 `lane-tool-gate.mjs` |
+| 收窄怎么到达 child | `dsh-subagent` 调用的 `tools.restrict()` | `tools.guard()`，沿调用 agent 自己的 scope 链求值 |
+
+这个门读的是**结构性事实，不是文本猜测**：它只问 `Config` 对象字面量里有没有声明 `persona:`。另外两个显而易见的候选都被实测淘汰 —— 探 schema **永远**回答「支持」，因为 schemastery 接受未知键、只有 `apply()` 才抛；匹配那条 throw 的措辞则会被上游一次改写打碎。这个门由 `tools/patch-contract.test.mjs` **双向**断言。
+
+**失败方向。** 如果门根本解析不到 `@deepseek-ai/dsh-tool-subagent`，它求值为**旧形态**。这是刻意的：旧形态在新宿主上是**响亮**失败（lane 不激活，且宿主给出原因），而在没有 preset 机制的宿主上猜新形态，会让 lane 在**完全没有收窄**的情况下被组合出来 —— 那是一次静默的写权限发放。要失败，就往响亮的那一侧失败。
+
+**两处已知退化，如实写明。** 新形态**不是**旧形态的等价替换。两处都是刻意接受、且在产物里看得见的：
+
+- **`reader` 的白名单没有等价物。** `tools.guard()` 只有 deny 语义，没有 `allow`。旧形态给 `reader` lane 的是 `allow: ['read', 'read_image']`，含义是「只留这两个」。新形态只能枚举要拒的名字，而那份名单等于「宿主工具面减去两个」，随每一次宿主发布漂移。所以在 alpha.3 与 alpha.4 上，`reader` lane 的闸只挡 lane 寻址名，**它的通用工具面比旧宿主上更宽**。寻址名那三个是**无条件**挡住的（`LANE_ADDRESSING_DENY`）：旧白名单按构造就不含它们，而放它们过去属于权限放大，不属于退化。
+- **这个闸什么都不隐藏。** 新形态的闸让被拒的工具**保持可见、在调用时拒绝**，并给出可读理由；旧形态的 `restrict({deny})` 则是**把它从可见面移除**。这不是对等替换：alpha.3+ 上的 lane 能看见一个它不许用的工具。但这是 alpha.3+ 能提供的最强手段 —— preset 的 `plugins[]` **只能加不能减**，根本不存在声明式地排除某个宿主工具的办法。
+
+两种形态由同一个表达式分档、且在两边都被断言，所以任何一侧都不会静默地退化成另一侧。
 
 ### 1–4. 安装
 
@@ -321,7 +373,7 @@ persona 文件在运行时按深路径解析（`createRequire(baseUrl).resolve('
 
 **这件事已经做了。** 包以 `@quill507/dsh-orchestrator-preset` 发布；`npm view @quill507/dsh-orchestrator-preset versions` 列出 `0.1.0` 到 `0.1.6`，`dist-tags.latest` 是 `0.1.6`。运行时 specifier 就是 npm 名 —— `@local/` 别名在本 bundle 上已不再使用。
 
-- **拥有全部 specifier 的那一行**是 `tools/preset-declaration.mjs:45`，`export const bundlePkg = '@quill507/dsh-orchestrator-preset'`。这一个常量拥有生成的 `cordis.patch.yml` 里全部 **14** 处 specifier 引用。实测命令：`grep -o '@quill507/dsh-orchestrator-preset/[A-Za-z0-9._/-]*' cordis.patch.yml | sed 's|@quill507/dsh-orchestrator-preset/||' | sort -u`，它返回 14 条互异路径：**3 个 `.mjs`**（`lane-composition.mjs`、`plan-aware-persona.mjs`、`routing-sections.mjs`）、**2 个 `.js`**（`extensions/dsh/index.js`、`extensions/dsh/aegis-prefix.js`）与 **9 个 persona `.md`**。改那一行，然后跑 `node tools/gen-cordis-patch.mjs` —— 不需要别的改动，也没有任何 persona 文件受影响。（`personas/orchestrator.md` 是被内联的，不是按文件解析的，所以它正确地不在那份列表里。）
+- **拥有全部 specifier 的那一行**是 `tools/preset-declaration.mjs:45`，`export const bundlePkg = '@quill507/dsh-orchestrator-preset'`。这一个常量拥有生成的 `cordis.patch.yml` 里全部 **15** 处 specifier 引用。实测命令：`grep -o '@quill507/dsh-orchestrator-preset/[A-Za-z0-9._/-]*' cordis.patch.yml | sed 's|@quill507/dsh-orchestrator-preset/||' | sort -u`，它返回 15 条互异路径：**4 个 `.mjs`**（`lane-composition.mjs`、`plan-aware-persona.mjs`、`routing-sections.mjs`、`lane-tool-gate.mjs`）、**2 个 `.js`**（`extensions/dsh/index.js`、`extensions/dsh/aegis-prefix.js`）与 **9 个 persona `.md`**。改那一行，然后跑 `node tools/gen-cordis-patch.mjs` —— 不需要别的改动，也没有任何 persona 文件受影响。（`personas/orchestrator.md` 是被内联的，不是按文件解析的，所以它正确地不在那份列表里。）
 - **在此之外还有一件事没解决**：`skills/` 下那四个技能是纯 Markdown，没有 npm 故事，需要一个 postinstall 步骤把它们拷进某个 profile 的技能目录。包上了 registry 之后这件事更要紧，因为一次 npm install 会把那些 Markdown 送到，却不把它放到任何 profile 会去读的地方。`exports` 映射与「第二个包」这个问题都已了结 —— 映射有了，而伴随插件被折进 `extensions/dsh/aegis-prefix.js`，没有作为独立包发布。
 - **已发布的包与 profile 的本地投影共用一个名字**，因为两者都是 `@quill507/dsh-orchestrator-preset`。名字上没有任何东西能区分它们；唯一的差别是各自解析到的目标 —— profile 的 `node_modules` 符号链接指向本地 stage 的 bundle，而 registry 那份是真正的 tarball。这正是 `tools/verify-install.sh:96-105` 记录的那个顾虑：原始设计把两个键区分开（`@local/…` 对 npm 名），好让「解析器返回了已发布包而不是本地投影」不可能静默发生。统一到 npm 名是对那条规则的一次**知情、且经用户批准的例外**；它接受的代价记在那条注释旁。读者不该把这个共用的名字当成巧合。
 

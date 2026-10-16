@@ -50,6 +50,7 @@
     "./plan-aware-persona.mjs": "./plan-aware-persona.mjs",
     "./routing-sections.mjs": "./routing-sections.mjs",
     "./lane-composition.mjs": "./lane-composition.mjs",
+    "./lane-tool-gate.mjs": "./lane-tool-gate.mjs",
     "./personas/analyst.md": "./personas/analyst.md",
     "./personas/archivist.md": "./personas/archivist.md",
     "./personas/auditor.md": "./personas/auditor.md",
@@ -78,6 +79,7 @@
     "extensions",
     "locale",
     "lane-composition.mjs",
+    "lane-tool-gate.mjs",
     "plan-aware-persona.mjs",
     "routing-sections.mjs",
     "install.sh"

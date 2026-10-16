@@ -1110,21 +1110,69 @@ walk(patches)
 const evaluate = new Function("ctx", "expr", "with (ctx) { return eval(expr) }")
 
 const lanes = rows.filter((r) => typeof r.id === "string" && r.id.startsWith("tool-subagent-"))
-const denyLanes = lanes.filter((r) => ((r.config || {}).toolFilter || {}).deny !== undefined)
-const allowLanes = lanes.filter((r) => ((r.config || {}).toolFilter || {}).allow !== undefined)
+
+// 0.2.1-alpha.3: a lane toolFilter is now ONE !!js expression yielding the filter
+// object. It has to be host gated, because alpha.3 rejects the key outright on new
+// hosts. Before that it was a nested mapping, toolFilter.deny. Both shapes are read
+// here so this check keeps working across the support matrix.
+// A lane matches when it declares either path. The fork control row still matches
+// through the legacy nested path.
+const filterOf = (lane, machineKey) => {
+  const tf = (lane.config || {}).toolFilter
+  if (tf === undefined || tf === null) return undefined
+  if (typeof tf.__jsExpr === "string") {
+    // Expression shape: evaluate it. An undefined result means this key does not apply
+    // to this host, which is exactly the fork row schedule gate, so it is not an error.
+    const value = evaluate(machines[machineKey], tf.__jsExpr)
+    return value === undefined ? undefined : value
+  }
+  return tf
+}
+// A filter member (allow / deny) may itself be an expression node: the fork control row
+// carries a nested toolFilter whose deny IS a !!js expression for the schedule tail.
+// Evaluate it the same way, so both shapes report a plain string[].
+const memberOf = (filter, key, machineKey) => {
+  if (filter === undefined) return undefined
+  const raw = filter[key]
+  if (raw === undefined) return undefined
+  if (typeof raw === "object" && raw !== null && typeof raw.__jsExpr === "string") {
+    return evaluate(machines[machineKey], raw.__jsExpr)
+  }
+  return raw
+}
+const denyLanes = lanes.filter((r) => {
+  const tf = (r.config || {}).toolFilter
+  if (tf === undefined) return false
+  if (typeof tf.__jsExpr === "string") {
+    // Expression: count it as a deny row when the value yields a deny list on ANY machine.
+    return Object.keys(machines).some((k) => {
+      const v = filterOf(r, k)
+      return v !== undefined && v.deny !== undefined
+    })
+  }
+  return tf.deny !== undefined
+})
+const allowLanes = lanes.filter((r) => {
+  const tf = (r.config || {}).toolFilter
+  if (tf === undefined) return false
+  if (typeof tf.__jsExpr === "string") {
+    return Object.keys(machines).some((k) => {
+      const v = filterOf(r, k)
+      return v !== undefined && v.allow !== undefined
+    })
+  }
+  return tf.allow !== undefined
+})
 console.log("LANES=" + lanes.length + " DENY_LANES=" + denyLanes.length + " ALLOW_LANES=" + allowLanes.length)
 let bad = 0
 for (const lane of denyLanes) {
-  const node = lane.config.toolFilter.deny
   const fail = (why) => { console.log("BAD " + lane.id + " " + why); bad += 1 }
-  if (node === null || typeof node !== "object" || typeof node.__jsExpr !== "string") {
-    fail("deny is not a !!js expression (a literal list is machine-dependent by construction: " + JSON.stringify(node).slice(0, 80) + ")")
-    continue
-  }
   const out = {}
   for (const key of Object.keys(machines)) {
-    try { out[key] = evaluate(machines[key], node.__jsExpr) }
-    catch (e) { fail("evaluating on the " + key + " machine threw: " + (e && e.message)) }
+    let v
+    try { v = filterOf(lane, key) }
+    catch (e) { fail("evaluating on the " + key + " machine threw: " + (e && e.message)); continue }
+    out[key] = memberOf(v, "deny", key)
     if (out[key] !== undefined && (!Array.isArray(out[key]) || out[key].some((n) => typeof n !== "string"))) {
       fail("the " + key + " machine produced " + typeof out[key] + ", not a string[]")
       out[key] = undefined
