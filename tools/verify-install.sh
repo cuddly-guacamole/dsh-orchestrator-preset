@@ -1053,8 +1053,35 @@ else
   # The "old host" base: a directory that exists but carries no node_modules, so
   # resolving @deepseek-ai/dsh-tool-schedule from it fails — the shape of a
   # 0.2.0-rc.2 install. Made fresh so the check never depends on a leftover path.
-  mkdir -p "$TMP/deny-empty"
-  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" DSH_PKG_ROOT="$DSH_PKG_ROOT" DENY_EMPTY_BASE="$TMP/deny-empty" node --input-type=module -e '
+  mkdir -p "$TMP/deny-empty/node_modules/@quill507"
+  # The LEGACY branch READS THE PERSONA FILE when a lane config is evaluated
+  # (`persona: !!js readFileSync(...personas/<lane>.md)`). So every host that may land on
+  # the legacy branch must be able to resolve THIS bundle by package name; otherwise the
+  # evaluation throws MODULE_NOT_FOUND and the lane looks like "no toolFilter", which is
+  # a false negative in exactly the direction this check exists to catch.
+  # What `deny-empty` must LACK is the schedule package -- nothing else.
+  ln -s "$REPO_ROOT" "$TMP/deny-empty/node_modules/@quill507/dsh-orchestrator-preset" 2>/dev/null || true
+  # A LEGACY host stub: only the one file the gate reads (the `Config` literal). It
+  # declares persona:, so the gate reads TRUE and the lane rows materialise their
+  # toolFilter key -- the shape this check polices (see the `legacy` machine below).
+  mkdir -p "$TMP/legacy-host/node_modules/@deepseek-ai/dsh-tool-subagent/lib"
+  cat > "$TMP/legacy-host/node_modules/@deepseek-ai/dsh-tool-subagent/package.json" <<'STUBPKG'
+{ "name": "@deepseek-ai/dsh-tool-subagent", "version": "0.0.0-stub", "main": "lib/index.js" }
+STUBPKG
+  cat > "$TMP/legacy-host/node_modules/@deepseek-ai/dsh-tool-subagent/lib/index.js" <<'STUBJS'
+const Config = z.object({
+	persona: z.string(),
+	toolFilter: z.any()
+});
+STUBJS
+  # The LEGACY branch also READS THE PERSONA FILE at evaluation time (that is what the
+  # old form did: `persona: !!js readFileSync(...personas/<lane>.md)`). So the stub host
+  # must be able to resolve the bundle by package name, or evaluating a lane config on
+  # it throws MODULE_NOT_FOUND and every lane looks like "no toolFilter" -- which is
+  # exactly the false negative this machine exists to prevent. Link the bundle root in.
+  mkdir -p "$TMP/legacy-host/node_modules/@quill507"
+  ln -s "$REPO_ROOT" "$TMP/legacy-host/node_modules/@quill507/dsh-orchestrator-preset" 2>/dev/null     || cp -r "$REPO_ROOT/personas" "$TMP/legacy-host/personas"
+  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" DSH_PKG_ROOT="$DSH_PKG_ROOT" DENY_EMPTY_BASE="$TMP/deny-empty" LEGACY_HOST_BASE="$TMP/legacy-host" node --input-type=module -e '
 import { loadOverlayPatches } from "@deepseek-ai/dsh-app-boot"
 
 // Names every machine has because rows this preset itself mounts register them.
@@ -1090,10 +1117,22 @@ const EXPECTED_MCP = ["mcp_playwright", "mcp_jlceda", "mcp_cloudflare-browser", 
 // is exactly the shape of a 0.2.0-rc.2 install: resolution fails.
 const HOST_WITH_SCHEDULE = { baseUrl: process.env.DSH_PKG_ROOT + "/package.json" }
 const HOST_WITHOUT_SCHEDULE = { baseUrl: process.env.DENY_EMPTY_BASE + "/package.json" }
+// A FOURTH axis, added with the alpha.3 migration: the SHAPE of the host. Lane rows
+// now build their config key set at mount time, and on a new host (alpha.3+) that set
+// has NO toolFilter AT ALL -- the narrowing moved into each lane own Agent Preset. So
+// the deny lists this check exists to police are only visible on a LEGACY host. The
+// three machines above are all new hosts; without a legacy one the scan finds one
+// deny row (the fork control row, whose toolFilter is still a plain key) and reports
+// DENY_LANES=1, which is the shape of the artifact changing, not the boundary holding.
+// `legacy` points at a stub whose dsh-tool-subagent Config DOES declare persona:, so
+// the gate reads true -- the same trick patch-contract.test.mjs uses, for the same
+// reason: the reading must not depend on which dsh is installed on this machine.
+const LEGACY_STUB = process.env.LEGACY_HOST_BASE + "/package.json"
 const machines = {
   none: { ...HOST_WITH_SCHEDULE, get: () => undefined, loader: { entries: () => [] } },
   mcp: { ...HOST_WITH_SCHEDULE, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
   oldhost: { ...HOST_WITHOUT_SCHEDULE, get: () => undefined, loader: { entries: () => [] } },
+  legacy: { baseUrl: LEGACY_STUB, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
 }
 
 const patches = loadOverlayPatches("verify-install", process.env.ARTIFACT)
@@ -1117,8 +1156,24 @@ const lanes = rows.filter((r) => typeof r.id === "string" && r.id.startsWith("to
 // here so this check keeps working across the support matrix.
 // A lane matches when it declares either path. The fork control row still matches
 // through the legacy nested path.
+// A lane row config comes in TWO shapes since the alpha.3 migration:
+//   * the whole config is ONE JS expression that builds its key set at mount time
+//     (lane rows) -- toolFilter is a KEY OF THE RESULT, present only on a legacy
+//     host and ABSENT (not undefined-valued) on alpha.3+;
+//   * a plain mapping with a nested toolFilter (the fork control row).
+// Read both. The earlier form only knew the second, so when lane rows moved to the
+// first this check silently stopped seeing 8 of the 9 deny lanes (LANES=12
+// DENY_LANES=1) and then failed on the shape change rather than on the boundary.
+const configOf = (lane, machineKey) => {
+  const cfg = lane.config || {}
+  if (typeof cfg.__jsExpr === "string") {
+    const value = evaluate(machines[machineKey], cfg.__jsExpr)
+    return value === undefined || value === null ? {} : value
+  }
+  return cfg
+}
 const filterOf = (lane, machineKey) => {
-  const tf = (lane.config || {}).toolFilter
+  const tf = configOf(lane, machineKey).toolFilter
   if (tf === undefined || tf === null) return undefined
   if (typeof tf.__jsExpr === "string") {
     // Expression shape: evaluate it. An undefined result means this key does not apply
@@ -1140,29 +1195,18 @@ const memberOf = (filter, key, machineKey) => {
   }
   return raw
 }
-const denyLanes = lanes.filter((r) => {
-  const tf = (r.config || {}).toolFilter
-  if (tf === undefined) return false
-  if (typeof tf.__jsExpr === "string") {
-    // Expression: count it as a deny row when the value yields a deny list on ANY machine.
-    return Object.keys(machines).some((k) => {
-      const v = filterOf(r, k)
-      return v !== undefined && v.deny !== undefined
-    })
-  }
-  return tf.deny !== undefined
+// Count a row as a deny/allow row when ANY machine yields that member. The lane rows
+// are deny on the legacy machine and carry no toolFilter at all on alpha.3+ (where the
+// narrowing lives in that lane Agent Preset instead), so the legacy machine is what
+// identifies them here — the same "counted on the machine where the key applies" rule
+// the previous version applied to the expression-valued single key.
+const filterOnAnyMachine = (r, member) => Object.keys(machines).some((k) => {
+  let v
+  try { v = filterOf(r, k) } catch { return false }
+  return v !== undefined && v[member] !== undefined
 })
-const allowLanes = lanes.filter((r) => {
-  const tf = (r.config || {}).toolFilter
-  if (tf === undefined) return false
-  if (typeof tf.__jsExpr === "string") {
-    return Object.keys(machines).some((k) => {
-      const v = filterOf(r, k)
-      return v !== undefined && v.allow !== undefined
-    })
-  }
-  return tf.allow !== undefined
-})
+const denyLanes = lanes.filter((r) => filterOnAnyMachine(r, "deny"))
+const allowLanes = lanes.filter((r) => filterOnAnyMachine(r, "allow"))
 console.log("LANES=" + lanes.length + " DENY_LANES=" + denyLanes.length + " ALLOW_LANES=" + allowLanes.length)
 let bad = 0
 for (const lane of denyLanes) {

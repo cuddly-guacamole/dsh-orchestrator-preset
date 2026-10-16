@@ -241,9 +241,19 @@ function pushRow(lines, row, indent) {
     lines.push(`${' '.repeat(k)}config:`)
     for (const child of row.children) pushRow(lines, child, k + 2)
   }
+  // ⚠️ `config` 有两种形状：
+  //    ① 普通映射（多数行）⇒ 逐键写，值走 `pushValue`；
+  //    ② **单个 `!!js` 表达式**（lane 行，见 `laneRow`）⇒ 整段原样写一行。
+  //       ② 存在的理由：lane 的形态分档要求「不该出现的键**根本不出现**」，而 YAML 映射一旦
+  //       逐键渲染，键就固定了；只有把**整张映射**交给一个运行时表达式去构造，键集才能按宿主门变化。
+  //       形状用 `__raw` 标记（与 `pushValue` 同一个约定），这里`config` 键本身取该标记。
   if (row.config !== undefined) {
-    lines.push(`${' '.repeat(k)}config:`)
-    for (const [ck, cv] of Object.entries(row.config)) pushValue(lines, k + 2, ck, cv)
+    if (typeof row.config === 'object' && row.config !== null && '__raw' in row.config) {
+      lines.push(`${' '.repeat(k)}config: ${row.config.__raw}`)
+    } else {
+      lines.push(`${' '.repeat(k)}config:`)
+      for (const [ck, cv] of Object.entries(row.config)) pushValue(lines, k + 2, ck, cv)
+    }
   }
 }
 
@@ -322,39 +332,66 @@ export function laneRow(lane, d) {
   //    「让表达式在两个世界都求值成功」——**不要**误读成「新宿主上 deny 仍然生效」。
   const gate = d.LANE_LEGACY_EXPR
   const denyBody = `([${(lane.deny ?? []).map(jsString).join(', ')}]).concat(${d.MCP_CLOSURE_EXPR}).concat(${d.SCHEDULE_DENY_EXPR})`
-  // `newOnly(expr)`：**新宿主**（门为假）⇒ `expr`；旧宿主 ⇒ `undefined`（= 键不出现）。
-  //    ⛔ **极性是两个方向上的坑，两个都踩过一次**：
-  //      · `agentPreset`/`allowedAgentPresets`/`persona` 是**新形态专用** ⇒ 必须 `if (gate) return undefined`
-  //        （早先写成 `if (!gate) return undefined`，方向反了：alpha.3 上这三个键**全部缺席**
-  //         ⇒ lane 退回继承父 preset、persona 丢失，**而产物看起来完全正常**）。
-  //      · `toolFilter` 是**旧形态专用** ⇒ 用下面的 `legacyOnly`。
-  //    ⚠️ 单侧测试看不出来：只测「旧宿主上产物有没有 persona」会全绿，而新宿主是坏的。
-  //      所以契约测试必须**两个世界都断言**（见 patch-contract 的 7b/7c）。
-  const newOnly = (expr) => `(() => { if (${gate}) { return undefined } return ${expr} })()`
-  const legacyOnly = (expr) => `(() => { if (!(${gate})) { return undefined } return ${expr} })()`
+  // ⛔ **形态分档必须靠「键根本不出现」，不能靠「键的值为 `undefined`」。**
+  //    这条已经用一次**生产事故**换来过，教训写在这里，不要再踩：
+  //      · 旧写法是「把值渲染成 `!!js (() => { if (门) return undefined; return <值> })()`」，
+  //        看起来「旧宿主上这个键就没了」。**错。** 那个表达式只是**求值成 `undefined`**，
+  //        而键**仍然在对象上**。宿主侧链路：`interpolate` → `valueMap`
+  //        （`cordis-plugin-loader/lib/index.js:243`），而 `mapValues` 的实现是
+  //        `Object.fromEntries(Object.entries(object).map(...))` ⇒ **`Object.entries` 不丢值为
+  //        `undefined` 的键** ⇒ 宿主收到的 config 里 `Object.hasOwn('persona')` 仍为 **true**。
+  //      · 而宿主是按**键存在**判的，不是按值判：`dsh-tool-subagent/lib/index.js:355`
+  //        `for (const field of ["persona","toolFilter"]) if (Object.hasOwn(config, field)) throw …`
+  //        ⇒ alpha.3+ 上 9 条 lane 全部挂载失败（并连锁出 `Duplicate agent preset`）。
+  //        实测：`Config({ provider:'spawn', persona: undefined, toolFilter: undefined })`
+  //        ⇒ `hasOwn persona: true`，`apply()` 抛 `persona is no longer supported`。
+  //      · **`persona` 曾被归错组**：旧注释把 `persona` 与 `agentPreset`/`allowedAgentPresets`
+  //        并列成「新形态专用」，于是写成 `newOnly(...)`。**它恰恰相反** —— `persona` 正是 alpha.3
+  //        删掉并硬拒的那个键，属于**旧形态专用**（与 `toolFilter` 同类）。旧注释把错误极性
+  //        写成了「理由」，代码照着错理由写，评审也就照着错理由放过。
+  //        ⇒ **极性逐键判定，不得按「一组键」批发**。
+  //    ⇒ 正确做法：**整个 `config` 映射是一个 `!!js` 表达式**，在宿主求值时按门**构造键集**：
+  //       旧宿主 ⇒ `persona` + `toolFilter`（**无** agentPreset 那一对）；
+  //       新宿主 ⇒ `agentPreset` + `allowedAgentPresets`（**无** persona、**无** toolFilter）。
+  //    ⚠️ 仍是 **plain scalar**（YAML 的 `: ` 边界照旧成立）：下面用 `const c = {}` 起手、
+  //       `c.x = …` 逐项赋值 —— **不出现对象字面量、不出现三元**（这两条各踩过一次，见下）。
+  const denyOrAllow = lane.deny !== undefined
+    ? denyBody
+    : `[${lane.allow.map(jsString).join(', ')}]`
+  const tfKey = lane.deny !== undefined ? 'deny' : 'allow'
+  const tfObj = `(() => { const o = {}; o.${tfKey} = ${denyOrAllow}; return o })()`
+  const personaJs = personaExpr(d.bundlePkg, lane.persona)
+  const presetJs = JSON.stringify(lane.presetId)
+
+  // ⛔ **绝不能出现对象字面量**（`{ deny: … }` / `{ ['deny']: … }` 都算）：
+  //    两种写法里的「`: `」都会把 plain scalar 切成 YAML 映射 —— 实测两种都得到
+  //    `{"[object Object]":"…"}` 或 `bad indentation of a mapping entry`，而**不是** `__jsExpr`。
+  //    ⇒ 唯一在两个世界都成立、且不引入冒号的写法是**先建空对象再赋值**。
+  //    （这一条踩过两次：先踩三元，再踩对象字面量。plain scalar 的边界就是「`: `」。）
+  //    ⚠️ 三元的坑同样适用于 `config` 这一层：整段必须是 **`if` + `return` 的 IIFE**。
+  //
+  // ⛔ **`allow` 的 lane（reader）不能走 deny 分支**：声明里 reader 是
+  //    `allow: ['read','read_image']`（白名单 = 「只留这两个」），**没有** `deny`。
+  //    早先无条件写 `o.deny = (lane.deny ?? [])…` ⇒ reader 得到一条**空 deny 名单**
+  //    ⇒ 在旧宿主上读者**不再受限**（拿到 `write`/`bash`/`edit`）。
+  //    那是**权限放大**，而且产物看起来完全正常（deny 键在、值是 `[]`）。
+  //    ⇒ 有 `allow` 就必须写 `allow`，与本段上面 `lane.deny !== undefined ? deny : allow`
+  //      的二分**同一条判据**（一个判据一个家，两处不得各写一份）。
+  const configBody = [
+    'const c = {};',
+    ...Object.entries(shared).map(([k, v]) => `c[${JSON.stringify(k)}] = ${JSON.stringify(v)};`),
+    `if (${gate}) {`,
+    `  c['persona'] = ${personaJs};`,
+    `  c['toolFilter'] = ${tfObj};`,
+    '} else {',
+    `  c['agentPreset'] = ${presetJs};`,
+    `  c['allowedAgentPresets'] = [${presetJs}];`,
+    '}',
+    'return c',
+  ].join(' ')
   return {
     ...base,
-    config: {
-      ...shared,
-      agentPreset: RAW(`!!js ${newOnly(JSON.stringify(lane.presetId))}`),
-      allowedAgentPresets: RAW(`!!js ${newOnly(`[${JSON.stringify(lane.presetId)}]`)}`),
-      persona: RAW(`!!js ${newOnly(personaExpr(d.bundlePkg, lane.persona))}`),
-      // ⛔ **绝对不能出现对象字面量**（`{ deny: … }` / `{ ['deny']: … }` 都算）：
-      //    两种写法里的「`: `」都会把 plain scalar 切成 YAML 映射 —— 实测两种都得到
-      //    `{"[object Object]":"…"}` 或 `bad indentation of a mapping entry`，而**不是** `__jsExpr`。
-      //    ⇒ 唯一在两个世界都成立、且不引入冒号的写法是**先建空对象再赋值**：
-      //      `const o = {}; o.deny = <名单>; return o`。
-      //    （这一条踩过两次：先踩三元，再踩对象字面量。plain scalar 的边界就是「`: `」。）
-      //
-      // ⛔ **`allow` 的 lane（reader）不能走 deny 分支**：声明里 reader 是
-      //    `allow: ['read','read_image']`（白名单 = 「只留这两个」），**没有** `deny`。
-      //    早先无条件写 `o.deny = (lane.deny ?? [])…` ⇒ reader 得到一条**空 deny 名单**
-      //    ⇒ 在旧宿主上读者**不再受限**（拿到 `write`/`bash`/`edit`）。
-      //    那是**权限放大**，而且产物看起来完全正常（deny 键在、值是 `[]`）。
-      //    ⇒ 有 `allow` 就必须写 `allow`，与 `laneRow` 里 `lane.deny !== undefined ? … : { allow }`
-      //      的二分**同一条判据**（一个判据一个家，两处不得各写一份）。
-      toolFilter: RAW(`!!js ${legacyOnly(`(() => { const o = {}; o.${lane.deny !== undefined ? 'deny' : 'allow'} = ${lane.deny !== undefined ? denyBody : `[${lane.allow.map(jsString).join(', ')}]`}; return o })()`)}`),
-    },
+    config: RAW(`!!js (() => { ${configBody} })()`),
   }
 }
 
@@ -407,11 +444,31 @@ export function groupEntry(group, d, section) {
 // ⚠️ **它刻意不带 MCP 闭包**：fork child 是通用 fork，除提醒之外的工具面本轮不收窄。
 //    写成 `([]).concat(<尾巴>)` 而不是裸尾巴：静态段为空这件事要**看得见**（它不是「漏了静态名单」，
 //    而是「本行没有静态名单」），且与 lane 的 deny 保持同一种 `!!js` 形状。
+// ⛔ **本行也必须按宿主门移出 `toolFilter` 键，理由与 9 条 lane 行完全相同**：
+//    `tool-subagent-fork` 也是 `dsh-tool-subagent` 的一行 ⇒ 走**同一个** `apply()`
+//    ⇒ alpha.3+ 上只要 `config` 里有 `toolFilter` 键，就同样被 `:355` 的 `Object.hasOwn` 硬拒
+//    （实测：只修 9 条具名 lane 时，本行仍报 `WOULD THROW toolFilter`）。
+//    ⇒ 与 lane 行同一条写法：整个 `config` 是**一个表达式**，键集在求值时按门构造。
+//    ⚠️ 旧形态（rc.2）上它必须**恰好**只有那条 `schedule_*` 条件尾巴，一个名字都不多
+//       —— 这条由 check 13 的 fork 分支断言（它不得带 MCP 闭包）。
 const forkControlRow = (row, d) => {
   if (typeof d.SCHEDULE_DENY_EXPR !== 'string' || d.SCHEDULE_DENY_EXPR.length === 0) {
     throw new Error('SCHEDULE_DENY_EXPR 缺失 / 非字符串 ⇒ 停（fork 控制行的 deny 尾巴取不到值）')
   }
-  return { ...row, config: { ...row.config, toolFilter: { deny: RAW(`!!js ([]).concat(${d.SCHEDULE_DENY_EXPR})`) } } }
+  const gate = d.LANE_LEGACY_EXPR
+  if (gate === undefined) {
+    throw new Error('LANE_LEGACY_EXPR 缺失 ⇒ 停（fork 控制行也按同一个宿主门分档，不得猜）')
+  }
+  const shared = { ...row.config }
+  const configBody = [
+    'const c = {};',
+    ...Object.entries(shared).map(([k, v]) => `c[${JSON.stringify(k)}] = ${JSON.stringify(v)};`),
+    `if (${gate}) {`,
+    `  const o = {}; o.deny = ([]).concat(${d.SCHEDULE_DENY_EXPR}); c['toolFilter'] = o;`,
+    '}',
+    'return c',
+  ].join(' ')
+  return { ...row, config: RAW(`!!js (() => { ${configBody} })()`) }
 }
 
 export const countRows = (d) =>

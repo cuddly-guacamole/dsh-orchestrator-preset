@@ -42,7 +42,7 @@
 
 import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -54,6 +54,11 @@ import {
   //   同一个实现。两处各写一份遮蔽规则 = 两个 home = 迟早分叉 = 又一层「绿色掩盖红色」。
   MACHINE_DERIVED_LINE, compareMachineIndependent, provenanceLineOf,
 } from './gen-cordis-patch.mjs'
+
+// 「改坏一行」用的探针串：必须**真实存在**于产物，否则替换落空、断言恒真。
+// 它随产物形状变化（lane 行的 config 现在是合成的 `!!js` 表达式）⇒ 上面那条 `includes` 断言
+// 就是这条探针的**自检**：形状再变时它会先红，而不是让「改坏一行」的检查静默失效。
+const TAMPER_PROBE = 'c["maxDepth"] = 1'
 
 /** 仓根 = 产物所在目录（`OUT_PATH` = `<repo>/cordis.patch.yml`）。 */
 const REPO_ROOT = dirname(OUT_PATH)
@@ -124,6 +129,28 @@ const jsExprOf = (line) => {
 }
 
 /**
+ * ⛔ **把一行 lane 求值成「宿主真正收到的 config 对象」，然后断言它的 key set。**
+ *
+ * 为什么必须有这个 helper（一次生产事故换来的）：旧断言只看**单个 `!!js` 表达式的返回值**
+ * （`assert.equal(evalJs(...), undefined)` 之类），而 `undefined` 读起来就像「键不存在」。
+ * **那不是宿主看到的东西。** 宿主链路是 `interpolate` → `valueMap`
+ * （`cordis-plugin-loader/lib/index.js:243`，实现为 `Object.fromEntries(Object.entries(o).map(...))`）
+ * ⇒ **值为 `undefined` 的键仍然在对象上**，而 `dsh-tool-subagent:355` 是按
+ * `Object.hasOwn(config, field)` 判的 ⇒ 描述「表达式返回 undefined」的断言
+ * **无法观察到 key 是否存在**，于是全绿地放过了一个会被宿主硬拒的产物。
+ *
+ * ⇒ 本 helper 求值**整张 config 映射**（它现在是一个返回对象的 `!!js` 表达式），
+ *   断言对象上的**键**。看不见 key set 的测试保护不了 key-presence 契约。
+ */
+const composedConfigOf = (blockOrLines, baseUrl) => {
+  // 接受行数组或整块文本（行数组是产物里的常见形态，避免调用方到处 join）
+  const text = Array.isArray(blockOrLines) ? blockOrLines.join('\n') : String(blockOrLines)
+  const line = text.split('\n').find((l) => /^\s*config: !!js /.test(l))
+  assert.ok(line, 'lane 行的 config 不是单个 !!js 表达式（形态分档会退化成键固定）')
+  return evalJs(jsExprOf(line), baseUrl)
+}
+
+/**
  * 造两个**固定的**桩世界，让本文件的读数与「本机装的是哪版 dsh」无关。
  *
  * `newHost`：一个可解析的 `@deepseek-ai/dsh-tool-subagent`，其 `lib/index.js` 里
@@ -175,6 +202,12 @@ function makeScheduleStub() {
   writeFileSync(join(dir, 'package.json'),
     JSON.stringify({ name: '@deepseek-ai/dsh-tool-schedule', version: '0.0.0-stub', main: 'index.js' }))
   writeFileSync(join(dir, 'index.js'), 'export default {}\n')
+  // ⚠️ **这个桩必须是「旧形态宿主 + 本包 personas」的超集**：lane 行的 config 现在是一整张
+  //    运行时构造的映射 ⇒ 求值它会**同时**走到 persona 的 `readFileSync(…scout.md…)` 与宿主门的解析。
+  //    少了任一半，整个 config 求值就 `MODULE_NOT_FOUND`，而报错点看起来与 schedule 无关（实测踩到过）。
+  //    ⇒ 复用 `makeHostStub` 的目录骨架，避免两份桩各自演化。
+  cpSync(join(dirname(makeHostStub('oldHost')), 'node_modules'),
+         join(root, 'node_modules'), { recursive: true, force: true })
   return join(root, 'package.json')
 }
 const SCHEDULE_BASE = makeScheduleStub()
@@ -543,10 +576,9 @@ test('每个 lane 行恰好有 toolFilter.allow 或 toolFilter deny 之一；只
     // ⚠️ **按求值结果断言，不按文本形状**（0.2.1-alpha.3 迁移）：`toolFilter` 现在是
     //    一条 `!!js` 表达式，文本里看到的 `deny:` 可能只是表达式内部的标识符。
     //    在**旧形态世界**里求值，才拿到宿主真正会读的那个对象。
-    const tfLine = body.find((l) => /^\s*toolFilter: !!js /.test(l))
-    assert.notEqual(tfLine, undefined, `${r.id}: 找不到 toolFilter 的 !!js 表达式`)
-    const value = evalJs(jsExprOf(tfLine), OLD_BASE)
-    assert.notEqual(value, undefined, `${r.id}: 旧宿主上 toolFilter 求值为 undefined ⇒ 该 lane 在旧宿主上无收窄（回归）`)
+    const value = composedConfigOf(body.join('\n'), OLD_BASE).toolFilter
+    assert.notEqual(value, undefined,
+      `${r.id}: 旧宿主上 config 没有 toolFilter 键 ⇒ 该 lane 在旧宿主上无收窄（回归）`)
     const hasAllow = value.allow !== undefined
     const hasDeny = value.deny !== undefined
     // ⚠️ 「不能同时给」是**本项目的房规**，不是宿主的约束。宿主只校验
@@ -586,28 +618,41 @@ test('7b. lane 行与 lane preset 行由**同一个**宿主门驱动（成对，
   for (const lane of d.LANES) {
     const block = blockText(laneRowId(lane))
     assert.notEqual(block, null, `产物里找不到 lane 行 ${laneRowId(lane)}`)
-    assert.match(block, /agentPreset: !!js/, `${laneRowId(lane)}: 缺 agentPreset（新宿主上 lane 会退回继承父 preset，工具面失控）`)
-    assert.match(block, /allowedAgentPresets: !!js/, `${laneRowId(lane)}: 缺 allowedAgentPresets ⇒ 宿主 lib/index.js:209 硬抛`)
-    const laneLine = (re) => block.split('\n').find((l) => re.test(l))
-    // ── 新形态世界：agentPreset 必须解出该 lane 的 id，allowedAgentPresets 必须含它 ──
-    const presetValue = evalJs(jsExprOf(laneLine(/^\s*agentPreset: !!js /)), NEW_BASE)
-    assert.equal(presetValue, lane.presetId,
-      `${laneRowId(lane)}: 新宿主上 agentPreset 求值应为 ${lane.presetId}，实测 ${JSON.stringify(presetValue)}`)
-    const allowedValue = evalJs(jsExprOf(laneLine(/^\s*allowedAgentPresets: !!js /)), NEW_BASE)
-    assert.deepEqual(allowedValue, [lane.presetId],
+    // ⛔ **断言的是「合成后的 config 对象上的键」，不是某个 !!js 表达式的返回值**（见 helper 的长注释）。
+    //    旧写法在这里逐个求值 `agentPreset:` / `persona:` 这些**行**，而 lane 行的 config 现在
+    //    是**一整张由运行时构造的映射** ⇒ 逐行正则既找不到行，也观察不到 key 是否真的不存在。
+    const legacyCfg = composedConfigOf(block, OLD_BASE)
+    const newCfg = composedConfigOf(block, NEW_BASE)
+
+    // ── 新形态世界（alpha.3+）：必须**没有** persona / toolFilter，且 agentPreset 成对齐全 ──
+    assert.equal(Object.hasOwn(newCfg, 'persona'), false,
+      `${laneRowId(lane)}: 新宿主上 config **仍有 persona 键** ⇒ 宿主 dsh-tool-subagent:355 按 Object.hasOwn 硬拒 ⇒ 该 lane 无法激活`)
+    assert.equal(Object.hasOwn(newCfg, 'toolFilter'), false,
+      `${laneRowId(lane)}: 新宿主上 config **仍有 toolFilter 键** ⇒ 同样被 :355 硬拒`)
+    assert.equal(newCfg.agentPreset, lane.presetId,
+      `${laneRowId(lane)}: 新宿主上 agentPreset 应为 ${lane.presetId}，实测 ${JSON.stringify(newCfg.agentPreset)}`)
+    assert.deepEqual(newCfg.allowedAgentPresets, [lane.presetId],
       `${laneRowId(lane)}: 新宿主上 allowedAgentPresets 必须恰好含自己的 id（宿主 :209 要求包含关系）`)
-    // persona 在新宿主上必须解出非空正文（丢了它 = lane 没有身份）
-    const personaValue = evalJs(jsExprOf(laneLine(/^\s*persona: !!js /)), NEW_BASE)
-    assert.equal(typeof personaValue, 'string',
-      `${laneRowId(lane)}: 新宿主上 persona 没有解出字符串`)
-    assert.equal(personaValue.trim().length > 0, true,
-      `${laneRowId(lane)}: 新宿主上 persona 解出空串 ⇒ lane 没有身份`)
-    // ── 旧形态世界：这三个键必须**都不出现**（求值为 undefined）──
-    for (const key of ['agentPreset', 'allowedAgentPresets', 'persona']) {
-      const v = evalJs(jsExprOf(laneLine(new RegExp(`^\\s*${key}: !!js `))), OLD_BASE)
-      assert.equal(v, undefined,
-        `${laneRowId(lane)}: 旧宿主上 ${key} 求值应为 undefined（该键在旧宿主 Config 里不存在，带上会让宿主按未知键处理），实测 ${JSON.stringify(v)}`)
-    }
+    assert.deepEqual(Object.keys(newCfg).sort(),
+      ['agentPreset', 'allowedAgentPresets', 'maxDepth', 'provider', 'toolName'],
+      `${laneRowId(lane)}: 新宿主上的 config 键集不是恰好这 5 个 —— 多一个键就可能被宿主按未知键/硬拒处理`)
+
+    // ── 旧形态世界（rc.2）：persona + toolFilter 必须在，且**不得**有 agentPreset 那一对 ──
+    assert.equal(Object.hasOwn(legacyCfg, 'persona'), true,
+      `${laneRowId(lane)}: 旧宿主上 config 缺 persona 键 ⇒ lane 没有身份`)
+    assert.equal(typeof legacyCfg.persona, 'string',
+      `${laneRowId(lane)}: 旧宿主上 persona 没有解出字符串`)
+    assert.equal(legacyCfg.persona.trim().length > 0, true,
+      `${laneRowId(lane)}: 旧宿主上 persona 解出空串 ⇒ lane 没有身份`)
+    assert.equal(Object.hasOwn(legacyCfg, 'toolFilter'), true,
+      `${laneRowId(lane)}: 旧宿主上 config 缺 toolFilter 键 ⇒ 只读 lane 不再受限（权限放大）`)
+    assert.equal(Object.hasOwn(legacyCfg, 'agentPreset'), false,
+      `${laneRowId(lane)}: 旧宿主上 config **仍有 agentPreset 键** ⇒ 旧宿主会按未知键处理`)
+    assert.equal(Object.hasOwn(legacyCfg, 'allowedAgentPresets'), false,
+      `${laneRowId(lane)}: 旧宿主上 config **仍有 allowedAgentPresets 键**`)
+    assert.deepEqual(Object.keys(legacyCfg).sort(),
+      ['maxDepth', 'persona', 'provider', 'toolFilter', 'toolName'],
+      `${laneRowId(lane)}: 旧宿主上的 config 键集不是恰好这 5 个`)
     // 反向：产物里必须真有一条同 id 的 preset 行（否则 lane 指向一个不存在的 preset）
     assert.notEqual(blockText(`preset-${lane.presetId}`), null,
       `${laneRowId(lane)} 指向 ${lane.presetId}，但产物里没有 preset-${lane.presetId} 行`)
@@ -643,7 +688,8 @@ test('9 个 lane 行的 maxDepth 全部 = 1 —— 递归预算用字段表达�
   for (const lane of d.LANES) {
     const block = blockOf(committed, laneRowId(lane))
     assert.notEqual(block, null, `产物里找不到 lane 行 ${laneRowId(lane)}`)
-    assert.equal(scalarOf(block, 'maxDepth'), '1',
+    // ⚠️ `maxDepth` 现在在**合成的 config 表达式里**（不再是产物里的一行）⇒ 按求值取，不按文本取。
+    assert.equal(composedConfigOf(block, OLD_BASE).maxDepth, 1,
       `lane ${lane.tool} 的 maxDepth 不是 1 —— 依据 DESIGN §3.3.3 lane 表（:437-445）/ §7.3 :1204 / §15 R11 :1754`)
   }
 })
@@ -692,10 +738,10 @@ test('lane 寻址的 3 个工具名在每个 lane 的工具面里都不出现（
     assert.notEqual(r, undefined, `产物里找不到 lane 行 ${laneRowId(lane)}`)
     const end = lines.findIndex((l, i) => i >= r.startLine && idLine.test(l))
     const body = lines.slice(r.startLine, end === -1 ? lines.length : end)
-    const tfLine = body.find((l) => /^\s*toolFilter: !!js /.test(l))
-    assert.notEqual(tfLine, undefined, `${laneRowId(lane)}: 找不到 toolFilter 表达式`)
-    // ⚠️ **按求值结果断言，不按文本**：名单现在住在 `!!js` 表达式里，文本匹配会漏。
-    const filter = evalJs(jsExprOf(tfLine), OLD_BASE)
+    // ⚠️ **按合成后的 config 对象取**（不再是产物里的一行 `toolFilter:`）：lane 行的 config 现在是
+    //    一整张运行时构造的映射 ⇒ 文本匹配既找不到行，也观察不到键是否存在。
+    const filter = composedConfigOf(body, OLD_BASE).toolFilter
+    assert.notEqual(filter, undefined, `${laneRowId(lane)}: 旧宿主上 config 缺 toolFilter 键`)
     // ⚠️ **0.2.1-alpha.3 起名单住两个地方**，两处都必须挡住这 3 个名字：
     //    · **旧形态**：lane 行的 `toolFilter.deny`（deny lane）或 `toolFilter.allow`（白名单天然不含 ⇒ 合法）
     //    · **新形态**：该 lane 的 preset 里 `lane-gate` 插件的 `config.deny`
@@ -747,9 +793,8 @@ test('tool-schedule 行：Lead 挂载、带宿主门；lane 的 deny 按同一�
   for (const lane of d.LANES) {
     const laneBlock = blockOf(committed, laneRowId(lane))
     assert.notEqual(laneBlock, null, `产物里找不到 lane 行 ${laneRowId(lane)}`)
-    const tfLine = laneBlock.find((l) => /^\s*toolFilter: !!js /.test(l))
-    assert.notEqual(tfLine, undefined, `${laneRowId(lane)}: 找不到 toolFilter 表达式`)
-    const filter = evalJs(jsExprOf(tfLine), OLD_BASE)
+    const filter = composedConfigOf(laneBlock, OLD_BASE).toolFilter
+    assert.notEqual(filter, undefined, `${laneRowId(lane)}: 旧宿主上 config 缺 toolFilter 键`)
     if (filter.deny === undefined) {
       for (const name of SCHEDULE_TOOLS) {
         assert.equal(filter.allow.includes(name), false,
@@ -762,8 +807,11 @@ test('tool-schedule 行：Lead 挂载、带宿主门；lane 的 deny 按同一�
     //    （旧形态桩：`@deepseek-ai/dsh-tool-schedule` 不可解析）求值为 `[]`。
     //    ⇒ 在**没有该包的宿主**上，这 4 个名字**必须不在**名单里；反过来有该包时必须在。
     //    两个方向都要测，否则「把 4 个名字写进静态段」这条回归测不出来。
-    const staticPart = jsExprOf(tfLine).slice(0, jsExprOf(tfLine).indexOf(').concat('))
-    assert.notEqual(staticPart, '', `deny 表达式里找不到静态段边界：${jsExprOf(tfLine).slice(0, 120)}`)
+    // ⚠️ 静态段仍要从**表达式文本**里切（它考的是「名单怎么写出来的」，不是求值结果）⇒
+    //    单独取一次 config 那一行的表达式文本，不改这条判据的意图。
+    const tfExpr = jsExprOf(laneBlock.find((l) => /^\s*config: !!js /.test(l)))
+    const staticPart = tfExpr.slice(0, tfExpr.indexOf(').concat('))
+    assert.notEqual(staticPart, '', `deny 表达式里找不到静态段边界：${tfExpr.slice(0, 120)}`)
     for (const name of SCHEDULE_TOOLS) {
       assert.equal(staticPart.includes(name), false,
         `lane ${lane.tool} 把 ${name} 写进了静态 deny 段 —— 没有这个包的宿主上 restrict() 会抛 unknown tool`)
@@ -771,7 +819,7 @@ test('tool-schedule 行：Lead 挂载、带宿主门；lane 的 deny 按同一�
         `lane ${lane.tool}: 旧形态桩上解析不到 @deepseek-ai/dsh-tool-schedule ⇒ ${name} 不应出现在 deny 里（写死 = 在那台宿主上 restrict() 抛）`)
     }
     // 正方向：把该包「变成可解析」的那台机器上，这 4 个名字**必须**出现（否则边界失效）
-    const withSchedule = evalJs(jsExprOf(tfLine), SCHEDULE_BASE)
+    const withSchedule = composedConfigOf(laneBlock, SCHEDULE_BASE).toolFilter
     for (const name of SCHEDULE_TOOLS) {
       assert.equal(withSchedule.deny.includes(name), true,
         `lane ${lane.tool}: 在**有** @deepseek-ai/dsh-tool-schedule 的宿主上 deny 里没有 ${name} ⇒ 子 agent 拿到了提醒工具（裁决：只给 Lead）`)
@@ -783,17 +831,30 @@ test('tool-schedule 行：Lead 挂载、带宿主门；lane 的 deny 按同一�
   //    （它们的 deny 里含 `subagent_fork`），但 **Lead 可以** ⇒ 经 fork 派出的 child 会继承提醒工具。
   const forkBlock = blockOf(committed, d.forkControlRowId)
   assert.notEqual(forkBlock, null, `产物里找不到 fork 控制行 ${d.forkControlRowId}`)
-  const forkDeny = forkBlock.find((l) => /^\s+deny: /.test(l))
-  assert.notEqual(forkDeny, undefined,
-    'fork 控制行没有 toolFilter.deny —— 经 subagent_fork 派出的 child 会继承 schedule_*（裁决是只给主代理）')
-  assert.equal(forkDeny.includes(d.SCHEDULE_DENY_EXPR), true,
-    'fork 控制行的 deny 尾巴不是声明里的 SCHEDULE_DENY_EXPR')
+  // ⚠️ **fork 行现在也是一个合成的 config 表达式**（理由与 9 条 lane 行完全相同：
+  //    `tool-subagent-fork` 也是 `dsh-tool-subagent` 的一行 ⇒ 同一个 `apply()` ⇒ alpha.3+ 上
+  //    带 `toolFilter` 键就被 :355 硬拒）。所以这里按**求值后的对象**取，不按文本取。
+  //    ⚠️ 旧形态世界才看得到它 —— 新宿主上该键**根本不存在**（见下面 7b 的键集断言）。
+  const forkCfgLegacy = composedConfigOf(forkBlock, OLD_BASE)
+  const forkCfgNew = composedConfigOf(forkBlock, NEW_BASE)
+  assert.equal(Object.hasOwn(forkCfgNew, 'toolFilter'), false,
+    'fork 控制行在新宿主上仍有 toolFilter 键 ⇒ 宿主 :355 按 Object.hasOwn 硬拒 ⇒ fork lane 无法激活')
+  assert.equal(Object.hasOwn(forkCfgLegacy, 'toolFilter'), true,
+    'fork 控制行在旧宿主上没有 toolFilter 键 ⇒ 经 subagent_fork 派出的 child 会继承 schedule_*（裁决是只给主代理）')
+  const forkDenyList = forkCfgLegacy.toolFilter.deny
+  assert.equal(Array.isArray(forkDenyList), true, 'fork 控制行的 deny 不是数组')
   // ⚠️ 反向：fork 行**不得**带 MCP 闭包 —— fork child 是通用 fork，除提醒之外的工具面本轮不收窄。
   //    带上它会静默改掉所有 fork child 的工具面，那是这个裁决之外的行为变更。
-  assert.equal(forkDeny.includes(d.MCP_CLOSURE_EXPR), false,
-    'fork 控制行的 deny 带上了 MCP 闭包 —— fork child 的 MCP 工具面不该被这条裁决收窄')
-  assert.equal(/^\s+deny: !!js \(\[\]\)\.concat\(/.test(forkDeny), true,
-    `fork 控制行的 deny 形状不是「空静态段 + 条件尾巴」：${forkDeny.trim().slice(0, 80)}`)
+  //    ⚠️ 旧形态桩上 `@deepseek-ai/dsh-tool-schedule` **不可解析** ⇒ 尾巴求值为 `[]`，
+  //    所以这里断言的是「静态段里没有 MCP 名」，不是「数组非空」。
+  assert.equal(forkDenyList.some((n) => String(n).startsWith('mcp_')), false,
+    'fork 控制行的 deny 带上了 MCP 名 —— fork child 的 MCP 工具面不该被这条裁决收窄')
+  // 表达式文本仍要锁形状：它必须是「空静态段 + 条件尾巴」（可见地表白本行没有静态名单）
+  const forkExpr = jsExprOf(forkBlock.find((l) => /^\s*config: !!js /.test(l)))
+  assert.equal(forkExpr.includes('([]).concat('), true,
+    `fork 控制行的 deny 形状不是「空静态段 + 条件尾巴」：${forkExpr.slice(0, 90)}`)
+  assert.equal(forkExpr.includes(d.SCHEDULE_DENY_EXPR), true,
+    'fork 控制行的 deny 尾巴不是声明里的 SCHEDULE_DENY_EXPR')
 })
 
 // ============================================================================
@@ -822,7 +883,12 @@ test('render() 的输出与已提交的 cordis.patch.yml 在**机器无关判据
   // 把一行真实内容改坏，必须被发现。两条各锁一半，合起来才是「同源且不漏」。
   assert.equal(compareMachineIndependent(committed.replace(MACHINE_DERIVED_LINE, '# Shell source: tampered'), rendered).ok, true,
     '改掉 provenance 行竟然让比较失败 ⇒ 门用的不是机器无关判据')
-  assert.equal(compareMachineIndependent(committed.replace('maxDepth: 1', 'maxDepth: 9'), rendered).ok, false,
+  // ⚠️ 被改坏的那串必须**在产物里真实存在**：`maxDepth: 1` 是**旧形状**（lane 行逐键渲染时才有），
+  //    现在 `maxDepth` 落在合成的 `!!js` 表达式内部（`c["maxDepth"] = 1`）⇒ 拿旧串去替换
+  //    **替换不到任何东西**，这条断言就变成恒真（又一次「绿色掩盖」）。先证明探针存在，再改坏它。
+  assert.equal(committed.includes(TAMPER_PROBE), true,
+    `探针串在产物里不存在（${TAMPER_PROBE}）⇒ 下面的替换会落空、断言恒真`)
+  assert.equal(compareMachineIndependent(committed.replace(TAMPER_PROBE, 'c["maxDepth"] = 9'), rendered).ok, false,
     '把一行真实内容改坏竟然没被发现 ⇒ 门漏了机器无关判据之外的差异')
 })
 
