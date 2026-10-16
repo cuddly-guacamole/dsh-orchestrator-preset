@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.3%20%7C%200.2.1--alpha.4-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%20%7C%200.2.1--alpha.4%20%7C%200.2.1--alpha.5-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [归属与来源](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -72,13 +72,14 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 | 精确的层序：先按 `dsh.profile.bundles` 的顺序应用各 bundle patch，然后是 profile 自己的 `cordis.patch.yml`，然后是 `$DSH_HOME/cordis.patch.yml`，最后是每个 `--patch` 覆盖层。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
 | 一个 profile 位于 `~/.dsh/profiles/<name>/`，内含 `cordis.yml`、`cordis.patch.yml` 与 `package.json`。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
 | `config.selectedDefault` 在 preset 的 schema 里，且是生效的那个值；schema 里还有 `config.default`，而 `defaultId` 解析 `selectedDefault ?? default`。 | **在宿主 0.2.0-rc.1 上实测**，对着 `@deepseek-ai/dsh-agent-preset-registry`。 |
-| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测。** 在 `0.2.0-rc.2` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**自 `0.2.1-alpha.2` 起不存在**（只有 `provider`/`model` —— 已在已装的 `0.2.1-alpha.4` 上复核）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。这就是 `persona` 行在**任何**受支持版本上都不带 `suffix` 的原因 —— 见[宿主版本门](#0-宿主版本门)。 |
-| `tool-subagent` 的 `Config` 接受 `backgroundMode`。 | **随版本而异。** 在 `0.2.1-alpha.1` 上存在（`lib/index.js:257`），**自 `0.2.1-alpha.2` 起不存在**。schemastery 容忍未知键，所以这次移除是静默的 —— 已把两种写法都喂给已装 schema 核过。continuable 现在由 provider 的 `prepareContinuable` 决定，spawn 与 fork 两个 provider 在**每一个受支持版本**上都实现了它（已在已装的 `0.2.1-alpha.4` 上复核）。⇒ lane 行**完全不写** `backgroundMode`。 |
-| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测。** 它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。已在已装的 `0.2.1-alpha.4` 上复测：128 行，仍带 `time-context` 与 `tool-schedule`，仍没有那三条被删的行。 |
-| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **假的，而这正是本 preset 唯一一条按版本分档的行存在的原因。** npm 上它发布在 `0.0.1-rc.2`（另一代）以及 `0.2.1-alpha.1` … `0.2.1-alpha.4` —— **没有 `0.2.0-rc.2`**。`dsh@0.2.0-rc.2` 不依赖它，它旗下的 app 包也都不依赖，rc.2 的骨架里没有这样一行；rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`。 |
+| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测。** 在 `0.2.0-rc.2` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**自 `0.2.1-alpha.2` 起不存在**（只有 `provider`/`model` —— 已在已装的 `0.2.1-alpha.5` 上复核）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。这就是 `persona` 行在**任何**受支持版本上都不带 `suffix` 的原因 —— 见[宿主版本门](#0-宿主版本门)。 |
+| `tool-subagent` 的 `Config` 接受 `backgroundMode`。 | **随版本而异。** 在 `0.2.1-alpha.1` 上存在（`lib/index.js:257`），**自 `0.2.1-alpha.2` 起不存在**。schemastery 容忍未知键，所以这次移除是静默的 —— 已把两种写法都喂给已装 schema 核过。continuable 现在由 provider 的 `prepareContinuable` 决定，spawn 与 fork 两个 provider 在**每一个受支持版本**上都实现了它（已在已装的 `0.2.1-alpha.5` 上复核）。⇒ lane 行**完全不写** `backgroundMode`。 |
+| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测。** 它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。已在已装的 `0.2.1-alpha.5` 上复测：128 行，仍带 `time-context` 与 `tool-schedule`，仍没有那三条被删的行。 |
+| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **假的，而这正是本 preset 唯一一条按版本分档的行存在的原因。** npm 上它发布在 `0.0.1-rc.2`（另一代）以及 `0.2.1-alpha.1` … `0.2.1-alpha.5` —— **没有 `0.2.0-rc.2`**。`dsh@0.2.0-rc.2` 不依赖它，它旗下的 app 包也都不依赖，rc.2 的骨架里没有这样一行；rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`。 |
 | lane 的 `toolFilter.deny` 若点了一个宿主没注册的工具，会在派发时响亮失败，而不是在挂载时。 | **在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 上实测，行为一致。** `tools.restrict()` 抛 `names unknown global tool`（`dsh-tools/lib/index.js:2895-2908`），而 `dsh-subagent` 在组合一个 child 时不加保护地调用它（`lib/index.js:401`）—— 所以一份硬编码的 `schedule_*` deny 清单会在 `latest` 上**弄坏每一次 lane 派发**。这条在 `0.2.1-alpha.3`/`alpha.4` 上同样成立，也正是旧形态那条 deny 尾巴必须保持条件化的原因。 |
 | `tool-subagent` 的行 `Config` 仍然接受 `persona` 与 `toolFilter`。 | **自 `0.2.1-alpha.3` 起为假，而这是第二条按版本分档的机制。** `dsh-tool-subagent/lib/index.js:311` 已不再声明这两个键，且 `:355` 在挂载期对两者硬抛。⇒ 本包因此提供**两种 lane 形态**，由一个宿主门分档 —— 见 [alpha.3 的 lane 迁移](#alpha3-的-lane-迁移)。 |
 | Agent Preset 能表达「排除某个工具」。 | **假的，而这正是本包新增 `lane-tool-gate.mjs` 的原因。** preset 的 `plugins[]` **只能加不能减**。`0.2.1-alpha.3` 上实测：只挂 persona 的 preset 让 child 拿到 **25** 个工具（含 `edit`/`bash`/`send_message`/`interrupt_agent`），而在 preset 里把 `tool-bash` 标 `disabled: true` 之后 `bash` **依然在**（23 个工具）。`toolFilter` 在那条路径上也不可达：全新派发只带 `composition: { agentPreset }`（`dsh-subagent/lib/index.js:1452`），而 `:395` 那个唯一消费点读的字段是**恢复**路径从持久化 descriptor 里读回的（`:2177`）。 |
+| `0.2.1-alpha.5` 没有改任何本包依赖的东西。 | **对着它自己那份已发布 tarball 实测，不是从邻居推的。** alpha.4 → alpha.5 只差两个包：`dsh-tool-subagent` 差**一句提示词**（`lib/index.js:516` 的派发提示丢了「end your turn instead of sleeping」那半句），`dsh-tools` 差 **71 行、且全部落在 `run_code` 的参数描述里**。本包真正依赖的面**逐字节相同**：`tool-subagent` 的 `Config` 字面量（`:311-324`）、其 `apply()` 的拒绝循环（`:355`），以及 `dsh-tools` 的 `guard()` / `guardReason` / `restrict()` / `defineTool`（两版出现次数一致）。`dsh-subagent`、`dsh-agent-preset`、`dsh-agent-preset-registry`、`dsh-persona`、`dsh-agent-loop`、`dsh-base`、`dsh-tool-schedule` 除各自的版本号外逐字节相同。⇒ 宿主门把 alpha.5 读成**新形态**，与读 alpha.4 完全一致。 |
 
 DeepSeek Harness 采用 MIT 许可：[`github.com/deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)。同名但无关的项目，不是本仓库里任何东西的来源。
 
@@ -126,7 +127,7 @@ node tools/gen-cordis-patch.mjs
 | `@deepseek-ai/cordis` | `>=4.0.1 <5` | 插件契约；这是真实的大版本边界 |
 | `@deepseek-ai/schemastery` | `>=3.18.0 <4` | 设置卡片据以生成的 `Config` schema |
 
-**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 `0.2.1-alpha.3` **与 `0.2.1-alpha.4`** 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
+**下界写的是本包所支持的最低宿主版本** —— 0.2.0-rc.2，它同时也是 `latest` 目前指向的版本 —— 不是设计稿恰好参照过的更早版本，也不是更新的那个：本包在 `0.2.1-alpha.4` **与 `0.2.1-alpha.5`** 上同样受支持（见[宿主版本门](#0-宿主版本门)）。上界沿用已发布的 `@quill507/dsh-auto-approval-llm` 对同一批宿主包的写法。`optional: true` 是让这份声明保持诚实的关键：这里的耦合很深 —— `ctx.skills.registerProvider` 是宿主 API —— 大版本改动可能让它静默坏掉，写出这件事比假装这个范围有强制力更值。**它确实没有强制力。**
 
 **受支持集合是三个版本，而这是一条实测结论，不是抄来的。** 每一个都是对着它自己那份已发布 tarball 核过的，没有假设它可以从邻居推出来。有两次宿主发布打断了本包所依赖的东西，而它们打断的方式**完全不同** —— 这正是产物里现在必须有一个门的原因：
 
@@ -150,12 +151,12 @@ dsh --version          # 低于 0.1.7-rc.1 时 install.sh 拒绝继续
 | 宿主版本 | npm dist-tag | 你会拿到什么 |
 |---|---|---|
 | `0.2.0-rc.2` | `latest`（同时也是 `next`） | `npm i -g @deepseek-ai/dsh` 直接装到的版本，也是 Desktop 应用自带的 runtime |
-| `0.2.1-alpha.3` | — | 在 `alpha` tag 上已被取代；要装就按精确版本号装 |
-| `0.2.1-alpha.4` | `alpha` | 最新发布版；**不在 `latest` 上** —— 必须显式指定该 tag |
+| `0.2.1-alpha.4` | — | 在 `alpha` tag 上已被取代；要装就按精确版本号装 |
+| `0.2.1-alpha.5` | `alpha` | 最新发布版；**不在 `latest` 上** —— 必须显式指定该 tag |
 
-`0.2.1-alpha.1` 与 `0.2.1-alpha.2` **已不在受支持集合内**。它们没有坏 —— 它们属于旧形态分支，仍然可用 —— 但这里不再对它们做验证，而顶部徽章并列的是仍然受支持的那三个。
+`0.2.1-alpha.1`、`0.2.1-alpha.2` 与 `0.2.1-alpha.3` **已不在受支持集合内**。它们没有坏 —— alpha.1 与 alpha.2 属于旧形态分支、alpha.3 属于新形态分支，三者都仍然可用 —— 但这里不再对它们做验证，而顶部徽章并列的是仍然受支持的那三个。
 
-`alpha` tag 移过三次（alpha.1 → alpha.2 → alpha.3 → alpha.4），所以表里保留了一行「已没有任何 tag 指向」的版本：`0.2.1-alpha.3` 正是引入 lane 迁移的那一版，值得能够刻意装上它。三者都不是唯一的「当前发布版」。
+`alpha` tag 移过四次（alpha.1 → alpha.2 → alpha.3 → alpha.4 → alpha.5），所以表里保留了一行「已没有任何 tag 指向」的版本：`0.2.1-alpha.4` 是上一个发布版，值得能够刻意装上它 —— 上一版声明就是对着它测的。三者都不是唯一的「当前发布版」。
 
 支持不是猜的。本包交给宿主包的每一个 config 字段 —— 都是对着**三个**已发布版本逐字段核对过的，不是推测 —— 在每一版上都存在，类型、默认值与 schema 形状一致；且 `plan-mode` 在三版上都拒绝未知键，所以声明的 `section` 文本不会被一个容忍多余键的 schema 悄悄丢掉。`install.sh --check` 只跑版本门，不写任何东西。
 
@@ -192,7 +193,7 @@ in an Agent Preset and select it with agentPreset (spawn only)
 
 **为什么会有两种 lane 形态。** preset 机制在 alpha.3 之前不存在，而行 config 机制从 alpha.3 起被硬拒。**没有任何一种行写法能同时合法于两边**，所以 `tools/gen-cordis-patch.mjs` 把每条 lane 渲染成**一个宿主门分档的两种形态**，由 `tools/preset-declaration.mjs` 同时声明：
 
-| | 旧形态（`0.2.0-rc.2`） | 新形态（`0.2.1-alpha.3`、`0.2.1-alpha.4`） |
+| | 旧形态（`0.2.0-rc.2`） | 新形态（`0.2.1-alpha.4`、`0.2.1-alpha.5`） |
 |---|---|---|
 | 门的读法 | `Config = z.object({…})` **含** `persona:` | **不含** |
 | persona | lane 行上的 `persona: !!js …` | 该 lane preset 内的一行 `@deepseek-ai/dsh-persona` |
@@ -207,6 +208,8 @@ in an Agent Preset and select it with agentPreset (spawn only)
 
 - **`reader` 的白名单没有等价物。** `tools.guard()` 只有 deny 语义，没有 `allow`。旧形态给 `reader` lane 的是 `allow: ['read', 'read_image']`，含义是「只留这两个」。新形态只能枚举要拒的名字，而那份名单等于「宿主工具面减去两个」，随每一次宿主发布漂移。所以在 alpha.3 与 alpha.4 上，`reader` lane 的闸只挡 lane 寻址名，**它的通用工具面比旧宿主上更宽**。寻址名那三个是**无条件**挡住的（`LANE_ADDRESSING_DENY`）：旧白名单按构造就不含它们，而放它们过去属于权限放大，不属于退化。
 - **这个闸什么都不隐藏。** 新形态的闸让被拒的工具**保持可见、在调用时拒绝**，并给出可读理由；旧形态的 `restrict({deny})` 则是**把它从可见面移除**。这不是对等替换：alpha.3+ 上的 lane 能看见一个它不许用的工具。但这是 alpha.3+ 能提供的最强手段 —— preset 的 `plugins[]` **只能加不能减**，根本不存在声明式地排除某个宿主工具的办法。
+
+**在 `0.2.1-alpha.5` 上实测过，不只是论证。** 选形态的那个门读的是**结构性事实**，所以一个没有改动本包任何依赖的宿主，必须被读成与前一版相同。这句话是**核过**的、不是假设的：alpha.4 → alpha.5 只动到这里用到的两个包（`dsh-tool-subagent` 的提示词正文、`dsh-tools` 的 `run_code` 描述），`Config` 字面量与 `apply()` 的拒绝循环**逐字节相同**；并且在 alpha.5 上跑真 `dsh --profile web` 启动，每条 lane 行只产出**一种**形态，且**没有** `persona is no longer supported`、**没有** `toolFilter is no longer supported`、**没有** `Duplicate agent preset`。
 
 两种形态由同一个表达式分档、且在两边都被断言，所以任何一侧都不会静默地退化成另一侧。
 

@@ -124,7 +124,7 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 //
 // ① **事实（逐版实测，三条独立证据）**：`@deepseek-ai/dsh-tool-schedule` 在 npm 上只有
 //    `0.0.1-rc.2`（2026-08-11，依赖 `^0.0.1-rc.2` 那一代，与 0.2.x 宿主不同代）与
-//    `0.2.1-alpha.1` … `0.2.1-alpha.4` 这一串 —— **没有 `0.2.0-rc.2`**。而且：
+//    `0.2.1-alpha.1` … `0.2.1-alpha.5` 这一串 —— **没有 `0.2.0-rc.2`**。而且：
 //      · `dsh@0.2.0-rc.2` 的 dependencies 里**没有**它（`npm view @deepseek-ai/dsh@0.2.0-rc.2 dependencies`）；
 //      · `dsh-base` / `dsh-web-app` / `dsh-sdk-app` / `dsh-headless` / `dsh-acp-app` 的 rc.2 版也都**没有**；
 //      · rc.2 的官方 `standard.patch.yml` **没有** `tool-schedule` 行（每一版 alpha 都有）。
@@ -140,7 +140,7 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 //    改为**按机器求值**：包能解析 ⇒ 交出这 4 个名字；不能 ⇒ 交出 `[]`。行的 `disabled` 用同一个判据。
 //    ⇒ rc.2 上：行不挂（`disabled` 先于 import 求值，`refresh()` 见 `cordis-plugin-loader/lib/index.js:363`
 //    直接 return，连 import 都不试，所以**不留错误日志**），deny 也不列那 4 个名字 ⇒ 一切照旧；
-//    每一版 alpha（含本轮的 alpha.3 / alpha.4）上：行挂上，Lead 拿到提醒，lane 被 deny。
+//    每一版 alpha（含本轮的 alpha.4 / alpha.5）上：行挂上，Lead 拿到提醒，lane 被 deny。
 //    ⚠️ **为什么用「能否解析」而不是「loader 树里有没有那一行」**：本行与 lane 行在**同一个
 //    `plugins[]` 里**，按树查会依赖「本行是否已先于 lane 行装载」这个顺序前提；而
 //    `createRequire(baseUrl).resolve(...)` 是**与顺序无关**的事实判定，且 `baseUrl` 在求值 ctx 里
