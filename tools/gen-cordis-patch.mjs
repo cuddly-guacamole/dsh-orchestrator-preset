@@ -21,7 +21,7 @@
 //    ⇒ deny / allow 里出现 LEGAL_TOOL_NAMES 之外的名字**必须放行并正常渲染**。
 //    LEGAL_TOOL_NAMES 仅作为**参考清单**打印规模，不参与任何判定。
 // ⚠️ 但 lane 的 deny 值本身**不是**一份静态名单：静态项 + 按机器算的 MCP 闭包，渲染成一个 `!!js`
-//    plain scalar（见下方 denyExpr）。名字是否在本机存在由 `restrict()` 在派发时判定，生成期不判定。
+//    plain scalar（见下方 `lanePresetRow` 的 gate 名单）。名字是否在本机存在由 `restrict()` 在派发时判定，生成期不判定。
 //
 // 行数口径（⚠️ 三套数字，别混）：`(30 rows)` = 声明口径
 //   （15 顶层 + 3 group + 3 delegation 控制 + 9 lane；= `topRows + groups + delegation.rows`），
@@ -274,19 +274,20 @@ const personaExpr = (bundlePkg, file) =>
 //   当成 flow sequence（那是 resolve 不掉的 `!!js`）。闭包体内**不得**出现 `: ` / `#` / 反斜杠 /
 //   双引号 —— 那是 plain scalar 的边界；这条约束由 T13/check 13 的求值测试兜住。
 const jsString = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
-const denyExpr = (names, closure, scheduleClosure) => {
-  if (typeof closure !== 'string' || closure.length === 0) {
+
+// ── lane 的 gate 名单 = 静态名单 **拼上**按机器算的 MCP 闭包 ───────────────────
+// 与旧形态 lane 的 `toolFilter.deny` **同一套渲染手法**（那次的经验逐条仍然成立）：
+//   `restrict()` / `guard()` 面对的名字必须在本机存在，而 MCP loader 名（`mcp_<server>`）随
+//   **用户自己的** MCP 配置漂移 ⇒ 写死它 = 在没配那条 server 的机器上拒掉不存在的名字。
+//   闭包在求值时从**已组装的 loader 树**算（口径与残余见 `MCP_CLOSURE_EXPR` 段）。
+// ⚠️ 必须渲染成**单个 plain scalar**（`!!js (["a"]).concat(<闭包>)`）：以 `(` 开头 ⇒ 不会被 YAML
+//   当成 flow sequence（那是 resolve 不掉的 `!!js`）。闭包体内**不得**出现 `: ` / `#` / 反斜杠 /
+//   双引号 —— 那是 plain scalar 的边界；这条约束由 check 13 的求值测试兜住。
+const closureExpr = (staticNames, d) => {
+  if (typeof d.MCP_CLOSURE_EXPR !== 'string' || d.MCP_CLOSURE_EXPR.length === 0) {
     throw new Error('MCP_CLOSURE_EXPR 缺失 / 非字符串 ⇒ 停（不得把 MCP 名退回静态名单：那正是「新机器上不可用」的成因）')
   }
-  // ⚠️ **第二条尾巴 = `schedule_*` 的版本条件**（host 0.2.0-rc.2 上 `dsh-tool-schedule` 根本不存在，
-  //    见 preset-declaration.mjs 的 SCHEDULE_* 段）。它与 MCP 闭包**同一条机制**（按机器求值的
-  //    `!!js` 尾巴），但回答的是另一个问题：MCP 问「这台机器配了哪些 server」，它问「这台宿主有没有
-  //    这个包」。合成一份会让「机器配置漂移」与「宿主版本差异」看起来像同一件事，而两者的翻转条件相反。
-  //    同一条 plain-scalar 边界约束适用于它（无 `: ` / `#` / 反斜杠 / 双引号），由 check 13 兜住。
-  if (typeof scheduleClosure !== 'string' || scheduleClosure.length === 0) {
-    throw new Error('SCHEDULE_DENY_EXPR 缺失 / 非字符串 ⇒ 停（不得把 schedule_* 退回静态名单：rc.2 上那些名字不存在，restrict() 会抛）')
-  }
-  return `!!js ([${names.map(jsString).join(', ')}]).concat(${closure}).concat(${scheduleClosure})`
+  return `!!js ([${staticNames.map(jsString).join(', ')}]).concat(${d.MCP_CLOSURE_EXPR})`
 }
 
 export function laneRow(lane, d) {
@@ -307,121 +308,76 @@ export function laneRow(lane, d) {
     //    **改声明即可**，不必再动这里 —— 这就是把它变成可选键的全部目的。
     ...(common.backgroundMode !== undefined ? { backgroundMode: common.backgroundMode } : {}),
     maxDepth: lane.maxDepth,
+    // ⛔ **只有一种形态**：`agentPreset` + `allowedAgentPresets` **成对**写（`:209` 的硬约束：
+    //    只给前者不给后者 ⇒ 挂载期 throw）。受支持的宿主 `0.2.1-rc.2` 的 `tool-subagent` Config
+    //    里有这两个键、且**没有** `persona` / `toolFilter`（后者在 `apply()` 里被硬拒，见下）。
+    //    ⇒ 旧形态那条分支（`persona` + `toolFilter`）随支持集收缩一起删除：**没有**宿主需要它。
+    agentPreset: lane.presetId,
+    allowedAgentPresets: [lane.presetId],
   }
-  // ⚠️ **形态由宿主门决定，且两条分支都必须能把 `config` 写全**：
-  //    旧宿主（`persona` 仍在 Config 里）⇒ persona + toolFilter，与 0.2.1-alpha.2 起的产物逐字一致；
-  //    新宿主（alpha.3+，两个键都被 `apply()` 硬拒）⇒ 改挂该 lane 的 Agent Preset，
-  //    并把 `agentPreset` + `allowedAgentPresets` **成对**写上（`:209` 的硬约束：
-  //    只给前者不给后者 ⇒ 挂载期 throw）。
-  if (d.LANE_LEGACY_EXPR === undefined) {
-    throw new Error('LANE_LEGACY_EXPR 缺失 ⇒ 停（lane 形态的宿主门取不到值；不得猜形态）')
+  if (d.LANE_FORM_SUPPORTED_EXPR === undefined) {
+    throw new Error('LANE_FORM_SUPPORTED_EXPR 缺失 ⇒ 停（lane 形态的宿主门取不到值；不得猜形态）')
   }
   if (lane.presetId === undefined) {
-    throw new Error(`lane ${lane.tool} 没有 presetId ⇒ 停（新形态需要它；声明侧应由 lanePresetId 派生）`)
+    throw new Error(`lane ${lane.tool} 没有 presetId ⇒ 停（形态需要它；声明侧应由 lanePresetId 派生）`)
   }
-  // ⛔ **不能写三元 `? … : …`**：`!!js` 是 YAML **plain scalar**，而 plain scalar 里
-  //    「`: `」（冒号+空格）是**映射分隔符** ⇒ `!!js (门) ? [1] : undefined` 会被解析成
-  //    **映射** `{"[object Object]":"undefined"}` 而不是 `__jsExpr`。
-  //    实测（宿主自己的 `loadOverlayPatches`）：deny 变成 `{"[object Object]":"undefined"}`
-  //    ⇒ 求值器拿到的不是数组 ⇒ **名单静默失效**；check 13 报 `deny is not a !!js expression`。
-  //    ⇒ 改用 **`if` + `return` 的 IIFE**：无冒号、无 `?`，仍是单个 plain scalar，**两个世界都能用**。
-  //      · 旧宿主：门为真 ⇒ `return <名单数组>`（宿主 schema 要求 `deny` 是数组）
-  //      · 新宿主：门为假 ⇒ `return []`（该行的 toolFilter 被宿主整体忽略，空数组无害）
-  // ⚠️ 新形态下**真正干活的是 preset 里的 `lane-tool-gate`**，不是这条 deny：
-  //    alpha.3 的 `tool-subagent.Config` 没有 `toolFilter` 键，宿主不读它。这里返回 `[]` 只是
-  //    「让表达式在两个世界都求值成功」——**不要**误读成「新宿主上 deny 仍然生效」。
-  const gate = d.LANE_LEGACY_EXPR
-  const denyBody = `([${(lane.deny ?? []).map(jsString).join(', ')}]).concat(${d.MCP_CLOSURE_EXPR}).concat(${d.SCHEDULE_DENY_EXPR})`
-  // ⛔ **形态分档必须靠「键根本不出现」，不能靠「键的值为 `undefined`」。**
-  //    这条已经用一次**生产事故**换来过，教训写在这里，不要再踩：
-  //      · 旧写法是「把值渲染成 `!!js (() => { if (门) return undefined; return <值> })()`」，
-  //        看起来「旧宿主上这个键就没了」。**错。** 那个表达式只是**求值成 `undefined`**，
-  //        而键**仍然在对象上**。宿主侧链路：`interpolate` → `valueMap`
-  //        （`cordis-plugin-loader/lib/index.js:243`），而 `mapValues` 的实现是
-  //        `Object.fromEntries(Object.entries(object).map(...))` ⇒ **`Object.entries` 不丢值为
-  //        `undefined` 的键** ⇒ 宿主收到的 config 里 `Object.hasOwn('persona')` 仍为 **true**。
-  //      · 而宿主是按**键存在**判的，不是按值判：`dsh-tool-subagent/lib/index.js:355`
-  //        `for (const field of ["persona","toolFilter"]) if (Object.hasOwn(config, field)) throw …`
-  //        ⇒ alpha.3+ 上 9 条 lane 全部挂载失败（并连锁出 `Duplicate agent preset`）。
-  //        实测：`Config({ provider:'spawn', persona: undefined, toolFilter: undefined })`
-  //        ⇒ `hasOwn persona: true`，`apply()` 抛 `persona is no longer supported`。
-  //      · **`persona` 曾被归错组**：旧注释把 `persona` 与 `agentPreset`/`allowedAgentPresets`
-  //        并列成「新形态专用」，于是写成 `newOnly(...)`。**它恰恰相反** —— `persona` 正是 alpha.3
-  //        删掉并硬拒的那个键，属于**旧形态专用**（与 `toolFilter` 同类）。旧注释把错误极性
-  //        写成了「理由」，代码照着错理由写，评审也就照着错理由放过。
-  //        ⇒ **极性逐键判定，不得按「一组键」批发**。
-  //    ⇒ 正确做法：**整个 `config` 映射是一个 `!!js` 表达式**，在宿主求值时按门**构造键集**：
-  //       旧宿主 ⇒ `persona` + `toolFilter`（**无** agentPreset 那一对）；
-  //       新宿主 ⇒ `agentPreset` + `allowedAgentPresets`（**无** persona、**无** toolFilter）。
-  //    ⚠️ 仍是 **plain scalar**（YAML 的 `: ` 边界照旧成立）：下面用 `const c = {}` 起手、
-  //       `c.x = …` 逐项赋值 —— **不出现对象字面量、不出现三元**（这两条各踩过一次，见下）。
-  const denyOrAllow = lane.deny !== undefined
-    ? denyBody
-    : `[${lane.allow.map(jsString).join(', ')}]`
-  const tfKey = lane.deny !== undefined ? 'deny' : 'allow'
-  const tfObj = `(() => { const o = {}; o.${tfKey} = ${denyOrAllow}; return o })()`
-  const personaJs = personaExpr(d.bundlePkg, lane.persona)
-  const presetJs = JSON.stringify(lane.presetId)
-
-  // ⛔ **绝不能出现对象字面量**（`{ deny: … }` / `{ ['deny']: … }` 都算）：
-  //    两种写法里的「`: `」都会把 plain scalar 切成 YAML 映射 —— 实测两种都得到
-  //    `{"[object Object]":"…"}` 或 `bad indentation of a mapping entry`，而**不是** `__jsExpr`。
-  //    ⇒ 唯一在两个世界都成立、且不引入冒号的写法是**先建空对象再赋值**。
-  //    （这一条踩过两次：先踩三元，再踩对象字面量。plain scalar 的边界就是「`: `」。）
-  //    ⚠️ 三元的坑同样适用于 `config` 这一层：整段必须是 **`if` + `return` 的 IIFE**。
+  // ⚠️ **极性**：`LANE_FORM_SUPPORTED_EXPR` 为真 = 宿主是**旧形态**（`persona` 仍在 Config 里）
+  //    = 本包**不支持**它 ⇒ 本行必须**不挂**。所以 `disabled` 直接取该表达式的值，**不加 `!`**。
+  //    （早先写成 `!(…)` 是反的：alpha.3 上该式为 false ⇒ `disabled=true` ⇒ **恰好在需要它的
+  //    宿主上把行关掉**。这类反向错误在单侧测试里看不出来。）
+  // ⚠️ 值必须是**裸表达式字符串**（`pushDisabled` 自己补 `!!js `），且**不能**以 `!` 紧跟
+  //    `!!js` 开头（那会被 YAML 当第二个 tag）。这里以 `(` 开头，安全。
   //
-  // ⛔ **`allow` 的 lane（reader）不能走 deny 分支**：声明里 reader 是
-  //    `allow: ['read','read_image']`（白名单 = 「只留这两个」），**没有** `deny`。
-  //    早先无条件写 `o.deny = (lane.deny ?? [])…` ⇒ reader 得到一条**空 deny 名单**
-  //    ⇒ 在旧宿主上读者**不再受限**（拿到 `write`/`bash`/`edit`）。
-  //    那是**权限放大**，而且产物看起来完全正常（deny 键在、值是 `[]`）。
-  //    ⇒ 有 `allow` 就必须写 `allow`，与本段上面 `lane.deny !== undefined ? deny : allow`
-  //      的二分**同一条判据**（一个判据一个家，两处不得各写一份）。
-  const configBody = [
-    'const c = {};',
-    ...Object.entries(shared).map(([k, v]) => `c[${JSON.stringify(k)}] = ${JSON.stringify(v)};`),
-    `if (${gate}) {`,
-    `  c['persona'] = ${personaJs};`,
-    `  c['toolFilter'] = ${tfObj};`,
-    '} else {',
-    `  c['agentPreset'] = ${presetJs};`,
-    `  c['allowedAgentPresets'] = [${presetJs}];`,
-    '}',
-    'return c',
-  ].join(' ')
+  // ⛔ **`config` 这里又回到普通映射**（不再是「整张映射交给一个 `!!js` 表达式构造」）：
+  //    那种写法存在的唯一理由是「键集要按宿主门变化」（旧形态不写 `agentPreset`、新形态不写
+  //    `persona`/`toolFilter`）。现在只有一种形态 ⇒ 键集固定 ⇒ 普通映射更简单也更好读。
+  //    宿主门仍在，但它现在只决定**这一行挂不挂**（上面的 `disabled`），不决定**写哪些键**。
+  //    ⇒ 旧写法里那套 plain-scalar 约束（不出现对象字面量、不出现三元）在这里不再适用；
+  //      它们仍然适用于上面 `closureExpr` 与 `personaExpr` 产出的 `!!js` 值。
   return {
     ...base,
-    config: RAW(`!!js (() => { ${configBody} })()`),
+    disabled: `(${d.LANE_FORM_SUPPORTED_EXPR})`,
+    config: shared,
   }
 }
 
-// ── 每条 lane 的 Agent Preset 行（**新宿主专用**）──────────────────────────────
-// 旧宿主上这些行必须**整条禁用**：它不认得 `agentPreset`（会被 schemastery 静默收下，
-// 但没有 `agentPresets` 服务 ⇒ `:357` 抛），而且 `dsh-agent-preset` 行本身在 rc.2 上
+// ── 每条 lane 的 Agent Preset 行 ─────────────────────────────────────────────
+// 旧形态宿主上这些行必须**整条禁用**：它不认得 `agentPreset`（会被 schemastery 静默收下，
+// 但没有 `agentPresets` 服务 ⇒ `:357` 抛），而且 `dsh-agent-preset` 行本身在那种宿主上
 // 也不存在。用 `disabled` 而不是不生成：**行数与形态保持可读**，且 `disabled` 先于 import
 // 求值（`cordis-plugin-loader` 的 `refresh()`），所以旧宿主上不留错误日志。
 export function lanePresetRow(row, d) {
-  // `personaFile` 是声明侧的取值槽 ⇒ 渲染成与旧形态同形的运行时 `readFileSync` 表达式，并从 config 里去掉。
+  // `personaFile` 是声明侧的取值槽 ⇒ 渲染成运行时 `readFileSync` 表达式，并从 config 里去掉。
   const plugins = row.config.plugins.map((p) => {
-    if (p.config?.personaFile === undefined) return p
+    if (p.config?.personaFile === undefined && p.config?.deny === undefined) return p
+    if (p.config?.deny !== undefined) {
+      // `lane-gate` 的 `deny`：静态段由声明侧给（`laneGateDeny`），**MCP 闭包**必须在这里
+      // 拼上去 —— 声明侧不产 `!!js`（那是生成器的活），而闭包是表达式、不是字面数组。
+      // ⚠️ 少了这一步，每条 lane 的 gate 名单就只剩静态项 ⇒ **只读 lane 能调用 `mcp_*`**
+      //    （权限放大，且产物看起来完全正常）。check 13 的 lane 支路会抓到它。
+      return { ...p, config: { ...p.config, deny: RAW(closureExpr(p.config.deny, d)) } }
+    }
     const { personaFile, ...rest } = p.config
     // `personaExpr` 返回裸表达式 ⇒ 这里补上唯一的一次 `!!js ` 前缀（`pushValue` 见到 `__raw`
     // 会整行原样写出，所以前缀必须由调用方给）。
     return { ...p, config: { ...rest, prefix: RAW(`!!js ${personaExpr(d.bundlePkg, personaFile)}`) } }
   })
+  if (d.LANE_FORM_SUPPORTED_EXPR === undefined) {
+    throw new Error('LANE_FORM_SUPPORTED_EXPR 缺失 ⇒ 停（preset 行的宿主门取不到值）')
+  }
   return {
     id: row.id,
     name: row.name,
-    // ⚠️ **极性**：`LANE_LEGACY_EXPR` 为真 = 宿主是旧形态（`persona` 仍在 Config 里）
-    //    = **preset 行应当关闭**。所以 `disabled` 直接取该表达式的值，**不加 `!`**。
-    //    （早先写成 `!(…)` 是反的：alpha.3 上 `LANE_LEGACY=false` ⇒ `disabled=true`
-    //     ⇒ **恰好在需要它的宿主上把 preset 关掉**。这类反向错误在单侧测试里看不出来。）
+    // ⚠️ **与 lane 行共用同一个表达式、同一个极性**（true = 旧形态宿主 = 不支持 = 关闭）。
+    //    两族行共用一条表达式，它们就**永远不会分叉**：不可能出现「lane 行关了而 preset 行
+    //    还挂着」（那会留下一条指向不存在 preset 的 `agentPreset`），也不可能反过来。
     // ⚠️ 值必须是**裸表达式字符串**（`pushDisabled` 自己补 `!!js `），且**不能**以 `!` 紧跟
     //    `!!js` 开头（那会被 YAML 当第二个 tag）。这里以 `(` 开头，安全。
-    disabled: `(${d.LANE_LEGACY_EXPR})`,
+    disabled: `(${d.LANE_FORM_SUPPORTED_EXPR})`,
     config: { ...row.config, plugins },
   }
 }
+
 
 // 取值槽：`plan-mode.config.section` 在声明里是 `''` ⇒ 渲染时填入从权威骨架取来的 6 行原文
 const withSection = (row, section) =>
@@ -437,38 +393,42 @@ export function groupEntry(group, d, section) {
   return entry
 }
 
-// ── fork 控制行：只 deny 那条 `schedule_*` 条件尾巴 ──────────────────────────
-// fork child 同样是「子 agent」，而用户 2026-10-10 的裁决是「只给主代理，不给子agent」。
-// 官方 `standard` 骨架在 **spawn 与 fork 两行**都 deny 全四个名字 ⇒ 只改 9 条具名 lane 会留下口子
-// （Lead 可以 fork；经 fork 派出的 child 会继承提醒工具）。
-// ⚠️ **它刻意不带 MCP 闭包**：fork child 是通用 fork，除提醒之外的工具面本轮不收窄。
-//    写成 `([]).concat(<尾巴>)` 而不是裸尾巴：静态段为空这件事要**看得见**（它不是「漏了静态名单」，
-//    而是「本行没有静态名单」），且与 lane 的 deny 保持同一种 `!!js` 形状。
-// ⛔ **本行也必须按宿主门移出 `toolFilter` 键，理由与 9 条 lane 行完全相同**：
-//    `tool-subagent-fork` 也是 `dsh-tool-subagent` 的一行 ⇒ 走**同一个** `apply()`
-//    ⇒ alpha.3+ 上只要 `config` 里有 `toolFilter` 键，就同样被 `:355` 的 `Object.hasOwn` 硬拒
-//    （实测：只修 9 条具名 lane 时，本行仍报 `WOULD THROW toolFilter`）。
-//    ⇒ 与 lane 行同一条写法：整个 `config` 是**一个表达式**，键集在求值时按门构造。
-//    ⚠️ 旧形态（rc.2）上它必须**恰好**只有那条 `schedule_*` 条件尾巴，一个名字都不多
-//       —— 这条由 check 13 的 fork 分支断言（它不得带 MCP 闭包）。
-const forkControlRow = (row, d) => {
-  if (typeof d.SCHEDULE_DENY_EXPR !== 'string' || d.SCHEDULE_DENY_EXPR.length === 0) {
-    throw new Error('SCHEDULE_DENY_EXPR 缺失 / 非字符串 ⇒ 停（fork 控制行的 deny 尾巴取不到值）')
+// ── fork 控制行：普通声明行 + **宿主门**（与 9 条 lane 行、9 条 preset 行同一个开关）──────
+// 它仍然是 `dsh-tool-subagent` 的一行：`provider: fork` / `toolName: subagent_fork`，
+// config 是普通映射。
+//   · **不带 `toolFilter`**（也不带 `persona`）：宿主 `apply()` 对这两个键按 `Object.hasOwn`
+//     硬拒（`lib/index.js:355`）⇒ 带上它们，这一行连激活都做不到。
+//   · **带 `disabled`**，且用的就是 `LANE_FORM_SUPPORTED_EXPR` —— 与 9 条 lane 行、9 条 preset
+//     行**同一个表达式、同一个极性**（true = 旧契约宿主 = 不受支持 = 禁用）。三族行共用一条
+//     表达式，它们就永远不会分叉。
+//     ⛔ 这一行不能省。fail-closed 规则是：在**不受支持的**宿主上本 bundle 挂载**零**条 lane。
+//        少了这个 `disabled`，那台机器上 lane 行与 preset 行虽然全关，`subagent_fork` 却仍然
+//        注册 —— Lead 照样能派发，派进一个没有任何 lane preset 的组合里。**这是唯一一条
+//        不经过具名 lane 就能造出 child 的路径**，所以它必须跟着一起变暗。
+//     ⚠️ 极性**不加 `!`**：`pushDisabled` 自己补 `!!js `，表达式以 `(` 开头 ⇒ 不会被 YAML 当成
+//        第二个 tag。反了就会在**受支持的**宿主上把 fork 能力整个关掉。
+//
+// 🔻 **被接受的退化（写在这里，而不是留给下一个人发现；范围是"受支持的宿主"）**：在
+//    `0.2.1-rc.2` 上，**经 `subagent_fork` 派出的 child 会继承父 agent 的 preset 组合**
+//    （fork provider 自报 `capabilities.agentPreset = false`，见 `dsh-subagent-fork-in-process`），
+//    因此那四个 `schedule_*` 名字**无法**在这条路径上被声明式 deny ⇒ Lead 主动 fork 出来的
+//    child 仍会看到提醒工具。0.1.9 声称它能，而那个声称在 alpha.4 / alpha.5 上**已经**是假的
+//    —— 本轮只是把这句话改成真的。
+//    影响面：仅限 fork 出来的 child；9 条**具名** lane 不受影响（它们的 gate 名单里列全了这四个
+//    名字，且 lane 自己 fork 不了 —— 它们的 deny 里含 `subagent_fork`）。
+//    ⚠️ 上面那个 `disabled` **不修**这条退化：它只在"什么都不挂载"的宿主上把本行关掉，而那种
+//       宿主上压根没有 child 可言。要彻底关掉这个口子只能靠运行时机制（对 fork child 施加
+//       guard），那需要新增插件文件，不在本轮面内。
+export function forkControlRow(row, d) {
+  if (d.LANE_FORM_SUPPORTED_EXPR === undefined) {
+    throw new Error('LANE_FORM_SUPPORTED_EXPR 缺失 ⇒ 停（fork 控制行也按同一个宿主门开关，不得猜）')
   }
-  const gate = d.LANE_LEGACY_EXPR
-  if (gate === undefined) {
-    throw new Error('LANE_LEGACY_EXPR 缺失 ⇒ 停（fork 控制行也按同一个宿主门分档，不得猜）')
+  return {
+    ...row,
+    // 与 lane 行 / preset 行同一个表达式、同一个极性。裸表达式字符串，
+    // `pushDisabled` 会补 `!!js `；以 `(` 开头 ⇒ 不会被 YAML 当成第二个 tag。
+    disabled: `(${d.LANE_FORM_SUPPORTED_EXPR})`,
   }
-  const shared = { ...row.config }
-  const configBody = [
-    'const c = {};',
-    ...Object.entries(shared).map(([k, v]) => `c[${JSON.stringify(k)}] = ${JSON.stringify(v)};`),
-    `if (${gate}) {`,
-    `  const o = {}; o.deny = ([]).concat(${d.SCHEDULE_DENY_EXPR}); c['toolFilter'] = o;`,
-    '}',
-    'return c',
-  ].join(' ')
-  return { ...row, config: RAW(`!!js (() => { ${configBody} })()`) }
 }
 
 export const countRows = (d) =>

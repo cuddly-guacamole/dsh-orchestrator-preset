@@ -529,29 +529,141 @@ for s in delegation-brief discussion-protocol evidence-protocol real-path-testin
   fi
 done
 
+head_ "check 7 — the shell rows read as one of the layers actually says"
 # ===========================================================================
-head_ "check 7 — the two shell rows read as deliberately configured"
-# ===========================================================================
-# Not a defect. The preset declares BOTH shells, each gated on process.platform,
-# so on Windows it asks for pwsh. This host's ~/.dsh/cordis.patch.yml home layer
-# deliberately forces bash-only on Windows and is applied after the profile
-# layer, so it wins. A disabled tool is still a known tool, and the lanes work
-# fine on bash alone. If this ever reads the other way, the home layer changed.
-if [ -s "$TMP/composed.yml" ]; then
-  bash_row="$(grep -A2 '^- id: tool-bash$' "$TMP/composed.yml" | grep -m1 'disabled:' || echo 'disabled: ?')"
-  pwsh_row="$(grep -A2 '^- id: tool-pwsh$' "$TMP/composed.yml" | grep -m1 'disabled:' || echo 'disabled: ?')"
-  if echo "$bash_row" | grep -q 'disabled: false'; then
-    ok "check 7  tool-bash is enabled (bash-only Windows host, deliberate)"
-  else
-    bad "check 7  tool-bash: $bash_row (expected disabled: false)"
-  fi
-  if echo "$pwsh_row" | grep -q 'disabled: true'; then
-    ok "check 7  tool-pwsh is disabled (bash-only Windows host, deliberate)"
-  else
-    bad "check 7  tool-pwsh: $pwsh_row (expected disabled: true)"
-  fi
-else
+# This check follows the LAYERS instead of a memory of them. Two scopes matter,
+# and they answer different questions:
+#
+#   (a) the PRESET'S OWN rows — nested inside `preset-dsh-orchestrator-preset` in
+#       the composed tree. These are this repository's declaration, and the
+#       artifact promises exactly this: `tool-bash disabled = (platform ===
+#       'win32')`, `tool-pwsh disabled = (platform !== 'win32')`. Asserted
+#       unconditionally, because they are ours.
+#
+#   (b) the TOP-LEVEL rows — the host's effective shell surface. Whichever layer
+#       speaks LAST wins, and that is a property of the MACHINE, not of this
+#       repository. dsh-app-boot composes, in order (later wins):
+#           profile root cordis.yml -> profile cordis.patch.yml
+#                                 -> home cordis.patch.yml -> overlays
+#       So (b) is not a fixed value; it is a CONSISTENCY assertion: the composed
+#       value must equal what the last layer that names the row actually says.
+#       If NO layer names it, the preset's declaration is the expectation,
+#       evaluated on this platform.
+#
+# ⚠️ Two wrong forms were rejected here, and both are instructive:
+#    * the original hardcoded "bash-only on Windows". On a machine where no layer
+#      forces that, it failed while the artifact was correct — it encoded one
+#      operator's setup as a property of the repository.
+#    * flipping the expected values is the same bug mirrored: green today, red
+#      the moment that layer changes back.
+#    Both judged the OPERATOR's layer by the PRESET's declaration. What is
+#    actually assertable is that composition applied the layers it found — so
+#    that is what is asserted. The platform comes from `process.platform` (the
+#    same authority the `!!js` gates see), never a hardcoded string.
+#
+# Rows are EVALUATED the way the host would (they may still carry `!!js` gates),
+# not pattern-matched. Every line names its scope, so a reader can tell "the
+# preset declared this" from "a later layer decided it".
+if [ ! -s "$TMP/composed.yml" ]; then
   bad "check 7  no composed tree to read the shell rows from"
+else
+  COMPOSED="$TMP/composed.yml" \
+  LAYER_ROOT="$PROFILE_DIR/cordis.yml" \
+  LAYER_PATCH="$PROFILE_DIR/cordis.patch.yml" \
+  LAYER_HOME="$DSH_HOME_ABS/cordis.patch.yml" \
+  node --input-type=module -e '
+    import { readFileSync, existsSync } from "node:fs"
+    const lines = readFileSync(process.env.COMPOSED, "utf8").split("\n")
+    const evalRaw = (raw) => {
+      const v = raw.replace(/^\s*disabled:\s*/, "").trim()
+      if (!v.startsWith("!!js ")) return v
+      try { return String(new Function("return (" + v.slice(5) + ")")()) } catch { return "unresolvable" }
+    }
+    const composedValue = (id) => {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() !== "- id: " + id) continue
+        if (/^\s*/.exec(lines[i])[0].length !== 0) continue
+        const gate = lines.slice(i + 1, i + 4).find((l) => /^\s*disabled:/.test(l))
+        return gate === undefined ? "absent" : evalRaw(gate)
+      }
+      return "missing"
+    }
+    const presetValue = (id) => {
+      const start = lines.findIndex((l) => /^\s*- id: preset-dsh-orchestrator-preset$/.test(l))
+      if (start < 0) return "nopreset"
+      const presetIndent = /^\s*/.exec(lines[start])[0].length
+      let childIndent = -1
+      for (let i = start + 1; i < lines.length; i++) {
+        const ind = /^\s*/.exec(lines[i])[0].length
+        if (/^\s*- id:/.test(lines[i]) && ind > presetIndent) { childIndent = ind; break }
+        if (/^\s*- id:/.test(lines[i]) && ind <= presetIndent) return "nopreset"
+      }
+      if (childIndent < 0) return "nopreset"
+      for (let i = start + 1; i < lines.length; i++) {
+        const ind = /^\s*/.exec(lines[i])[0].length
+        if (/^\s*- id:/.test(lines[i]) && ind <= presetIndent) return "absent"
+        if (lines[i].trim() !== "- id: " + id || ind !== childIndent) continue
+        const gate = lines.slice(i + 1, i + 4).find((l) => /^\s*disabled:/.test(l))
+        return gate === undefined ? "absent" : evalRaw(gate)
+      }
+      return "absent"
+    }
+    const layerValue = (id) => {
+      const order = [process.env.LAYER_ROOT, process.env.LAYER_PATCH, process.env.LAYER_HOME].filter(Boolean)
+      let winner = null
+      for (const path of order) {
+        if (!existsSync(path)) continue
+        const ls = readFileSync(path, "utf8").split("\n")
+        for (let i = 0; i < ls.length; i++) {
+          if (ls[i].trim() !== "- id: " + id) continue
+          const gate = ls.slice(i + 1, i + 4).find((l) => /^\s*disabled:/.test(l))
+          winner = { path: path.split(/[\/]/).slice(-2).join("/"), value: gate === undefined ? "absent" : evalRaw(gate) }
+          break
+        }
+      }
+      return winner
+    }
+    const rows = []
+    for (const id of ["tool-bash", "tool-pwsh"]) {
+      const w = layerValue(id)
+      rows.push([id, composedValue(id), presetValue(id), w === null ? "-" : w.path, w === null ? "-" : w.value].join("\t"))
+    }
+    process.stdout.write(rows.join("\n") + "\n")
+  ' >"$TMP/shellrows.tsv" 2>"$TMP/shellrows.err"
+  if [ ! -s "$TMP/shellrows.tsv" ]; then
+    bad "check 7  the shell-row probe produced nothing:"
+    sed 's/^/      /' "$TMP/shellrows.err" | head -3
+  else
+    host_platform="$(node -e 'process.stdout.write(process.platform)' 2>/dev/null || echo unknown)"
+    if [ "$host_platform" = "win32" ]; then want_bash="true"; want_pwsh="false"
+    else want_bash="false"; want_pwsh="true"; fi
+    preset_bad=0
+    while IFS="$(printf '\t')" read -r id composed preset layer lval; do
+      want="$want_bash"; [ "$id" = "tool-pwsh" ] && want="$want_pwsh"
+      [ "$preset" = "$want" ] || preset_bad=1
+    done < "$TMP/shellrows.tsv"
+    if [ "$preset_bad" -eq 0 ]; then
+      ok "check 7  [preset] the preset's own rows gate both shells for $host_platform (tool-bash disabled=$want_bash, tool-pwsh disabled=$want_pwsh)"
+    else
+      bad "check 7  [preset] the preset's own rows do not match its declaration on $host_platform (see $TMP/shellrows.tsv)"
+    fi
+    while IFS="$(printf '\t')" read -r id composed preset layer lval; do
+      want="$want_bash"; [ "$id" = "tool-pwsh" ] && want="$want_pwsh"
+      if [ "$lval" = "-" ]; then
+        if [ "$composed" = "$want" ]; then
+          ok "check 7  [declaration] $id disabled=$composed on $host_platform — no layer names it, and it matches the declaration"
+        else
+          bad "check 7  [declaration] $id disabled=$composed (expected $want on $host_platform; no layer names it)"
+        fi
+      else
+        if [ "$composed" = "$lval" ]; then
+          ok "check 7  [override] $id disabled=$composed, as $layer decides (composition applied the layer)"
+        else
+          bad "check 7  [override] $id composed=$composed but $layer says $lval — the layer was not applied"
+        fi
+      fi
+    done < "$TMP/shellrows.tsv"
+  fi
 fi
 
 # ===========================================================================
@@ -1018,28 +1130,55 @@ else
 fi
 
 # ===========================================================================
-head_ "check 13 — the lane deny lists name no tool that only THIS machine is guaranteed to have"
+head_ "check 13 — every lane's tool surface is narrowed by its preset gate, and an unsupported host mounts none"
 # ===========================================================================
-# The MCP loader tools are named `mcp_<server>` and are generated by
-# dsh-mcp-loader from the servers THE USER configured. Writing those names into a
-# lane's toolFilter.deny does not fail at mount: it fails on the first delegation,
-# because tools.restrict() rejects every name that is not a globally registered
-# tool (dsh-tools/lib/index.js:2895-2910, "names unknown global tool"). A machine
-# that does not have those servers — any freshly installed preset — therefore
-# cannot create that lane at all. This machine cannot reproduce the failure: it
+# WHAT THIS CHECKS NOW. Since 0.2.1-rc.2 the lane's tool surface is narrowed in ONE
+# place: the `lane-gate` plugin inside each lane's Agent Preset row. The lane row
+# itself carries no `toolFilter` at all (the host hard-rejects that key in apply()),
+# and it carries `agentPreset` + `allowedAgentPresets` instead. So the deny list this
+# check polices now lives at:
+#
+#     preset-orch-lane-<lane>  ->  config.plugins[]  ->  id: 'lane-gate'  ->  config.deny
+#
+# and it is a `!!js` expression (a static array concatenated with the MCP closure).
+# The earlier form looked for `config.toolFilter` on the lane rows; when that key was
+# deleted this check silently stopped seeing all nine lanes (LANES=12 DENY_LANES=0)
+# and then failed on its own exit condition rather than on the boundary. The subject
+# moved; the boundary it protects did not.
+#
+# WHY THE MCP MACHINE SURVIVES. The MCP loader tools are named `mcp_<server>` and are
+# generated by dsh-mcp-loader from the servers THE USER configured. Writing those
+# names into a deny list as LITERALS does not fail at mount: it fails on the first
+# delegation, because tools.restrict()/guard() reject every name that is not a
+# registered tool (dsh-tools/lib/index.js:2895-2910, "names unknown global tool").
+# A machine without those servers — any freshly installed preset — would then be
+# unable to create that lane at all. This machine cannot reproduce that failure: it
 # happens to have all four servers, which is exactly why this gate SIMULATES the
-# other machine instead of asking the live one.
+# other machine instead of asking the live one. That axis is still live and is kept.
+#
+# WHY THE `unsupported` MACHINE EXISTS (the fail-closed leg). The host axis used to
+# be about picking a lane FORM. It is now a single switch, and the switch reads the
+# VERSION: LANE_FORM_SUPPORTED_EXPR resolves dsh-tool-subagent, walks up to its
+# package.json and returns TRUE when that version is not the supported one. The old
+# structural test (`/persona:/` in the Config literal) survives only as the fallback
+# for the case where no version can be read at all.
+#
+# The `unsupported` machine below is therefore a stub that differs from the supported
+# host in ONE respect — its version — and is deliberately IDENTICAL to it in shape
+# (same Config keys, agentPreset + allowedAgentPresets, NO `persona:`). If the stub
+# declared `persona:`, the fallback would disable it and this check would pass while
+# proving nothing about version discrimination. On an unsupported host every lane row,
+# every lane preset row and the fork row must be `disabled` — the bundle mounts ZERO
+# lanes rather than nine un-narrowed ones. That is the direction that matters: a host
+# we cannot narrow is a host we must not populate.
 #
 # It parses the generated artifact with the host's own patch parser (so the `!!js`
 # dialect and the indentation are the ones the Loader reads), then evaluates each
-# lane's deny value with the Loader's own evaluator twice: once on a machine with
-# no MCP server, once on this one (four servers + a loaderName override + an eager
-# server). Four things are asserted, and every one of them was seen firing while
-# this check was written: the stale installed artifact tripped "deny is not an
-# expression"; putting the literal mcp_* names back tripped "the empty machine
-# names a tool it does not have"; deleting the closure from the generator tripped
-# "the MCP machine lost mcp_playwright"; dropping the mode check tripped "names
-# the loader of an eager server, which the startup probe disposes".
+# lane's gate deny with the Loader's own evaluator on two simulated machines: one
+# with no MCP server, one with this machine's four servers plus a loaderName
+# override and an eager server. Every assertion below was seen firing while this
+# check was rewritten; the mutation recorded in the T2 evidence file is one of them.
+#
 # The artifact this check reads is the one the generator writes (check 4 proves it
 # is in sync); `DENY_JSON` was resolved at the top because check 9 reads the same
 # artifact for the bridge switch. The INSTALLED bundle is a separate copy of this tree, and a copy can
@@ -1050,52 +1189,80 @@ INSTALLED_JSON="${VERIFY_INSTALLED_JSON:-$BUNDLE_LINK/cordis.patch.yml}"
 if [ ! -f "$DENY_JSON" ]; then
   bad "check 13  no artifact to evaluate at $DENY_JSON — nothing was evaluated"
 else
-  # The "old host" base: a directory that exists but carries no node_modules, so
-  # resolving @deepseek-ai/dsh-tool-schedule from it fails — the shape of a
-  # 0.2.0-rc.2 install. Made fresh so the check never depends on a leftover path.
-  mkdir -p "$TMP/deny-empty/node_modules/@quill507"
-  # The LEGACY branch READS THE PERSONA FILE when a lane config is evaluated
-  # (`persona: !!js readFileSync(...personas/<lane>.md)`). So every host that may land on
-  # the legacy branch must be able to resolve THIS bundle by package name; otherwise the
-  # evaluation throws MODULE_NOT_FOUND and the lane looks like "no toolFilter", which is
-  # a false negative in exactly the direction this check exists to catch.
-  # What `deny-empty` must LACK is the schedule package -- nothing else.
-  ln -s "$REPO_ROOT" "$TMP/deny-empty/node_modules/@quill507/dsh-orchestrator-preset" 2>/dev/null || true
-  # A LEGACY host stub: only the one file the gate reads (the `Config` literal). It
-  # declares persona:, so the gate reads TRUE and the lane rows materialise their
-  # toolFilter key -- the shape this check polices (see the `legacy` machine below).
-  mkdir -p "$TMP/legacy-host/node_modules/@deepseek-ai/dsh-tool-subagent/lib"
-  cat > "$TMP/legacy-host/node_modules/@deepseek-ai/dsh-tool-subagent/package.json" <<'STUBPKG'
-{ "name": "@deepseek-ai/dsh-tool-subagent", "version": "0.0.0-stub", "main": "lib/index.js" }
+  # An UNSUPPORTED host stub. It must be unsupported by VERSION, not merely by shape:
+  # alpha.3 / alpha.4 / alpha.5 are structurally identical to the supported host and
+  # differ only in the version string, so a shape-only stub would test the wrong fact.
+  # ⛔ It must be structurally IDENTICAL to the supported host (no persona:), so that
+  # the VERSION is the only thing that can make it unsupported. If this stub declared
+  # persona:, a shape-only probe would still disable it and the gate would look correct
+  # while being unable to distinguish alpha.3/4/5 from the supported release.
+  # WARNING: this mkdir must exist. Without it the two cat-redirects below fail, the
+  # stub never appears, createRequire(...).resolve() throws on the stub machine, and
+  # every row reads as fail-closed disabled — so the leg would pass 19/19 for the
+  # WRONG reason (measured: it did exactly that before this line was restored).
+  mkdir -p "$TMP/unsupported-host/node_modules/@deepseek-ai/dsh-tool-subagent/lib"
+  cat > "$TMP/unsupported-host/node_modules/@deepseek-ai/dsh-tool-subagent/package.json" <<'STUBPKG'
+{ "name": "@deepseek-ai/dsh-tool-subagent", "version": "0.2.1-alpha.5", "main": "lib/index.js" }
 STUBPKG
-  cat > "$TMP/legacy-host/node_modules/@deepseek-ai/dsh-tool-subagent/lib/index.js" <<'STUBJS'
+  cat > "$TMP/unsupported-host/node_modules/@deepseek-ai/dsh-tool-subagent/lib/index.js" <<'STUBJS'
 const Config = z.object({
-	persona: z.string(),
-	toolFilter: z.any()
+	provider: z.string(),
+	agentPreset: z.string(),
+	allowedAgentPresets: z.array(z.string())
 });
 STUBJS
-  # The LEGACY branch also READS THE PERSONA FILE at evaluation time (that is what the
-  # old form did: `persona: !!js readFileSync(...personas/<lane>.md)`). So the stub host
-  # must be able to resolve the bundle by package name, or evaluating a lane config on
-  # it throws MODULE_NOT_FOUND and every lane looks like "no toolFilter" -- which is
-  # exactly the false negative this machine exists to prevent. Link the bundle root in.
-  mkdir -p "$TMP/legacy-host/node_modules/@quill507"
-  ln -s "$REPO_ROOT" "$TMP/legacy-host/node_modules/@quill507/dsh-orchestrator-preset" 2>/dev/null     || cp -r "$REPO_ROOT/personas" "$TMP/legacy-host/personas"
-  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" DSH_PKG_ROOT="$DSH_PKG_ROOT" DENY_EMPTY_BASE="$TMP/deny-empty" LEGACY_HOST_BASE="$TMP/legacy-host" node --input-type=module -e '
+  mkdir -p "$TMP/unsupported-host/node_modules/@quill507"
+  ln -s "$REPO_ROOT" "$TMP/unsupported-host/node_modules/@quill507/dsh-orchestrator-preset" 2>/dev/null || cp -r "$REPO_ROOT/personas" "$TMP/unsupported-host/personas"
+  # Guard against a vacuous pass: if the stub is not really there, the probe fails closed
+  # on every row and the leg reports 19/19 disabled for the wrong reason. Refuse that.
+  if [ ! -f "$TMP/unsupported-host/node_modules/@deepseek-ai/dsh-tool-subagent/package.json" ]; then
+    bad "check 13  the unsupported-host stub was not created — the fail-closed leg would pass vacuously (every row reads as disabled because resolution throws)"
+  fi
+  # The expected lane roster, derived from the DECLARATION (not a literal copy).
+  # Two sets: the `tool-subagent-*` rows, and the `preset-orch-lane-*` rows that carry
+  # each lane's gate. Deriving both here is what makes the coverage assertion below
+  # exact without introducing a second hardcoded roster that could drift from the
+  # declaration it is supposed to police.
+  EXPECTED_LANE_IDS="$( cd -- "$REPO_ROOT" && node --input-type=module -e '
+    const d = await import("./tools/preset-declaration.mjs")
+    process.stdout.write(d.LANES.map((l) => "tool-subagent-" + l.tool.replace(/^subagent_/, "").replace(/_/g, "-")).join(" "))
+  ' 2>/dev/null )"
+  EXPECTED_PRESET_IDS="$( cd -- "$REPO_ROOT" && node --input-type=module -e '
+    const d = await import("./tools/preset-declaration.mjs")
+    process.stdout.write(d.lanePresetRows.map((r) => r.id).join(" "))
+  ' 2>/dev/null )"
+  if [ -z "$EXPECTED_LANE_IDS" ] || [ -z "$EXPECTED_PRESET_IDS" ]; then
+    bad "check 13  the lane roster could not be derived from the declaration — the coverage assertion would be vacuous"
+  fi
+  # Per-lane required deny names, derived from the DECLARATION. Keyed by preset row id,
+  # so it lines up with the gate rows the probe reads. This is what lets the shell gate
+  # assert the BOUNDARY (the right names are denied), not merely portability (the names
+  # that are denied exist).
+  REQUIRED_DENY_JSON="$( cd -- "$REPO_ROOT" && node --input-type=module -e '
+    const d = await import("./tools/preset-declaration.mjs")
+    const out = {}
+    for (const lane of d.LANES) out["preset-" + lane.presetId] = lane.deny ?? []
+    process.stdout.write(JSON.stringify(out))
+  ' 2>/dev/null )"
+  if [ -z "$REQUIRED_DENY_JSON" ]; then
+    bad "check 13  the per-lane deny expectation could not be derived from the declaration — the boundary assertion would be vacuous"
+  fi
+  ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" DSH_PKG_ROOT="$DSH_PKG_ROOT" UNSUPPORTED_HOST_BASE="$TMP/unsupported-host" EXPECTED_LANE_IDS="$EXPECTED_LANE_IDS" EXPECTED_PRESET_IDS="$EXPECTED_PRESET_IDS" REQUIRED_DENY_JSON="$REQUIRED_DENY_JSON" node --input-type=module -e '
 import { loadOverlayPatches } from "@deepseek-ai/dsh-app-boot"
 
-// Names every machine has because rows this preset itself mounts register them.
-// ⚠️ `schedule_*` are in this list only in the CONDITIONAL sense, and the third
-// machine below is what keeps that honest: the four names are named by a row this
-// preset mounts (tool-schedule), and the deny tail that adds them is gated on the
-// SAME fact that gates that row (can `@deepseek-ai/dsh-tool-schedule` be resolved
-// from this host). Host 0.2.0-rc.2 — npm `latest`, and the runtime the Desktop app
-// bundles — does not ship that package at all, so on such a host neither the row
-// nor the four deny names may appear; that is asserted, not assumed.
+// Names every SUPPORTED machine has because rows this preset itself mounts register
+// them, or because the one supported host ships them. Since the supported set is the
+// single version 0.2.1-rc.2, and that version depends on @deepseek-ai/dsh-tool-schedule,
+// the four schedule_* names are UNCONDITIONAL: they are in the static deny lists and
+// in every gate deny. (They used to be a version-conditional tail; that was retired.)
 const SCHEDULE_NAMES = ["schedule_create", "schedule_delete", "schedule_list", "schedule_update"]
+// The three lane-addressing names this bundle registers into the Lead own scope, so
+// every lane inherits them. No lane may address a sibling: they must be denied on
+// EVERY lane, including the reader (whose allow-list narrowing no longer exists).
+const ADDRESSING_NAMES = ["subagent_children", "subagent_send", "subagent_interrupt"]
 const PORTABLE = ["write", "edit", "todo_write", "ask_user_question", "exit_plan_mode",
   "send_message", "interrupt_agent", "list_agents",
-  "subagent_children", "subagent_send", "subagent_interrupt", "subagent_fork",
+  ...ADDRESSING_NAMES, "subagent_fork",
   "subagent_scout", "subagent_archivist", "subagent_seer", "subagent_reader",
   "subagent_analyst", "subagent_auditor", "subagent_wright", "subagent_forge", "subagent_planner",
   ...SCHEDULE_NAMES]
@@ -1109,30 +1276,18 @@ const MCP_ROW = { disabled: false, options: { id: "mcp-loader", name: "dsh-mcp-l
   singleToolThreshold: 0, servers: { playwright: {}, jlceda: { mode: "lazy" }, "cloudflare-browser": {},
     "desktop-touch": {}, "eager-one": { mode: "eager" }, renamed: { loaderName: "custom_loader" } } } } }
 const EXPECTED_MCP = ["mcp_playwright", "mcp_jlceda", "mcp_cloudflare-browser", "mcp_desktop-touch", "custom_loader"]
-// The third axis: whether this HOST ships @deepseek-ai/dsh-tool-schedule. It is a
-// property of the host, not of the user config, so it is a third machine rather
-// than a third server in MCP_ROW. `baseUrl` is the Loader entry context base the
-// real `!!js` expressions see (cordis-plugin-loader: `Entry.ctx = loader.ctx.extend({ baseUrl })`).
-// The "old" host points at a directory that exists but has no node_modules, which
-// is exactly the shape of a 0.2.0-rc.2 install: resolution fails.
-const HOST_WITH_SCHEDULE = { baseUrl: process.env.DSH_PKG_ROOT + "/package.json" }
-const HOST_WITHOUT_SCHEDULE = { baseUrl: process.env.DENY_EMPTY_BASE + "/package.json" }
-// A FOURTH axis, added with the alpha.3 migration: the SHAPE of the host. Lane rows
-// now build their config key set at mount time, and on a new host (alpha.3+) that set
-// has NO toolFilter AT ALL -- the narrowing moved into each lane own Agent Preset. So
-// the deny lists this check exists to police are only visible on a LEGACY host. The
-// three machines above are all new hosts; without a legacy one the scan finds one
-// deny row (the fork control row, whose toolFilter is still a plain key) and reports
-// DENY_LANES=1, which is the shape of the artifact changing, not the boundary holding.
-// `legacy` points at a stub whose dsh-tool-subagent Config DOES declare persona:, so
-// the gate reads true -- the same trick patch-contract.test.mjs uses, for the same
-// reason: the reading must not depend on which dsh is installed on this machine.
-const LEGACY_STUB = process.env.LEGACY_HOST_BASE + "/package.json"
+
+// `baseUrl` is the Loader entry context base the real `!!js` expressions see
+// (cordis-plugin-loader: `Entry.ctx = loader.ctx.extend({ baseUrl })`).
+const HOST_SUPPORTED = { baseUrl: process.env.DSH_PKG_ROOT + "/package.json" }
+// The unsupported host points at the `persona:`-declaring stub, so the gate reads
+// TRUE there -- the same trick patch-contract.test.mjs uses, for the same reason:
+// the reading must not depend on which dsh is installed on this machine.
+const UNSUPPORTED_STUB = process.env.UNSUPPORTED_HOST_BASE + "/package.json"
 const machines = {
-  none: { ...HOST_WITH_SCHEDULE, get: () => undefined, loader: { entries: () => [] } },
-  mcp: { ...HOST_WITH_SCHEDULE, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
-  oldhost: { ...HOST_WITHOUT_SCHEDULE, get: () => undefined, loader: { entries: () => [] } },
-  legacy: { baseUrl: LEGACY_STUB, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
+  none: { ...HOST_SUPPORTED, get: () => undefined, loader: { entries: () => [] } },
+  mcp: { ...HOST_SUPPORTED, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
+  unsupported: { baseUrl: UNSUPPORTED_STUB, get: () => undefined, loader: { entries: () => [MCP_ROW] } },
 }
 
 const patches = loadOverlayPatches("verify-install", process.env.ARTIFACT)
@@ -1147,126 +1302,267 @@ walk(patches)
 
 // The evaluator the Loader itself uses (cordis-plugin-loader lib/index.js).
 const evaluate = new Function("ctx", "expr", "with (ctx) { return eval(expr) }")
+// A `!!js` value is parsed into a { __jsExpr } node. Evaluate it; a plain value is
+// returned as-is (so a literal array, if one ever came back, is still readable).
+const valueOn = (node, machineKey) => {
+  if (node === undefined || node === null) return undefined
+  if (typeof node === "object" && typeof node.__jsExpr === "string") {
+    return evaluate(machines[machineKey], node.__jsExpr)
+  }
+  return node
+}
 
-const lanes = rows.filter((r) => typeof r.id === "string" && r.id.startsWith("tool-subagent-"))
+// A LANE row is a tool-subagent row that declares maxDepth. The delegation group also
+// holds tool-subagent-control and tool-subagent-list-agents, which are NOT lanes (no
+// config at all) -- an id-prefix match would sweep them in and then demand a gate that
+// was never supposed to exist. Derive the set from the artifact shape instead.
+const laneRows = rows.filter((r) => typeof r.id === "string" && r.id.startsWith("tool-subagent-")
+  && r.config && r.config.maxDepth !== undefined)
+const presetRows = rows.filter((r) => typeof r.id === "string" && r.id.startsWith("preset-orch-lane-"))
+const FORK_CONTROL_ID = "tool-subagent-fork"
+console.log("LANES=" + laneRows.length + " PRESET_ROWS=" + presetRows.length)
 
-// 0.2.1-alpha.3: a lane toolFilter is now ONE !!js expression yielding the filter
-// object. It has to be host gated, because alpha.3 rejects the key outright on new
-// hosts. Before that it was a nested mapping, toolFilter.deny. Both shapes are read
-// here so this check keeps working across the support matrix.
-// A lane matches when it declares either path. The fork control row still matches
-// through the legacy nested path.
-// A lane row config comes in TWO shapes since the alpha.3 migration:
-//   * the whole config is ONE JS expression that builds its key set at mount time
-//     (lane rows) -- toolFilter is a KEY OF THE RESULT, present only on a legacy
-//     host and ABSENT (not undefined-valued) on alpha.3+;
-//   * a plain mapping with a nested toolFilter (the fork control row).
-// Read both. The earlier form only knew the second, so when lane rows moved to the
-// first this check silently stopped seeing 8 of the 9 deny lanes (LANES=12
-// DENY_LANES=1) and then failed on the shape change rather than on the boundary.
-const configOf = (lane, machineKey) => {
-  const cfg = lane.config || {}
-  if (typeof cfg.__jsExpr === "string") {
-    const value = evaluate(machines[machineKey], cfg.__jsExpr)
-    return value === undefined || value === null ? {} : value
-  }
-  return cfg
-}
-const filterOf = (lane, machineKey) => {
-  const tf = configOf(lane, machineKey).toolFilter
-  if (tf === undefined || tf === null) return undefined
-  if (typeof tf.__jsExpr === "string") {
-    // Expression shape: evaluate it. An undefined result means this key does not apply
-    // to this host, which is exactly the fork row schedule gate, so it is not an error.
-    const value = evaluate(machines[machineKey], tf.__jsExpr)
-    return value === undefined ? undefined : value
-  }
-  return tf
-}
-// A filter member (allow / deny) may itself be an expression node: the fork control row
-// carries a nested toolFilter whose deny IS a !!js expression for the schedule tail.
-// Evaluate it the same way, so both shapes report a plain string[].
-const memberOf = (filter, key, machineKey) => {
-  if (filter === undefined) return undefined
-  const raw = filter[key]
-  if (raw === undefined) return undefined
-  if (typeof raw === "object" && raw !== null && typeof raw.__jsExpr === "string") {
-    return evaluate(machines[machineKey], raw.__jsExpr)
-  }
-  return raw
-}
-// Count a row as a deny/allow row when ANY machine yields that member. The lane rows
-// are deny on the legacy machine and carry no toolFilter at all on alpha.3+ (where the
-// narrowing lives in that lane Agent Preset instead), so the legacy machine is what
-// identifies them here — the same "counted on the machine where the key applies" rule
-// the previous version applied to the expression-valued single key.
-const filterOnAnyMachine = (r, member) => Object.keys(machines).some((k) => {
-  let v
-  try { v = filterOf(r, k) } catch { return false }
-  return v !== undefined && v[member] !== undefined
-})
-const denyLanes = lanes.filter((r) => filterOnAnyMachine(r, "deny"))
-const allowLanes = lanes.filter((r) => filterOnAnyMachine(r, "allow"))
-console.log("LANES=" + lanes.length + " DENY_LANES=" + denyLanes.length + " ALLOW_LANES=" + allowLanes.length)
 let bad = 0
-for (const lane of denyLanes) {
-  const fail = (why) => { console.log("BAD " + lane.id + " " + why); bad += 1 }
-  const out = {}
-  for (const key of Object.keys(machines)) {
-    let v
-    try { v = filterOf(lane, key) }
-    catch (e) { fail("evaluating on the " + key + " machine threw: " + (e && e.message)); continue }
-    out[key] = memberOf(v, "deny", key)
-    if (out[key] !== undefined && (!Array.isArray(out[key]) || out[key].some((n) => typeof n !== "string"))) {
-      fail("the " + key + " machine produced " + typeof out[key] + ", not a string[]")
-      out[key] = undefined
-    }
-  }
-  if (out.none === undefined || out.mcp === undefined || out.oldhost === undefined) continue
-  for (const name of out.none) {
-    if (!portable.has(name)) fail("on a machine with no MCP server the deny list names " + name + ", which no machine is guaranteed to register")
-  }
-  // The MCP legs apply to every deny row EXCEPT the fork control row, which by design
-  // carries only the schedule tail (a forked child is a generic fork: narrowing its
-  // other tools would be a behaviour change outside the 2026-10-10 decision). The
-  // exception is named by id rather than inferred from the value — inferring it would
-  // make "this lane silently lost the MCP closure" look like "this is the fork row",
-  // which is exactly the regression these legs exist to catch.
-  const FORK_CONTROL_ID = "tool-subagent-fork"
-  if (lane.id === FORK_CONTROL_ID) {
-    if (out.mcp.some((n) => EXPECTED_MCP.includes(n))) {
-      fail("the fork control row carries MCP names — it is meant to carry ONLY the schedule tail (its tool surface is not narrowed beyond reminders)")
-    }
-  } else {
-    for (const name of EXPECTED_MCP) {
-      if (!out.mcp.includes(name)) fail("with MCP servers configured the deny list lost " + name + " (the boundary must survive where the tool exists)")
-    }
-    if (out.mcp.includes("mcp_eager-one")) fail("the deny list names the loader of an eager server, which the startup probe disposes")
-  }
-  // At least one axis must move the value. For the lanes that is the MCP axis; for the
-  // fork row it is the host axis. A value that moves on neither is a static list
-  // wearing a `!!js` costume, and a static list is what this whole check rejects.
-  if (out.none.join(",") === out.mcp.join(",") && out.none.join(",") === out.oldhost.join(",")) {
-    fail("the deny value is identical on all three simulated machines — it is not computed per machine")
-  }
-  // The host axis. Both directions matter, and each one alone is a real defect:
-  //   * dropping the names on a host that HAS the package would silently widen
-  //     every lane (the boundary the user asked for would be gone);
-  //   * keeping them on a host that lacks it would throw `names unknown global
-  //     tool` at the first delegation — which is every lane, on npm `latest`.
-  for (const name of SCHEDULE_NAMES) {
-    if (!out.none.includes(name)) fail("on a host that ships dsh-tool-schedule the deny list lost " + name + " — every lane would silently gain reminder tools (user decision: Lead only)")
-    if (out.oldhost.includes(name)) fail("on a host WITHOUT dsh-tool-schedule the deny list still names " + name + " — restrict() throws `names unknown global tool`, so every lane delegation on 0.2.0-rc.2 would fail")
-  }
-  if (out.oldhost.join(",") !== out.none.filter((n) => !SCHEDULE_NAMES.includes(n)).join(",")) {
-    fail("the old-host deny list differs from the no-MCP list by something other than the schedule names: " + JSON.stringify(out.oldhost) + " vs " + JSON.stringify(out.none))
-  }
-  console.log("OK " + lane.id + " static=" + out.none.length + " mcp=" + out.mcp.length
-    + " oldhost=" + out.oldhost.length
-    + " added=" + out.mcp.filter((n) => !portable.has(n)).join("|"))
+const fail = (msg) => { console.log("BAD " + msg); bad++ }
+
+// ── leg 1: every lane preset row carries a lane-gate whose deny is a real list ──
+// The subject is the preset row, so a preset that lost its gate, or whose gate deny
+// stopped being an expression, is caught here rather than looking like "no lane".
+const gateDenyOf = (presetRow) => {
+  const plugins = presetRow.config && presetRow.config.plugins
+  if (!Array.isArray(plugins)) return undefined
+  const gate = plugins.find((p) => p && p.id === "lane-gate")
+  return gate && gate.config ? gate.config.deny : undefined
 }
+const denyLanes = []
+for (const preset of presetRows) {
+  const raw = gateDenyOf(preset)
+  if (raw === undefined) { fail(preset.id + " has no lane-gate.config.deny -- that lane is not narrowed at all"); continue }
+  if (!(typeof raw === "object" && raw !== null && typeof raw.__jsExpr === "string")) {
+    fail(preset.id + " lane-gate.config.deny is not a !!js expression -- the MCP closure cannot ride a literal list"); continue
+  }
+  const none = valueOn(raw, "none")
+  const mcp = valueOn(raw, "mcp")
+  if (!Array.isArray(none) || !Array.isArray(mcp)) {
+    fail(preset.id + " lane-gate deny did not evaluate to an array on a simulated machine"); continue
+  }
+  denyLanes.push({ id: preset.id, none, mcp })
+  // The ruling: Lead only, every lane denies all four. Unconditional now.
+  for (const name of SCHEDULE_NAMES) {
+    if (!none.includes(name)) fail(preset.id + " gate deny lost " + name + " -- every lane would silently gain reminder tools (user decision: Lead only)")
+  }
+  // No lane may address a sibling, including the reader (its allow-list is gone).
+  for (const name of ADDRESSING_NAMES) {
+    if (!none.includes(name)) fail(preset.id + " gate deny lost " + name + " -- that lane could address a sibling lane (permission escalation)")
+  }
+  // Machine portability: on a machine with no MCP server the deny list must name no
+  // mcp_* loader; on this machine it must name them (the boundary survives where the
+  // tool exists). The value must MOVE between the two -- a static list is what this
+  // whole check rejects.
+  if (none.some((n) => String(n).startsWith("mcp_"))) {
+    fail(preset.id + " gate deny names an mcp_* loader on a machine that has no MCP server -- guard() would reject an unknown name")
+  }
+  for (const name of EXPECTED_MCP) {
+    if (!mcp.includes(name)) fail(preset.id + " gate deny lost " + name + " with MCP servers configured (the boundary must survive where the tool exists)")
+  }
+  if (mcp.includes("mcp_eager-one")) fail(preset.id + " gate deny names the loader of an eager server, which the startup probe disposes")
+  if (none.join(",") === mcp.join(",")) {
+    fail(preset.id + " gate deny is identical on the no-MCP and MCP machines -- it is a static list wearing a !!js costume")
+  }
+  for (const name of none) {
+    if (!portable.has(name)) fail(preset.id + " gate deny names " + name + ", which is neither a static name nor a machine-derived one")
+  }
+  const added = mcp.filter((n) => !portable.has(n))
+  console.log("OK " + preset.id + " static=" + none.length + " mcp=" + mcp.length + " added=" + added.join("|"))
+}
+
+  // ── the BOUNDARY, not just portability ──────────────────────────────────────
+  // The checks above ask "does every name in the deny list exist on this machine"
+  // (portability) and "are the four reminder names and three addressing names
+  // there". Neither asks "is the WRITE SURFACE still denied" — so stripping
+  // write/edit from a lane list left this whole gate green (audit finding 5).
+  //
+  // ⛔ The expected membership is a LITERAL table here, NOT read from the
+  //    declaration. Deriving it from the declaration would make the assertion
+  //    x === x: a mutated declaration produces a mutated artifact and the two
+  //    agree while the boundary is gone. That is the exact failure this leg exists
+  //    to catch, so the expectation must come from the DESIGN
+  //    (docs/DESIGN.md 3.3.4 "final deny / allow lists", plus the two later
+  //    rulings: 3 lane-addressing names, 4 schedule_* names).
+  //
+  // Which lane gets which list is read off the artifact by lane id, because the
+  // roster-to-list assignment is a declaration fact; what each list MUST CONTAIN
+  // is a design fact. Only the second is asserted here.
+  const DISPATCH_ALL = ["subagent_scout", "subagent_archivist", "subagent_seer", "subagent_reader",
+    "subagent_analyst", "subagent_auditor", "subagent_wright", "subagent_forge", "subagent_planner"]
+  const DESIGN_DENY = {
+    readonly: ["write", "edit", "todo_write", "ask_user_question", "exit_plan_mode",
+      "send_message", "interrupt_agent", "list_agents",
+      ...ADDRESSING_NAMES, "subagent_fork", ...DISPATCH_ALL, ...SCHEDULE_NAMES],
+    wright: ["ask_user_question", "exit_plan_mode", "send_message", "interrupt_agent", "list_agents",
+      ...ADDRESSING_NAMES, "subagent_fork", ...DISPATCH_ALL, ...SCHEDULE_NAMES],
+    forge: ["ask_user_question", "exit_plan_mode", "interrupt_agent",
+      ...ADDRESSING_NAMES, "subagent_fork",
+      "subagent_reader", "subagent_analyst", "subagent_auditor",
+      "subagent_wright", "subagent_forge", "subagent_planner", ...SCHEDULE_NAMES],
+  }
+  // reader is an allow-list lane: it denies only the addressing names, so it is
+  // asserted against that narrower expectation rather than the readonly list.
+  const READER_PRESET_ID = "preset-orch-lane-reader"
+  for (const lane of denyLanes) {
+    const isReader = lane.id === READER_PRESET_ID
+    const isForge = lane.id === "preset-orch-lane-forge"
+    const isWright = lane.id === "preset-orch-lane-wright"
+    let design
+    if (isReader) design = [...ADDRESSING_NAMES, ...SCHEDULE_NAMES]
+    else if (isForge) design = DESIGN_DENY.forge
+    else if (isWright) design = DESIGN_DENY.wright
+    else design = DESIGN_DENY.readonly
+    for (const name of design) {
+      if (!lane.none.includes(name)) {
+        fail(lane.id + " gate deny is missing " + name + " -- the design says this lane must not have it, so that capability was silently granted")
+      }
+    }
+    // The write surface is the one that matters most: assert it separately so the
+    // message names the escalation rather than burying it in a loop.
+    if (!isReader && !isWright && !isForge) {
+      for (const name of ["write", "edit"]) {
+        if (!lane.none.includes(name)) {
+          fail(lane.id + " gate deny is missing " + name + " -- READ-ONLY LANE GAINED THE WRITE SURFACE (permission escalation)")
+        }
+      }
+    }
+  }
+// The non-fork lane rows: every tool-subagent row that is a lane (the fork control row
+// is excluded by id, because it is the one row that is not a named lane).
+const nonForkLaneRows = laneRows.filter((r) => r.id !== FORK_CONTROL_ID)
+// ── lane coverage: the gated set must EQUAL the declared set, by id ────────────
+// A count floor (`>= 8`) let a lane vanish while every gate stayed green: drop one
+// preset row and you get 8 gated lanes, which still satisfies "at least 8". So the
+// assertion is set equality against the roster derived from the declaration, and the
+// failure prints the symmetric difference by NAME. A count cannot tell you which lane
+// is missing; the ids can.
+//
+// ⚠️ Vacuous-pass guard: if the artifact yields no preset rows at all, that is the
+// shape of a broken artifact, not of a clean one — it gets its own message rather
+// than sliding through set equality with an empty expectation.
+// ⛔ THE DESIGN ROSTER, AS A LITERAL. Everything else in this block is derived (from the
+// declaration, from the artifact), and derived-on-both-sides comparisons are
+// self-fulfilling: remove a lane from `LANES`, regenerate, and the expected set and the
+// artifact both shrink together, so the sets still match and every gate stays green. The
+// literal below is the one thing that does NOT move when the lane list is edited, so it is
+// what makes "a lane disappeared" observable. It is the capability set DESIGN §3.3.3 names.
+const ROSTER_LANES = ["scout", "archivist", "seer", "reader", "analyst", "auditor", "wright", "forge", "planner"]
+const ROSTER_LANE_IDS = ROSTER_LANES.map((l) => "tool-subagent-" + l).sort()
+const ROSTER_PRESET_IDS = ROSTER_LANES.map((l) => "preset-orch-lane-" + l).sort()
+if (ROSTER_LANE_IDS.length !== 9) {
+  fail("the literal lane roster is not 9 entries — the roster itself is wrong, so every coverage assertion below is meaningless")
+}
+// A reporting helper: symmetric difference, by id, both directions.
+const setReport = (label, want, got) => {
+  const missing = want.filter((id) => !got.includes(id))
+  const unexpected = got.filter((id) => !want.includes(id))
+  if (missing.length || unexpected.length) {
+    fail(label + " does not match the literal 9-lane roster -- missing: [" + missing.join(", ") + "] unexpected: [" + unexpected.join(", ") + "]")
+  }
+}
+const expectedLanes = (process.env.EXPECTED_LANE_IDS || "").split(/\s+/).filter(Boolean)
+const expectedPresets = (process.env.EXPECTED_PRESET_IDS || "").split(/\s+/).filter(Boolean)
+if (expectedLanes.length === 0 || expectedPresets.length === 0) {
+  fail("the expected lane roster is empty — the declaration could not be read, so coverage cannot be asserted (an empty expectation is not a clean artifact)")
+} else {
+  const actualLaneIds = nonForkLaneRows.map((r) => r.id)
+  const actualPresetIds = presetRows.map((r) => r.id)
+  if (actualLaneIds.length === 0) {
+    fail("the artifact yielded ZERO lane rows — a preset with no lanes is a broken artifact, not a clean one")
+  }
+  if (actualPresetIds.length === 0) {
+    fail("the artifact yielded ZERO lane preset rows — that is a broken artifact, not a clean one")
+  }
+  const diff = (want, got) => ({
+    missing: want.filter((id) => !got.includes(id)),
+    unexpected: got.filter((id) => !want.includes(id)),
+  })
+  // ── the LITERAL roster, asserted against BOTH the declaration and the artifact ──
+  // This is the assertion that catches a lane removed from the DECLARATION. The two
+  // comparisons below (declaration vs artifact) are derived on both sides and therefore
+  // cannot see it: remove a lane from LANES, regenerate, and both sides shrink together.
+  setReport("the declaration lane roster", ROSTER_LANE_IDS, expectedLanes.slice().sort())
+  setReport("the declaration preset roster", ROSTER_PRESET_IDS, expectedPresets.slice().sort())
+  setReport("the artifact lane rows", ROSTER_LANE_IDS, actualLaneIds.slice().sort())
+  setReport("the artifact lane preset rows", ROSTER_PRESET_IDS, actualPresetIds.slice().sort())
+  const laneDiff = diff(expectedLanes, actualLaneIds)
+  const presetDiff = diff(expectedPresets, actualPresetIds)
+  if (laneDiff.missing.length || laneDiff.unexpected.length) {
+    fail("lane rows do not match the declaration — missing: [" + laneDiff.missing.join(", ") + "] unexpected: [" + laneDiff.unexpected.join(", ") + "]")
+  }
+  if (presetDiff.missing.length || presetDiff.unexpected.length) {
+    fail("lane preset rows do not match the declaration — missing: [" + presetDiff.missing.join(", ") + "] unexpected: [" + presetDiff.unexpected.join(", ") + "]")
+  }
+  // Every expected lane must also have been seen carrying a gate in leg 1, or the
+  // row exists but is un-narrowed.
+  const gatedIds = denyLanes.map((l) => l.id)
+  const ungated = expectedPresets.filter((id) => !gatedIds.includes(id))
+  if (ungated.length) {
+    fail("these lane presets exist but carry no usable gate: [" + ungated.join(", ") + "]")
+  }
+  console.log("LANESET expected=" + expectedLanes.length + " actual=" + actualLaneIds.length + " presets=" + actualPresetIds.length + " gated=" + gatedIds.length)
+}
+// ── leg 2: the fork control row is contract-neutral, gated, and dangles nowhere ──
+// It used to be asserted to carry ONLY a schedule tail; then, after T1, to carry no
+// filter at all. It now carries a host gate as well, so what is asserted is the
+// shape that makes it both safe AND fail-closed:
+//   * no `toolFilter` / no `persona` -- either key is hard-rejected by the host
+//     apply(), so its presence would stop the row activating at all;
+//   * no `agentPreset` / `allowedAgentPresets` -- the lane preset rows are disabled
+//     on an unsupported host, so a fork row naming one would dangle toward a preset
+//     that is not mounted;
+//   * it DOES carry `disabled` (the same expression as the lane rows). Without it,
+//     an unsupported host would keep the one row that can still delegate.
+const fork = rows.find((r) => r.id === FORK_CONTROL_ID)
+if (!fork) fail("no fork control row (" + FORK_CONTROL_ID + ") in the artifact")
+else {
+  const cfg = fork.config || {}
+  if (Object.hasOwn(cfg, "toolFilter")) fail("fork control row still carries toolFilter -- the host apply() hard-rejects that key, so the row cannot activate")
+  if (Object.hasOwn(cfg, "persona")) fail("fork control row still carries persona -- the host apply() hard-rejects that key, so the row cannot activate")
+  if (fork.disabled === undefined) fail("fork control row has NO host gate -- on an unsupported host it would stay mounted and keep subagent_fork available, so a Lead could delegate into a composition with no lane presets")
+  // Fail-closed coupling: the lane preset rows are disabled on an unsupported host, so
+  // a fork row naming one would point at a preset that is not mounted.
+  if (Object.hasOwn(cfg, "agentPreset")) fail("fork control row names an agentPreset -- the preset rows are disabled on an unsupported host, so that reference would dangle")
+  if (Object.hasOwn(cfg, "allowedAgentPresets")) fail("fork control row names allowedAgentPresets -- same dangle as agentPreset")
+}
+
+// ── leg 3: an UNSUPPORTED host mounts nothing ──────────────────────────────────
+// Fail closed. LANE_FORM_SUPPORTED_EXPR true = legacy host = not supported. Every
+// lane row, every preset row AND the fork control row must be disabled there.
+// The fork row is the one that used to stay open: with it enabled, a Lead on an
+// unsupported host could still delegate through subagent_fork into a composition
+// where every lane preset is dark. Zero rows that can delegate, not nine
+// un-narrowed lanes, is the property this leg protects.
+const forkRow = rows.find((r) => r.id === FORK_CONTROL_ID)
+const gatedRows = [...laneRows, ...presetRows, ...(forkRow ? [forkRow] : [])]
+if (!forkRow) fail("no fork control row (" + FORK_CONTROL_ID + ") to sweep -- it is the row that can still delegate")
+let unsupportedChecked = 0
+for (const row of gatedRows) {
+  const d = valueOn(row.disabled, "unsupported")
+  if (d !== true) fail(row.id + " is NOT disabled on an unsupported host (disabled evaluated to " + JSON.stringify(d) + ") -- that host would mount an un-narrowed lane, or keep a delegation door open")
+  else unsupportedChecked++
+}
+// And the same rows MUST be enabled on the supported host, or the fail-closed leg
+// above would pass trivially by disabling everything everywhere.
+let supportedChecked = 0
+for (const row of gatedRows) {
+  const d = valueOn(row.disabled, "none")
+  if (d !== false) fail(row.id + " is disabled on the SUPPORTED host (disabled evaluated to " + JSON.stringify(d) + ") -- every lane would vanish on the host this preset is for")
+  else supportedChecked++
+}
+if (unsupportedChecked === 0 || supportedChecked === 0) fail("the fail-closed leg checked no rows -- an empty sweep is not a verdict")
+if (unsupportedChecked !== gatedRows.length || supportedChecked !== gatedRows.length) {
+  fail("the fail-closed sweep did not cover every gated row (" + unsupportedChecked + "/" + supportedChecked + " of " + gatedRows.length + ")")
+}
+console.log("HOSTGATE unsupported_disabled=" + unsupportedChecked + " supported_enabled=" + supportedChecked + " of " + gatedRows.length + " gated rows (" + expectedLanes.length + " lanes + " + expectedPresets.length + " presets + 1 fork row)")
 console.log("BAD=" + bad)
-process.exit(bad === 0 && denyLanes.length >= 8 ? 0 : 1)
+process.exit(bad === 0 && denyLanes.length === expectedLanes.length ? 0 : 1)
 ' >"$TMP/deny13.txt" 2>"$TMP/deny13.err" )
   deny_rc=$?
   if [ ! -s "$TMP/deny13.txt" ]; then
@@ -1275,25 +1571,26 @@ process.exit(bad === 0 && denyLanes.length >= 8 ? 0 : 1)
   else
     d_deny_bad="$(sed -n '/^BAD /p' "$TMP/deny13.txt")"
     d_head="$(sed -n '/^LANES=/p' "$TMP/deny13.txt")"
-    # ⚠️ 取**第一个非空**的 `added=`：fork 控制行按设计不带 MCP 闭包，它的 `added=` 是空的，
-    #    而它在产物里排在 9 条 lane 之前 ⇒ 取第一行会拿到空串，把「本机 MCP 贡献了哪些名字」这句话弄没。
+    d_hostgate="$(sed -n '/^HOSTGATE /p' "$TMP/deny13.txt")"
+    d_laneset="$(sed -n 's/^LANESET //p' "$TMP/deny13.txt")"
+    # ⚠️ Take the FIRST non-empty `added=`: the leg prints one line per lane, and a
+    # lane whose gate is entirely static would print an empty `added=`. Skipping
+    # empties keeps "which names this machine contributed" meaningful.
     d_added="$(sed -n 's/^OK .* added=//p' "$TMP/deny13.txt" | grep -v '^$' | head -1)"
     if [ -n "$d_deny_bad" ]; then
-      bad "check 13  a lane deny list is not portable (it names tools a machine without those MCP servers would not have):"
+      bad "check 13  a lane's gate deny list is not portable, or an unsupported host would mount lanes:"
       printf '%s\n' "$d_deny_bad" | sed 's/^/      /'
     else
-      ok "check 13  every deny row is portable: static names + the machine MCP loaders + the host-gated schedule names ($d_head)"
+      ok "check 13  every lane is narrowed by its preset gate and every declared lane is present by id [$EXPECTED_LANE_IDS]: the four schedule_* names and the three lane-addressing names are denied, the MCP closure moves the list per machine, and an unsupported host mounts nothing ($d_laneset $d_hostgate)"
     fi
     if [ "$deny_rc" -ne 0 ] && [ -z "$d_deny_bad" ]; then
       bad "check 13  the probe exited $deny_rc without naming a bad lane — treat an unexplained non-zero as a failure"
     fi
-    # The reason, beside the verdict it explains: what the two simulated machines
-    # are, and which names the second one contributed. The residual the mechanism
-    # still has belongs here, where the next reader meets this check.
+    # The reason, beside the verdict it explains: what the simulated machines are,
+    # and which names the second one contributed. The residual the mechanism still
+    # has belongs here, where the next reader meets this check.
     note "check 13  simulated machine A has no MCP server; machine B has the four configured servers plus one eager and one loaderName override, contributing: $d_added"
-    # The third axis is a HOST property, not a user-config one, so it gets its own
-    # machine rather than another server in machine B.
-    note "check 13  simulated machine C is a host WITHOUT @deepseek-ai/dsh-tool-schedule (0.2.0-rc.2 — npm latest, and the Desktop app's bundled runtime): the four schedule_* names must be absent there, and present on A and B"
+    note "check 13  simulated machine C is an UNSUPPORTED host (dsh-tool-subagent version 0.2.1-alpha.5 — structurally identical to the supported host, only the version differs): every lane row, every preset row and the fork row must be disabled there — zero lanes mount rather than nine un-narrowed ones. $d_hostgate"
     note "check 13  residual: an auto-mode server with singleToolThreshold >= 1 that exposes <= that many tools is registered eagerly and loses its loader, so its computed name would not exist at dispatch time — set singleToolThreshold: 0 (or a runtime guard) to close that"
   fi
 fi

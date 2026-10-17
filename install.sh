@@ -7,8 +7,9 @@
 #   ./install.sh --check         # run the gates and report, change nothing
 #
 # What it does, in order:
-#   0. gate   — refuse to continue unless the host is >= 0.1.7-rc.1 (the install
-#               floor, not the supported set — see the note by MIN_HOST_VERSION)
+#   0. gate   — refuse to continue unless the host is exactly the one supported
+#               version, 0.2.1-rc.2 (the floor IS the supported set — see the note
+#               by MIN_HOST_VERSION)
 #   1. stage  — sync this repository's distributable set into $DSH_HOME/plugins/
 #               on every run, so the copy the host resolves is a projection of
 #               this repository rather than of the first install
@@ -29,13 +30,18 @@
 
 set -euo pipefail
 
-# The FLOOR for installing at all — deliberately looser than the supported set.
-# It is not a support claim: a host at or above this version installs, but the
-# versions this bundle is actually supported on are exactly three, and they are
-# declared in one place — README.md / README.zh.md, section "0. Host version gate".
-# Keeping the two apart is the point: raising this floor to the oldest supported
-# version would refuse to install on hosts that still work.
-MIN_HOST_VERSION="0.1.7-rc.1"
+# The FLOOR for installing at all. It used to be deliberately looser than the
+# supported set, on the reasoning that a host between the two still worked. That
+# reasoning no longer holds: the supported set is exactly ONE version (0.2.1-rc.2,
+# pinned in package.json's peerDependencies and declared in README.md /
+# README.zh.md, section "0. Host version gate"), and every alpha and earlier rc is
+# out of support. So the floor IS the supported version — a floor below it would
+# install this bundle onto a host that cannot run it.
+# `ver_cmp` below already orders prereleases correctly, so this floor refuses the
+# hosts it must: 0.2.0-rc.2 -> -1 (refuse), 0.2.1-alpha.5 -> -1 (refuse),
+# 0.2.1-rc.1 -> -1 (refuse), while 0.2.1-rc.2 -> 0 (install) and anything above
+# it installs too (a future host is not something this floor can adjudicate).
+MIN_HOST_VERSION="0.2.1-rc.2"
 BUNDLE_DIRNAME="dsh-orchestrator-preset-bundle"
 # The module KEY a profile resolves this bundle by. It is deliberately NOT derived
 # from BUNDLE_DIRNAME: the on-disk directory keeps the bundle-dirname, while the key
