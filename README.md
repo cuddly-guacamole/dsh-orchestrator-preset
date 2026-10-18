@@ -189,9 +189,7 @@ command produces from the committed declaration.
 ## Installation
 
 The install method is a **`link:`** dependency, and the package is **also published to npm**
-as `@quill507/dsh-orchestrator-preset` (this package is `0.2.0`; the newest **published**
-release is `0.1.9`, which is what `dist-tags.latest` points at — `0.2.0` is not on the
-registry yet).
+as `@quill507/dsh-orchestrator-preset`.
 `package.json` carries **no** `"private"` key. A profile projects the bundle under **the same
 name** the registry publishes it under, so a local projection and the published package are
 told apart by **where they point**, not by their names — see
@@ -735,13 +733,10 @@ will fail to resolve even though the file is on disk.
 
 ## Publishing to npm
 
-**This has been done.** The package is published as `@quill507/dsh-orchestrator-preset`;
-`npm view @quill507/dsh-orchestrator-preset dist-tags versions --json` reports
-`dist-tags.latest = 0.1.9` and nine published versions — `0.1.0` … `0.1.6`, then `0.1.8` and
-`0.1.9` (`0.1.7` was never published). **As of the last published release** the newest version
-on the registry is `0.1.9`; the `0.2.0` in this tree is not published yet, so `latest` will
-still resolve to `0.1.9` until it is. The runtime specifier is the npm name — the `@local/`
-alias is no longer used for this bundle.
+**This has been done.** The package is published as `@quill507/dsh-orchestrator-preset`.
+npm and the GitHub release page are the authority for which versions are out; this file keeps
+no copy of that fact, because a copy here goes stale on every release. The runtime specifier is
+the npm name — the `@local/` alias is no longer used for this bundle.
 
 - **The one line that owns every specifier** is `tools/preset-declaration.mjs:45`,
   `export const bundlePkg = '@quill507/dsh-orchestrator-preset'`. That single constant owns

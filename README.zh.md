@@ -120,7 +120,7 @@ node tools/gen-cordis-patch.mjs
 
 ## 安装
 
-安装方式是 **`link:` 依赖**，本包**同时也发布在 npm 上**（`@quill507/dsh-orchestrator-preset`；本树里这个包是 `0.2.0`，而**最新已发布**的版本是 `0.1.9`，也就是 `dist-tags.latest` 指向的那个 —— `0.2.0` 还没上 registry）。`package.json` **没有** `"private"` 键。profile 用**与 registry 相同的名字**投影该 bundle ⇒ 本地投影与已发布的包**只能靠「指向哪里」区分，不能靠名字**（这正是 `tools/verify-install.sh:96-105` 记录的设计顾虑；统一到 npm 名是用户知情的例外 —— 代价与为何被接受，见[发布到 npm](#发布到-npm)）。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
+安装方式是 **`link:` 依赖**，本包**同时也发布在 npm 上**（`@quill507/dsh-orchestrator-preset`）。`package.json` **没有** `"private"` 键。profile 用**与 registry 相同的名字**投影该 bundle ⇒ 本地投影与已发布的包**只能靠「指向哪里」区分，不能靠名字**（这正是 `tools/verify-install.sh:96-105` 记录的设计顾虑；统一到 npm 名是用户知情的例外 —— 代价与为何被接受，见[发布到 npm](#发布到-npm)）。本包**不**声明任何 `dependencies`：运行时一切由宿主提供。但它**声明了 `peerDependencies`**，四条全部标 `optional` —— 这样「我们测过什么」被写了下来，而任何安装都不会因为它失败：
 
 | 包 | 钉住的版本 | 为什么 |
 |---|---|---|
@@ -390,7 +390,7 @@ persona 文件在运行时按深路径解析（`createRequire(baseUrl).resolve('
 
 ## 发布到 npm
 
-**这件事已经做了。** 包以 `@quill507/dsh-orchestrator-preset` 发布；`npm view @quill507/dsh-orchestrator-preset dist-tags versions --json` 报出 `dist-tags.latest = 0.1.9` 与九个已发布版本 —— `0.1.0` … `0.1.6`，然后是 `0.1.8` 与 `0.1.9`（`0.1.7` 从未发布）。**以最后一次发布为准**，registry 上最新的版本是 `0.1.9`；本树里的 `0.2.0` 尚未发布，所以在它发布之前 `latest` 仍会解析到 `0.1.9`。运行时 specifier 就是 npm 名 —— `@local/` 别名在本 bundle 上已不再使用。
+**这件事已经做了。** 包以 `@quill507/dsh-orchestrator-preset` 发布。哪些版本已经发布，**以 npm 与 GitHub release 页面为准** —— 本文件不保留这份事实的副本，因为留在这里的副本每一次发布都会过期。运行时 specifier 就是 npm 名 —— `@local/` 别名在本 bundle 上已不再使用。
 
 - **拥有全部 specifier 的那一行**是 `tools/preset-declaration.mjs:45`，`export const bundlePkg = '@quill507/dsh-orchestrator-preset'`。这一个常量拥有生成的 `cordis.patch.yml` 里全部 **15** 处 specifier 引用。实测命令：`grep -o '@quill507/dsh-orchestrator-preset/[A-Za-z0-9._/-]*' cordis.patch.yml | sed 's|@quill507/dsh-orchestrator-preset/||' | sort -u`，它返回 15 条互异路径：**4 个 `.mjs`**（`lane-composition.mjs`、`plan-aware-persona.mjs`、`routing-sections.mjs`、`lane-tool-gate.mjs`）、**2 个 `.js`**（`extensions/dsh/index.js`、`extensions/dsh/aegis-prefix.js`）与 **9 个 persona `.md`**。改那一行，然后跑 `node tools/gen-cordis-patch.mjs` —— 不需要别的改动，也没有任何 persona 文件受影响。（`personas/orchestrator.md` 是被内联的，不是按文件解析的，所以它正确地不在那份列表里。）
 - **在此之外还有一件事没解决**：`skills/` 下那四个技能是纯 Markdown，没有 npm 故事，需要一个 postinstall 步骤把它们拷进某个 profile 的技能目录。包上了 registry 之后这件事更要紧，因为一次 npm install 会把那些 Markdown 送到，却不把它放到任何 profile 会去读的地方。`exports` 映射与「第二个包」这个问题都已了结 —— 映射有了，而伴随插件被折进 `extensions/dsh/aegis-prefix.js`，没有作为独立包发布。
