@@ -684,6 +684,14 @@ const laneGateDeny = (lane) => [...new Set([
   ...SCHEDULE_TOOL_NAMES,
 ])]
 
+/**
+ * 工具呈现模式。'native' = 每个工具一份独立 schema（现状，默认）；
+ * 'ptc' = wire 收拢为单个 run_code + 生成的 SDK（见 dsh-agent-tool-presentation/README.md）。
+ * ⚠️ 切到 'ptc' 会让提示词显著变长（tools:sdk 段按工具 schema 生成，本 preset 工具面很大），
+ *    而且 run_code 下的工具调用方式与 native 完全不同。切之前先量账。
+ */
+export const TOOL_PRESENTATION = 'ptc'
+
 export const lanePresetRows = LANES.map((lane) => ({
   id: 'preset-' + lane.presetId,
   name: '@deepseek-ai/dsh-agent-preset',
@@ -694,6 +702,15 @@ export const lanePresetRows = LANES.map((lane) => ({
       // `personaFile` 是**取值槽**：生成器把它渲染成与旧形态同形的运行时 `readFileSync`
       // 表达式（见 `gen-cordis-patch.mjs` 的 `personaExpr`）。本文件不产 `!!js`。
       { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { personaFile: lane.persona } },
+      // ⚠️ **lane 也走同一种工具呈现（2026-10-22 用户裁决）**。不加这一行时 lane 继承部署层默认
+      //    （`dsh-tools/lib/index.js:2763` 的 `mode: z.union([...]).default("native")`，
+      //    `dsh-base/cordis.patch.yml:498-500` 的注释也写明 "keeps the schema default (native)"）
+      //    ⇒ 只有 Lead 是 PTC、9 个子代理全是 native，Blender 那 15894 字符在每个子代理那里照样全量。
+      //    lane 自己声明后，工具面与 SDK 段一起缩小，收益才落到子代理侧。
+      //    安全性已核：lane-gate 用的是 `ctx.tools.guard()`（`lane-tool-gate.mjs:51`），不是
+      //    `tools.restrict()`，所以不触碰 `dsh-tools/lib/index.js:3001` 那条「restrict 不得命名
+      //    run_code」的限制；`laneGateDeny` 的名单也不含 run_code。
+      { id: 'tool-presentation', name: '@deepseek-ai/dsh-agent-tool-presentation', config: { mode: TOOL_PRESENTATION } },
       { id: 'lane-gate', name: laneGatePlugin, config: { deny: laneGateDeny(lane) } },
     ],
   },
@@ -724,14 +741,6 @@ export const lanePresetRows = LANES.map((lane) => ({
 //    ⚠️ **这个删除在三版上都安全**：rc.2 / alpha.1 认得 `{{cwd}}`，但**不要求**任何行去用它；
 //       一个没有 suffix 的 persona 行在旧版上与新版上都是合法配置（suffix 的 schema 默认 `''`）。
 //       ⇒ 支持矩阵是三版时，只有这一种写法是三版通用的。
-/**
- * 工具呈现模式。'native' = 每个工具一份独立 schema（现状，默认）；
- * 'ptc' = wire 收拢为单个 run_code + 生成的 SDK（见 dsh-agent-tool-presentation/README.md）。
- * ⚠️ 切到 'ptc' 会让提示词显著变长（tools:sdk 段按工具 schema 生成，本 preset 工具面很大），
- *    而且 run_code 下的工具调用方式与 native 完全不同。切之前先量账。
- */
-export const TOOL_PRESENTATION = 'native'
-
 export const topRows = [
   // ⚠️ **`promptProfile` 开关（2026-10-22，提示词裁剪）**。两个取值：
   //    · `'minimal'`（**缺省**）—— persona 走 `personas/orchestrator.minimal.md`，routing 走四个压缩常量；
