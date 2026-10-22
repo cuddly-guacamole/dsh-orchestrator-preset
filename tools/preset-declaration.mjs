@@ -37,7 +37,8 @@
 //    禁止在生成器里用它断言 / 拦截 deny / allow 名单（「生成期闭集断言」机制已按用户裁决删除，
 //    见 DESIGN.md §3.3.4 的 ⛔ 段）。它只供人读 + 产物自检。新的兜底 = 「首次派发时 loud 失败」。
 
-// 16 个顶层 row（14 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行；口径见 topRows 处）
+// 18 个顶层 row（14 个保留行 + 4 个新增挂载行：routing-sections / harness-sections /
+// tool-presentation / lane-composition；口径见 topRows 处）
 // 3 个 group · 3 个 delegation 控制行 · 9 个 lane 行
 
 export const presetId = 'dsh-orchestrator-preset'
@@ -698,7 +699,10 @@ export const lanePresetRows = LANES.map((lane) => ({
   },
 }))
 
-// ── 15 个顶层 row（13 个保留行的配置值与 preset-standard 逐字一致 + 2 个新增挂载行）──────────────────────────
+// ── 18 个顶层 row（14 个保留行 + 4 个新增挂载行）──────────────────────────
+// ⚠️ 计数随 T11（2026-10-22，`tool-presentation`）从 17 变 18；上两轮的 `harness-sections`（T7-T9）
+//    与 `tool-presentation` 都是「刻意用通用 id 的自写挂载行」，所以这条注释里的加数要一起变。
+//    「保留行」= 权威骨架 `standard.patch.yml` 里也有同名 id 的行（含被本包**替换**的 `persona`）。
 // ⚠️ 权威骨架 standard.patch.yml **自身带** 6 个 row（command-goal / tool-goal / workflow-ptc /
 //    tool-workflow / present / tool-plugin-manager）⇒ 本 preset **不得**含这 6 个（DESIGN.md §2.3「删除项」）。
 //    ⚠️ **第 2 个新增挂载行 = `lane-composition`（T16，2026-09-25）**：它注册 Lead own-scope 的 3 个
@@ -720,6 +724,14 @@ export const lanePresetRows = LANES.map((lane) => ({
 //    ⚠️ **这个删除在三版上都安全**：rc.2 / alpha.1 认得 `{{cwd}}`，但**不要求**任何行去用它；
 //       一个没有 suffix 的 persona 行在旧版上与新版上都是合法配置（suffix 的 schema 默认 `''`）。
 //       ⇒ 支持矩阵是三版时，只有这一种写法是三版通用的。
+/**
+ * 工具呈现模式。'native' = 每个工具一份独立 schema（现状，默认）；
+ * 'ptc' = wire 收拢为单个 run_code + 生成的 SDK（见 dsh-agent-tool-presentation/README.md）。
+ * ⚠️ 切到 'ptc' 会让提示词显著变长（tools:sdk 段按工具 schema 生成，本 preset 工具面很大），
+ *    而且 run_code 下的工具调用方式与 native 完全不同。切之前先量账。
+ */
+export const TOOL_PRESENTATION = 'native'
+
 export const topRows = [
   // ⚠️ **`promptProfile` 开关（2026-10-22，提示词裁剪）**。两个取值：
   //    · `'minimal'`（**缺省**）—— persona 走 `personas/orchestrator.minimal.md`，routing 走四个压缩常量；
@@ -732,6 +744,22 @@ export const topRows = [
   { id: 'persona',            name: bundlePkg + '/plan-aware-persona.mjs', config: { promptProfile: 'minimal' } },
   { id: 'routing-sections',   name: bundlePkg + '/routing-sections.mjs',   config: { promptProfile: 'minimal' } },
   { id: 'harness-sections',   name: bundlePkg + '/harness-sections.mjs',   config: { promptProfile: 'minimal' } },
+  // ⚠️ **工具呈现行（T11，2026-10-22）**：`dsh-agent-tool-presentation` 决定「模型看到什么形状的工具面」。
+  //    与官方 `ptc.patch.yml:123-126` 那一行同形（官方 ptc preset 相对 standard preset 的**唯一**差别
+  //    就是这一行）；取值来自本文件顶部的 `TOOL_PRESENTATION` 常量。
+  //    ① `mode` 在 schema 里**必填、无默认值**（`dsh-agent-tool-presentation/README.md` 的字段表）：
+  //       「a preset without this row inherits the deployment default」。本行**显式**写出取值，
+  //       所以本 preset 的呈现模式不随部署层漂移。
+  //    ② ⛔ **同一 composition 内不得再声明第二行**：README:50「A second declaration in the same
+  //       composition is refused rather than merged」—— 那是矛盾，不是覆盖。本 preset 只有这一行。
+  //    ③ ⛔ **不在这里挂 `dsh-ptc-runtime-node`**：它是 host-plane 服务，部署层已经挂了
+  //       （`dsh-base/cordis.patch.yml:397-398`）。README:109「a preset can select PTC mode but
+  //       cannot supply the TypeScript runtime it needs」⇒ preset 挂不上它。
+  //    ④ 别与 `dsh-workflow-ptc` / `dsh-tool-workflow` 搞混：那两行是 **workflow 引擎**，
+  //       本 preset 明确删除（见下方 `topRows` 开头的删除说明），与工具呈现无关。
+  //    ⑤ `native` 立即生效；`ptc` 要等 `ctx.ptcRuntime`。部署层没挂 runtime 时，选 ptc 的
+  //       composition **拒绝挂载**并点名本行（失败落在运维能处理的地方，不是首次请求）。
+  { id: 'tool-presentation',  name: '@deepseek-ai/dsh-agent-tool-presentation', config: { mode: TOOL_PRESENTATION } },
   { id: 'lane-composition',   name: bundlePkg + '/lane-composition.mjs' },
   { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
   { id: 'time-context',       name: '@deepseek-ai/dsh-time-context' },
