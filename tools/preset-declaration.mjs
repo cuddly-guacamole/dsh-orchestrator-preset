@@ -731,6 +731,7 @@ export const topRows = [
   //       所以改档位必须重新跑 `node tools/gen-cordis-patch.mjs`（产物首行写着 DO NOT EDIT）。
   { id: 'persona',            name: bundlePkg + '/plan-aware-persona.mjs', config: { promptProfile: 'minimal' } },
   { id: 'routing-sections',   name: bundlePkg + '/routing-sections.mjs',   config: { promptProfile: 'minimal' } },
+  { id: 'harness-sections',   name: bundlePkg + '/harness-sections.mjs',   config: { promptProfile: 'minimal' } },
   { id: 'lane-composition',   name: bundlePkg + '/lane-composition.mjs' },
   { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
   { id: 'time-context',       name: '@deepseek-ai/dsh-time-context' },

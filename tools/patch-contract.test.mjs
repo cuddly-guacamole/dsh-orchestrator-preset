@@ -588,13 +588,17 @@ test('两个 bundle 级挂载行走 orch- 命名空间，挂本包自己的入�
   assert.equal(local.every((id) => idsAt(4).includes(id)), true, '两个 orch-* 挂载行必须与 preset 行同层')
 })
 
-test('preset 内的本包自写挂载行是这 3 条、都挂本包 specifier；与官方 id 撞名的恰好只有 persona', () => {
+test('preset 内的本包自写挂载行是这 4 条、都挂本包 specifier；与官方 id 撞名的恰好只有 persona', () => {
   const official = officialIds()
   // 期望值写成字面量：这条断言保护的是「本地行**刻意**用通用 id」这个决定本身。
   // 改名（哪怕改成更整齐的 orch-* 名字）会让它失败 —— 那是提示人先改这条记录，不是静默放过。
+  // ⚠️ 第 4 条 `harness-sections`（T7-T9，2026-10-22）是**同一个决定的新成员**，不是例外：
+  //    它同样刻意用通用 id（不是 `orch-harness-sections`），所以必须一并写进这条字面量。
+  //    加它的时候**没有**放宽判据 —— 下一条「与官方 id 撞名的恰好只有 persona」照样逐个核对，
+  //    新行只要与骨架撞名就会在这里失败。
   const localInPreset = rows().filter((r) => r.indent === 10 && r.name.startsWith(`${d.bundlePkg}/`))
-  assert.deepEqual(localInPreset.map((r) => r.id), ['persona', 'routing-sections', 'lane-composition'],
-    'preset 内挂本包 specifier 的行不是这 3 条 —— 核对 declaration 的 topRows 与 ADR「keep lane-composition」')
+  assert.deepEqual(localInPreset.map((r) => r.id), ['persona', 'routing-sections', 'harness-sections', 'lane-composition'],
+    'preset 内挂本包 specifier 的行不是这 4 条 —— 核对 declaration 的 topRows 与 ADR「keep lane-composition」')
   // 挂载行指向的**子路径**必须既存在于仓里、又真的被发布（`files` 白名单）。
   // ⚠️ 这条不是「再确认一次 name 的形状」：它抓的是「行挂上了一个不存在的 / 不发布的文件」——
   //    那种行在 `--check` 与行 id 集合断言下**全绿**，直到装了这个 preset 的人才在 mount 期发现。

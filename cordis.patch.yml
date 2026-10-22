@@ -24,6 +24,10 @@
             name: '@quill507/dsh-orchestrator-preset/routing-sections.mjs'
             config:
               promptProfile: 'minimal'
+          - id: harness-sections
+            name: '@quill507/dsh-orchestrator-preset/harness-sections.mjs'
+            config:
+              promptProfile: 'minimal'
           - id: lane-composition
             name: '@quill507/dsh-orchestrator-preset/lane-composition.mjs'
           - id: agent-instructions

@@ -128,7 +128,7 @@ DEST="${DSH_HOME}/plugins/${BUNDLE_DIRNAME}"
 mkdir -p "$DEST"
 DISTRIBUTABLE="LICENSE README.md README.zh.md THIRD_PARTY_NOTICES.md cordis.patch.yml
   package.json personas skills extensions locale tools lane-composition.mjs
-  plan-aware-persona.mjs routing-sections.mjs lane-tool-gate.mjs"
+  plan-aware-persona.mjs routing-sections.mjs lane-tool-gate.mjs harness-sections.mjs"
 STAGED=0
 for item in $DISTRIBUTABLE; do
   [ -e "${REPO_ROOT}/${item}" ] || die "${item} is missing from the repository."

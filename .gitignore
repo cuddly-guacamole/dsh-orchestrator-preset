@@ -41,6 +41,7 @@
 !/package.json
 
 # --- 2. re-admit the preset's own plugin modules (shipped at the root) ------
+!/harness-sections.mjs
 !/lane-composition.mjs
 !/lane-tool-gate.mjs
 !/plan-aware-persona.mjs

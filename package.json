@@ -49,6 +49,7 @@
   "exports": {
     "./plan-aware-persona.mjs": "./plan-aware-persona.mjs",
     "./routing-sections.mjs": "./routing-sections.mjs",
+    "./harness-sections.mjs": "./harness-sections.mjs",
     "./lane-composition.mjs": "./lane-composition.mjs",
     "./lane-tool-gate.mjs": "./lane-tool-gate.mjs",
     "./personas/analyst.md": "./personas/analyst.md",
@@ -82,6 +83,7 @@
     "lane-tool-gate.mjs",
     "plan-aware-persona.mjs",
     "routing-sections.mjs",
+    "harness-sections.mjs",
     "install.sh"
   ],
   "dsh": {
