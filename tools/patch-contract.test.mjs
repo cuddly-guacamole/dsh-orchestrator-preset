@@ -617,7 +617,7 @@ test('preset 内的本包自写挂载行是这 3 条、都挂本包 specifier；
 // ============================================================================
 // 6b. persona 行不得再引用 `{{cwd}}`（值级别；这条是 0.2.1-alpha.2 回归的守卫）
 // ============================================================================
-test('persona 行的 config 为空，且产物里没有任何 {{cwd}} 引用', () => {
+test('persona 行不带 suffix、promptProfile 取值合法，且产物里没有任何 {{cwd}} 引用', () => {
   // 这条断言保护一个**装配期硬失败**，不是风格偏好。`{{cwd}}` 在 host 0.2.1-alpha.2 上
   // 不再是已注册的提示词变量（`dsh-agent-loop` 只注册 provider / model），而
   // `dsh-system-prompt` 的 `interpolate()` 对未知变量是 throw ⇒ 每次装配都抛，
@@ -630,13 +630,37 @@ test('persona 行的 config 为空，且产物里没有任何 {{cwd}} 引用', (
   assert.equal(committed.includes('{{cwd}}'), false,
     'cordis.patch.yml 里出现了 {{cwd}} —— 该变量在 host 0.2.1-alpha.2 上已不存在，装配期会抛 '
     + 'unknown prompt variable（见 tools/preset-declaration.mjs 的 topRows 注释）')
-  // 反向也查一遍：persona 行**必须没有** config。空 config 在渲染时会被省略成裸一行；
-  // 若渲染器将来开始输出 `config: {}`，这条会失败，而那正是该被看见的形状变化。
-  const persona = parseRows(committed).find((r) => r.id === 'persona')
-  assert.notEqual(persona, undefined, '产物里找不到 persona 行')
-  const body = committed.split('\n').slice(persona.startLine, persona.startLine + 4)
-  assert.equal(body.some((l) => /^\s+config:/.test(l)), false,
-    'persona 行带上了 config —— 它应当是一行裸挂载（plan-aware-persona.mjs 自带 prefix，suffix 已按上游要求清空）')
+  // 反向也查一遍：persona 行的 config **不得含 `suffix`**，且 `promptProfile` 取值合法。
+  // ⚠️ 这一段在 T1–T6（提示词裁剪）之后**换了主语**，不是迁就实现：旧版拿「persona 行的
+  //    config 恰好是空的」当**间接探针**，守的是「渲染器把空 config 省略成裸一行」。那个
+  //    探针随 `promptProfile` 落进 persona 行而失效，但它守的事实没变 ⇒ 拆成两条**直接**
+  //    断言（下面 a / b），两条都仍然可证伪。同类先例见本文件 `:644-647` 的「换了主语」注释。
+  //
+  // (a) `suffix` 才是这条断言真正要防的东西：一旦把它加回 topRows，产物里就会出现 suffix
+  //     段，而它的正文正是 `{{cwd}}` 这类提示词变量的来源（装配期 throw）。
+  //     可证伪：给 topRows 的 persona 行加 `config.suffix`，重新生成 ⇒ 本断言必失败。
+  const personaBlock = blockOf(committed, 'persona')
+  assert.notEqual(personaBlock, null, '产物里找不到 persona 行')
+  const personaConfig = scalarMap(personaBlock)
+  assert.notEqual(personaConfig, null, 'persona 行没有 config —— promptProfile 开关丢了')
+  assert.equal(Object.hasOwn(personaConfig, 'suffix'), false,
+    'persona 行的 config 里出现了 suffix —— 该字段在 host 0.2.1-alpha.2 上装配期会抛 '
+    + 'unknown prompt variable（见 tools/preset-declaration.mjs 的 topRows 注释）')
+  // 正向也钉住：config 就是那一个开关，两个取值之一。
+  // 可证伪：把值改成任意第三个字符串，本断言必失败。
+  assert.equal(['minimal', 'full'].includes(personaConfig.promptProfile), true,
+    `persona 行的 config.promptProfile 不是合法取值：${JSON.stringify(personaConfig)}`)
+  // (b) 「空 config 被省略成裸一行」这件事换 `tool-fs` 继续守 —— 它是一条既没有 config
+  //     也没有 disabled 的裸挂载行。渲染器若开始输出 `config: {}`，这条会失败，而那正是
+  //     该被看见的形状变化。
+  //     可证伪：给声明里的 tool-fs 加一个空 `config: {}`，重新生成 ⇒ 本断言必失败。
+  const toolFsBlock = blockOf(committed, 'tool-fs')
+  assert.notEqual(toolFsBlock, null, '产物里找不到 tool-fs 行 —— 空 config 的探针失效了，换一条仍然裸挂载的行')
+  // ⚠️ 用 blockOf() 而不是「id 行之后固定 4 行」：blockOf 按缩进界定块边界，
+  //    固定窗口在裸挂载行上会跨进下一条 row 的 config（persona 行当初能用固定窗口，
+  //    只是因为它的 config 恰好紧跟在 name 之后）。
+  assert.equal(toolFsBlock.some((l) => /^\s+config:/.test(l)), false,
+    'tool-fs 行带上了 config —— 空 config 应当被省略成裸一行（渲染器开始输出 config: {} 了）')
 })
 
 // ============================================================================

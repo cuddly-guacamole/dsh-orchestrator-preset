@@ -57,11 +57,20 @@ function readPersona(file) {
  * Register the plan-aware persona prefix and the configured suffix.
  *
  * @param ctx - the preset's agent scope context.
- * @param config - optional `suffix` rendered as the persona-suffix section.
+ * @param config - optional `suffix` rendered as the persona-suffix section, and
+ *   optional `promptProfile` (`'full'` | `'minimal'`, absent = minimal) selecting the
+ *   Orchestrator prose.
  * @returns the configured suffix, matching the persona row this replaces.
  */
 export function apply(ctx, config) {
-  const orchestrator = readPersona('orchestrator.md')
+  // 档位只决定 Orchestrator 用哪份正文：`full` 走逐字未改的 `orchestrator.md`，
+  // 缺省与 `minimal` 走压缩后的 `orchestrator.minimal.md`。Planner 不分档 ——
+  // plan mode 下它整段替换身份，与档位正交。
+  //
+  // ⛔ 未知取值按 minimal 处理，与 `routing-sections.mjs` 的 `sectionsFor()` 同一极性；
+  //    minimal 文件缺失/为空时 `readPersona` 抛错并指明路径 —— **不回落** full，
+  //    否则「切到 minimal」会静默变成「什么都没省」，那是最难发现的一类失效。
+  const orchestrator = readPersona(config?.promptProfile === 'full' ? 'orchestrator.md' : 'orchestrator.minimal.md')
   const planner = readPersona('planner.md')
 
   /**

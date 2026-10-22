@@ -4,6 +4,9 @@
  * 定位：域 owner 表 / 触发词裁决 / L0 判据索引 / MCP 纪律，四条**固定文本**段，
  * 每回合由 `systemPrompt` registry 重新装配，靠 `order` 控制优先级。
  *
+ * 两档文本（`config.promptProfile`）：`'full'` 用上面那组原文，缺省与 `'minimal'` 用压缩组。
+ * **两档的段名与 order 完全相同**，只有 text 不同 —— 切档不改装配形状，也不改判据的可见性。
+ *
  * 为什么不是 persona 正文（DESIGN.md §5.2R14）：行为引导写进 persona 会稀释行为信号；
  * 常驻 section 是独立段、order 可控、文本固定（缓存友好）。
  *
@@ -103,6 +106,51 @@ const MCP_DISCIPLINE = `MCP discipline (single owner: this section) — read-onl
 - Holder propagation, stated as measured: once the orchestrator has loaded a server, every lane child becomes a holder through ancestryIds, so denyFor returns only the configured hidden set and the real mcp__<server>__<tool> names stay visible to that lane. That surface cannot be enumerated statically: deny matching is exact and does not support wildcards.
 - The only mechanical remedies sit outside this preset: profile-level loader hiddenTools, profile-level disabled: true, or a new plugin. All three were excluded by user decision (D24), so this discipline has no mechanical enforcement. Carry it to a lane through the delegation brief; the brief references this section and must not restate it.`
 
+// ── minimal 档（`promptProfile: 'minimal'`，缺省）─────────────────────────────
+// 与上面四个常量**同段名、同 order**，只是文本更短。四条段的**存在**不变（ADR
+// `2026-10-01-converge-orchestration-domain-to-three-skills.md:63-66`：判据必须由常驻静态段
+// 每回合可见），压缩只发生在文本层面。
+//
+// ⛔ 与 full 档同一约束：静态常量，不拼接、不读环境、不含时间戳或路径。
+//
+// 砍掉的只有两类东西：
+//   ① `Other domains` 那 20 行清单 —— 技能目录的 description 已带同样的事实，这里是重复；
+//   ② 写给维护者的元叙述（holder 传播实测 / 唯一机械补救在 preset 之外 / 未加门的 must）——
+//      它们解释「为什么这样设计」，不是模型每回合要执行的指令。
+// 保留的是**判据**：编排域三入口互斥的枚举、seer 那一行的触发条件与边界、双 id 空间、只读 lane 不调 mcp。
+
+/** §4.2 编排域：三 owner 按入口条件互斥选一 + seer 交叉域 lane（minimal 档）。 */
+const MIN_DOMAIN_OWNERS = `Domain routing — pick exactly one owner per task by entry condition.
+
+Orchestration domain (the three entry conditions are mutually exclusive; pick by entry condition):
+- written plan + cross-session or review checkpoints -> aegis-executing-plans
+- written plan + same-session independent tasks -> this preset's own lane discipline: the persona's reuse invariant (I6) plus the routed orch-evidence-protocol skill
+- no written plan + 2+ independent tasks (no conflicting shared state, no ordering) -> aegis-dispatching-parallel-agents
+
+Cross-domain lane (not a fourth entry condition; the three above stay mutually exclusive):
+- a decision that needs adversarial judgement rather than more material -> the seer lane
+  (read-only; returns one recommendation, its trade-offs, and the condition that would
+  flip it). Missing facts is not a seer question. Raise it before a plan or a design fork
+  is written down, before a destructive or contract-breaking step, or before a completion
+  claim the evidence gate cannot check; at most once per commitment, and never when you
+  cannot state your own conclusion plus one open point you can interrogate.
+
+Every other domain's owner is stated in its skill description — load the skill and read it there.`
+
+/** §4.3 只留两条真正会撞车的裁决（minimal 档）。 */
+const MIN_TRIGGER_ARBITRATION = `Trigger arbitration — when two triggers look alike, each resolves to exactly one owner.
+
+- "is this idea any good?" / "is this sentence any good?" -> aegis-brainstorming, Grilling Mode (both phrasings, one owner)
+- Two id namespaces, never mixed: \`subagent_*\` lanes are addressed by durable agent id (\`subagent_children\` / \`subagent_send({agent_id})\` / \`subagent_interrupt({agent_id})\`); Team's \`list_agents\` / \`send_message\` / \`interrupt_agent\` address a teammate by name. ⛔ \`send_message\` cannot reach a \`subagent_*\` child at all.`
+
+/** §5.8 MCP 纪律压成可执行的两句（minimal 档）。 */
+const MIN_MCP_DISCIPLINE = `MCP discipline (single owner: this section) — read-only lanes must not call real mcp__* tools.
+
+- The six deny-list lanes (scout, archivist, seer, analyst, auditor, planner) and reader must not call a real mcp__<server>__<tool> even when one is visible to them. Route MCP work through the orchestrator instead.
+- Nothing enforces this mechanically, so carry it to a lane through the delegation brief; the brief references this section and must not restate it.`
+
+/** L0 判据索引：两档共用同一份文本（199 字符，没有可压的余量）。 */
+const MIN_L0_INDEX = L0_INDEX
 /** 四段按固定顺序装配；`order` 全部由 registry 的 PLAN_POLICY 派生（不硬编码魔数）。 */
 const SECTIONS = [
   { name: 'routing:domain-owners', offset: 0, text: DOMAIN_OWNERS },
@@ -111,6 +159,24 @@ const SECTIONS = [
   { name: 'routing:mcp-discipline', offset: 3, text: MCP_DISCIPLINE },
 ]
 
+/** minimal 档：段名与 offset **与上面逐条相同**，只有 text 换成长度更短的那组。 */
+const MINIMAL_SECTIONS = [
+  { name: 'routing:domain-owners', offset: 0, text: MIN_DOMAIN_OWNERS },
+  { name: 'routing:trigger-arbitration', offset: 1, text: MIN_TRIGGER_ARBITRATION },
+  { name: 'routing:l0-index', offset: 2, text: MIN_L0_INDEX },
+  { name: 'routing:mcp-discipline', offset: 3, text: MIN_MCP_DISCIPLINE },
+]
+
+/**
+ * 按档选段组。**缺省 = minimal**（省 token 是默认意图，完整版要显式要）。
+ *
+ * @param profile - `'full'` | `'minimal'` | undefined.
+ * @returns 该档的段数组；未知取值按 minimal 处理（与 `plan-aware-persona.mjs` 同一极性）。
+ */
+function sectionsFor(profile) {
+  return profile === 'full' ? SECTIONS : MINIMAL_SECTIONS
+}
+
 /**
  * Register the routing sections.
  *
@@ -118,12 +184,16 @@ const SECTIONS = [
  * after the persona prefix (0) and before the plan policy (500) — identity first,
  * then route, then plan rules.
  *
+ * 段文本按 `config.promptProfile` 分档（见 {@link sectionsFor}）；**派生的 base order 与档无关**，
+ * 两档的 `order` 完全相同 —— 切换档位不改装配顺序，只改每段文本。
+ *
  * @param ctx - the preset's agent scope context.
+ * @param config - optional `{ promptProfile }`; absent means minimal.
  * @returns the derived base order (useful for evidence).
  */
-export function apply(ctx) {
+export function apply(ctx, config) {
   const base = ctx.systemPrompt.getSectionOrder('PLAN_POLICY') - 100
-  for (const s of SECTIONS) {
+  for (const s of sectionsFor(config?.promptProfile)) {
     ctx.effect(
       () => ctx.systemPrompt.section({ name: s.name, order: base + s.offset, text: s.text }),
       'routing-sections: ' + s.name,
@@ -132,7 +202,15 @@ export function apply(ctx) {
   return base
 }
 
-/** 供证据/测试读取段清单（返回固定文本的浅拷贝，不暴露可变状态）。 */
-export function sectionList() {
-  return SECTIONS.map((s) => ({ name: s.name, offset: s.offset, text: s.text }))
+/**
+ * 供证据/测试读取段清单（返回固定文本的浅拷贝，不暴露可变状态）。
+ *
+ * 与 {@link apply} 同一档位语义：`sectionList('full')` 给出 full 档的四段，
+ * 其余（含不传）给出 minimal 档的四段。**段名与顺序两档一致** —— 证据可以逐段对账。
+ *
+ * @param profile - `'full'` | `'minimal'` | undefined.
+ * @returns 该档的 `{ name, offset, text }` 浅拷贝数组。
+ */
+export function sectionList(profile) {
+  return sectionsFor(profile).map((s) => ({ name: s.name, offset: s.offset, text: s.text }))
 }

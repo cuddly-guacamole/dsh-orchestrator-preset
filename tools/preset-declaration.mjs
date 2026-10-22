@@ -721,8 +721,16 @@ export const lanePresetRows = LANES.map((lane) => ({
 //       一个没有 suffix 的 persona 行在旧版上与新版上都是合法配置（suffix 的 schema 默认 `''`）。
 //       ⇒ 支持矩阵是三版时，只有这一种写法是三版通用的。
 export const topRows = [
-  { id: 'persona',            name: bundlePkg + '/plan-aware-persona.mjs' },
-  { id: 'routing-sections',   name: bundlePkg + '/routing-sections.mjs' },
+  // ⚠️ **`promptProfile` 开关（2026-10-22，提示词裁剪）**。两个取值：
+  //    · `'minimal'`（**缺省**）—— persona 走 `personas/orchestrator.minimal.md`，routing 走四个压缩常量；
+  //    · `'full'`         —— persona 走逐字未改的 `personas/orchestrator.md`，routing 走四个原始常量。
+  //    **不写这个键等价于 `minimal`**：省 token 是默认意图，完整版要显式要。
+  //    ⚠️ 两行必须同档。只切一行会得到「完整 persona + 压缩 routing」这种没人设计过的组合 ——
+  //       两处都读同一个 `config?.promptProfile`，正是为了让它们不可能分叉。
+  //    ⚠️ 这里是**运行时取值槽**，不是构建期常量：`cordis.patch.yml` 由本文件渲染，
+  //       所以改档位必须重新跑 `node tools/gen-cordis-patch.mjs`（产物首行写着 DO NOT EDIT）。
+  { id: 'persona',            name: bundlePkg + '/plan-aware-persona.mjs', config: { promptProfile: 'minimal' } },
+  { id: 'routing-sections',   name: bundlePkg + '/routing-sections.mjs',   config: { promptProfile: 'minimal' } },
   { id: 'lane-composition',   name: bundlePkg + '/lane-composition.mjs' },
   { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
   { id: 'time-context',       name: '@deepseek-ai/dsh-time-context' },
