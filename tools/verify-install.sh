@@ -255,11 +255,18 @@ fi
 # What still FAILS — on any profile, because these are defects rather than
 # preferences:
 #   * TWO `selectedDefault: dsh-orchestrator-preset` lines in one profile patch
-#     (check 1): a profile names ONE default preset, and which duplicate the host
-#     applies is not knowable from here;
+#     (check 1): the default may be declared once, and a duplicated YAML key is
+#     rejected by the parser — the patch is unreadable, so the host never chooses
+#     between the two. Check 5's composition parse failure in the same run is the
+#     same defect reached from the symptom side; this leg is what names the cause;
 #   * the profile patch asks for this preset while the COMPOSED tree does not
 #     select it (check 5): composition dropped a selection the profile declared,
 #     which is a delivery failure rather than a choice.
+#
+# ⚠️ Scope limit, stated rather than implied: the duplicate leg matches THIS
+#    preset's name only. A patch that names ANOTHER preset twice is INFO, and the
+#    reasoning above applies to it just as well — so the check fails OPEN on a patch
+#    belonging to a preset this gate was not asked to police.
 #
 # ⚠️ The residual blindness, stated rather than implied: a profile that silently
 #    STOPS selecting this preset is now INFO, not a failure. That is the deliberate
@@ -293,14 +300,21 @@ if [ "$SEL_ACTUAL" = "dsh-orchestrator-preset" ]; then SELECTS_US=1; else SELECT
 #   profile:  1 -> PASS · >1 -> FAIL (duplicate) · 0 -> INFO naming SEL_ACTUAL
 #   composed: >=1 -> PASS · 0 with SELECTS_US -> FAIL (declared but not delivered)
 #                     · 0 without it -> INFO naming what composition did choose
+#
+# The duplicate arm is the one place this function reports a CAUSE rather than a
+# symptom: a duplicated key is rejected by the parser, so the patch never parses and
+# the host never picks between two identical values. Check 5 then reports the
+# composition parse failure, which is the same defect seen from the other side. The
+# printed note stays one line because it is read in a failure log; the reasoning
+# lives here.
 selection_verdict() {
   local subject="$1" label="$2" count="$3" evidence="${4:-}" actual
   if [ "$subject" = "profile" ]; then
     if [ "$count" = "1" ]; then
       ok "$label  selectedDefault: dsh-orchestrator-preset occurs exactly once in the profile patch"
     elif [ "$count" -gt 1 ] 2>/dev/null; then
-      bad "$label  'selectedDefault: dsh-orchestrator-preset' occurs $count times in the profile patch — one profile names ONE default preset, so this is a defect on every profile"
-      note "this is the selection defect INFO cannot hide: which duplicate the host applies is not knowable from here"
+      bad "$label  'selectedDefault: dsh-orchestrator-preset' occurs $count times in the profile patch — the default may be declared once, and a duplicated key is rejected by the parser"
+      note "this leg names the cause; the composition parse failure check 5 reports next is the same defect"
     else
       actual="$(actual_selected_default)"
       info "$label  this profile selects \`$actual\`, not this preset — a legitimate state, reported without failing the gate"
