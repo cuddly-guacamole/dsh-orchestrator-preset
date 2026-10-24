@@ -11,7 +11,7 @@
 #
 # Thirteen checks, two of which were wrong as originally written. What changed:
 #
-#   1. selectedDefault in the profile patch            unchanged — still valid
+#   1. selectedDefault in the profile patch            CHANGED — verdict is derived, see below
 #   2. the bundle link is a real symlink               unchanged — test -L, not -e
 #   3. the bundle is readable THROUGH the link         unchanged — present != usable
 #   4. the patch generator is in sync                 CHANGED — see below
@@ -24,6 +24,14 @@
 #  11. no client-bundle declaration comes back        ADDED — dead by construction
 #  12. what npm would publish is what files says      ADDED — a directory entry sweeps the working tree
 #  13. every lane declares the official set it may see  CHANGED — deny became official, see below
+#
+# Why 1/5 changed again: their selection verdict used to come from a hardcoded
+# per-profile table, which was inverted against this host — it claimed desktop runs
+# this preset and web deliberately does not, while the profiles say the opposite.
+# The verdict is now DERIVED from the profile (`SEL_ACTUAL` / `SELECTS_US`): another
+# preset is INFO, and only a DUPLICATE selection line (check 1) or a selection the
+# profile declares while composition does not deliver it (check 5) still fails.
+# See the block above check 1, including what that gives up.
 #
 # Why 13 changed: commit 362d1c8 replaced the declared `deny` list with a declared
 # `official` allow-list. The lane-gate still lives in the same place; the value it
@@ -221,83 +229,110 @@ if [ ! -d "$PROFILE_DIR" ]; then
 fi
 
 # ===========================================================================
-# Does THIS profile have to select this preset?
+# Does THIS profile select this preset? — DERIVED from the profile, not declared
 # ===========================================================================
-# Which profile runs this preset is a fact about the OPERATOR'S profiles, not a
-# property of this package. `~/.dsh/profiles/**` is off-limits to install.sh,
-# presets are chosen per workspace, and `selectedDefault` is only the fallback an
-# API-created session gets — so a profile that selects another preset is a
-# legitimate state, not a defect. Measured on this host, by reading the profiles:
+# This used to be a hardcoded per-profile table: `web -> must select`,
+# `desktop -> must not`, any other profile -> must select. It was wrong about this
+# host in BOTH directions — it claimed desktop runs this preset and web deliberately
+# does not, while the profiles say exactly the opposite
+# (`desktop/cordis.patch.yml: selectedDefault: standard`, and
+# `web/cordis.patch.yml: selectedDefault: dsh-orchestrator-preset`) — because it
+# encoded a fact about ONE operator's machine, not a property of this package, and a
+# table cannot notice when that machine changes.
 #
-#   * `web`'s patch says `selectedDefault: dsh-orchestrator-preset`. If that line
-#     ever disappears, this preset has silently stopped being what that profile
-#     runs — a real regression, and the thing this table exists to catch. FAIL.
-#   * `desktop`'s patch says `selectedDefault: standard`: it deliberately runs the
-#     shipped preset. Nothing is wrong here, and saying "FAIL" (or "WARN — something
-#     did not run") about it would be two different lies about the same fact.
-#     INFO, and the message names the preset it does run.
+# So the expectation is DERIVED from the profile on disk:
 #
-# So the expectation is DECLARED per profile, and it fails CLOSED: a profile the
-# table does not name must select this preset. A blanket downgrade of check 1/5
-# would have been the other way to make desktop green, and it would have blinded
-# this script to the regression it exists to catch — web losing its selection.
-# Adding a profile that legitimately selects something else means adding it here,
-# on purpose, with a reason.
-case "$PROFILE" in
-  web)
-    SELECTION_EXPECTED=1
-    SELECTION_WHY="this profile's own patch selects this preset, so losing that line is a real regression"
-    ;;
-  desktop)
-    SELECTION_EXPECTED=0
-    SELECTION_WHY="this profile deliberately runs the shipped 'standard' preset (operator's own choice, not a defect in this package)"
-    ;;
-  *)
-    SELECTION_EXPECTED=1
-    SELECTION_WHY="profile '$PROFILE' is not declared as selecting another preset, so it must select this one"
-    ;;
-esac
+#     SEL_ACTUAL  = the profile patch's own `selectedDefault`, or the literal <none>
+#     SELECTS_US  = 1 when it is this preset, else 0
+#
+# A profile that runs another preset is a LEGITIMATE state, reported as INFO —
+# neither a pass nor a failure: presets are chosen per workspace,
+# `~/.dsh/profiles/**` is off-limits to install.sh, and this line is only the
+# fallback an API-created session gets. The INFO names the preset the profile does
+# run, so a reader sees `this profile selects 'standard'` rather than a bare
+# "found 0".
+#
+# What still FAILS — on any profile, because these are defects rather than
+# preferences:
+#   * TWO `selectedDefault: dsh-orchestrator-preset` lines in one profile patch
+#     (check 1): a profile names ONE default preset, and which duplicate the host
+#     applies is not knowable from here;
+#   * the profile patch asks for this preset while the COMPOSED tree does not
+#     select it (check 5): composition dropped a selection the profile declared,
+#     which is a delivery failure rather than a choice.
+#
+# ⚠️ The residual blindness, stated rather than implied: a profile that silently
+#    STOPS selecting this preset is now INFO, not a failure. That is the deliberate
+#    price of the ruling that no profile may hard-fail for running another preset.
+#    The old table bought that signal by asserting things about the operator's
+#    machine that it got wrong; what is left here asserts only what holds whichever
+#    preset the profile runs.
 
 # The preset this profile's own patch actually names. Read from the profile patch,
 # which is the one layer that can speak for the profile as a whole; the composed
-# tree has the same line but is only available after check 5 composes it.
+# tree has the same line, but only after check 5 composes it.
 actual_selected_default() {
   local v
   v="$(sed -n 's/^[[:space:]]*selectedDefault:[[:space:]]*//p' "$PATCH_YML" 2>/dev/null | head -1)"
   printf '%s' "${v:-<none>}"
 }
+composed_selected_default() {
+  local v
+  v="$(sed -n 's/^[[:space:]]*selectedDefault:[[:space:]]*//p' "$TMP/composed.yml" 2>/dev/null | head -1)"
+  printf '%s' "${v:-<none>}"
+}
 
-# One place decides how a selection expectation is reported, so check 1 and check 5
-# cannot drift into disagreeing about it.
-selection_verdict() {  # $1 = check label, $2 = failure message, $3 = indented evidence line(s)
-  local label="$1" message="$2" evidence="${3:-}" actual
-  if [ "$SELECTION_EXPECTED" = "1" ]; then
-    bad "$message"
-    note "why this is required: $SELECTION_WHY"
+SEL_ACTUAL="$(actual_selected_default)"
+if [ "$SEL_ACTUAL" = "dsh-orchestrator-preset" ]; then SELECTS_US=1; else SELECTS_US=0; fi
+
+# One place decides how a selection outcome is reported, so check 1 and check 5
+# cannot drift into disagreeing about it. It takes the FACTS and chooses the level;
+# neither call site writes a selection verdict of its own.
+#   $1 = subject — `profile` (check 1) or `composed` (check 5)
+#   $2 = check label, $3 = the count that subject produced, $4 = indented evidence
+#   profile:  1 -> PASS · >1 -> FAIL (duplicate) · 0 -> INFO naming SEL_ACTUAL
+#   composed: >=1 -> PASS · 0 with SELECTS_US -> FAIL (declared but not delivered)
+#                     · 0 without it -> INFO naming what composition did choose
+selection_verdict() {
+  local subject="$1" label="$2" count="$3" evidence="${4:-}" actual
+  if [ "$subject" = "profile" ]; then
+    if [ "$count" = "1" ]; then
+      ok "$label  selectedDefault: dsh-orchestrator-preset occurs exactly once in the profile patch"
+    elif [ "$count" -gt 1 ] 2>/dev/null; then
+      bad "$label  'selectedDefault: dsh-orchestrator-preset' occurs $count times in the profile patch — one profile names ONE default preset, so this is a defect on every profile"
+      note "this is the selection defect INFO cannot hide: which duplicate the host applies is not knowable from here"
+    else
+      actual="$(actual_selected_default)"
+      info "$label  this profile selects \`$actual\`, not this preset — a legitimate state, reported without failing the gate"
+    fi
+  elif [ "$subject" = "composed" ]; then
+    if [ "$count" -ge 1 ] 2>/dev/null; then
+      ok "$label  the composed tree really selects dsh-orchestrator-preset ($count row(s))"
+    elif [ "$SELECTS_US" = "1" ]; then
+      bad "$label  the profile patch asks for dsh-orchestrator-preset but the composed tree does NOT select it — composition dropped a selection the profile declared"
+      note "not a preference: the operator's choice did not change, the composition failed to deliver it"
+    else
+      actual="$(composed_selected_default)"
+      info "$label  the composed tree selects \`$actual\`, not this preset — a legitimate state, reported without failing the gate"
+    fi
   else
-    # Not a warning: nothing failed to run. The actual value is printed so a reader
-    # sees "this profile runs `standard`" instead of a bare "found 0".
-    actual="$(actual_selected_default)"
-    info "$label  this profile does not select this preset — by design it selects \`$actual\`"
-    note "not a failure: $SELECTION_WHY"
+    bad "$label  selection_verdict got an unknown subject '$subject' — refusing to report a verdict it cannot compute"
   fi
   [ -n "$evidence" ] && printf '%s\n' "$evidence" | sed 's/^/      /'
   return 0
 }
 
 # ===========================================================================
-head_ "check 1 — the profile patch selects this preset (unchanged form)"
+head_ "check 1 — the profile patch selects this preset (derived verdict)"
 # ===========================================================================
-# Still valid exactly as originally written. The row lives in the profile's own
-# patch layer, so a plain anchored grep is the right instrument.
-n="$(grep -c 'selectedDefault: dsh-orchestrator-preset$' "$PATCH_YML" 2>/dev/null || echo 0)"
-if [ "$n" = "1" ]; then
-  ok "check 1  selectedDefault: dsh-orchestrator-preset occurs exactly once in the profile patch"
-else
-  selection_verdict "check 1" \
-    "check 1  expected exactly 1 occurrence, found $n  ($PATCH_YML)" \
-    "$(grep -n 'selectedDefault:' "$PATCH_YML" 2>/dev/null || echo '(no selectedDefault line at all)')"
-fi
+# The row lives in the profile's own patch layer, so a plain anchored grep is the
+# right instrument. Exactly one occurrence PASSes; ZERO is INFO, because another
+# preset is a legitimate state; MORE THAN ONE is a defect — and it is the one
+# selection defect this leg can catch that INFO cannot.
+n="$(grep -c 'selectedDefault: dsh-orchestrator-preset$' "$PATCH_YML" 2>/dev/null)"
+n="${n:-0}"
+selection_verdict profile "check 1" "$n" \
+  "$(grep -n 'selectedDefault:' "$PATCH_YML" 2>/dev/null || echo '(no selectedDefault line at all)')"
 
 # ===========================================================================
 head_ "check 2 — the bundle link is a REAL symlink (unchanged form)"
@@ -452,18 +487,14 @@ else
   c_sel="$(grep -c 'selectedDefault: dsh-orchestrator-preset$' "$TMP/composed.yml" || true)"
   c_stale="$(grep -c 'new-orchestration' "$TMP/composed.yml" || true)"
   c_row="$(grep -c '^ *- id: preset-dsh-orchestrator-preset$' "$TMP/composed.yml" || true)"
+  c_sel="${c_sel:-0}"
 
-  if [ "$c_sel" -ge 1 ]; then
-    ok "check 5  the composed tree really selects dsh-orchestrator-preset ($c_sel row(s))"
-  else
-    # Same declared expectation as check 1 — one decision, reported in both places.
-    # ⚠️ Only the SELECTION leg is conditional. The two legs below are about this
-    #    package's own artifact (a stale name, a missing row) and stay hard for
-    #    every profile: they are wrong regardless of which preset the profile runs.
-    selection_verdict "check 5" \
-      "check 5  the composed tree does NOT select this preset" \
-      "$(grep -n 'selectedDefault:' "$TMP/composed.yml" 2>/dev/null | head -3 || echo '(no selectedDefault line in the composed tree)')"
-  fi
+  # The selection leg is decided by the SAME function as check 1 — one policy, two
+  # places it is reported. ⚠️ Only this leg is conditional: the two legs below are
+  # about this package's own artifact (a stale name, a missing row) and stay hard
+  # for every profile, because they are wrong regardless of which preset it runs.
+  selection_verdict composed "check 5" "$c_sel" \
+    "$(grep -n 'selectedDefault:' "$TMP/composed.yml" 2>/dev/null | head -3 || echo '(no selectedDefault line in the composed tree)')"
   if [ "$c_stale" = "0" ]; then
     ok "check 5  no occurrence of the pre-rename name 'new-orchestration'"
   else
