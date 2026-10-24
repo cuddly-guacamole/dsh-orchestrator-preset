@@ -72,6 +72,7 @@
 !/tools/gen-cordis-patch.mjs
 !/tools/preset-declaration.mjs
 !/tools/patch-contract.test.mjs
+!/tools/lane-tool-gate.test.mjs
 !/tools/verify-install-sync.mjs
 
 # --- skills/ ---
