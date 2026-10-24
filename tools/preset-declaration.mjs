@@ -30,8 +30,8 @@
 //    「topRows → groups → LANES → 常量」的**叙述顺序**书写，但 `groups` 引用了 `LANES`
 //    与 `PLAN_MODE_SECTION`，而 ESM 的 `const` 存在 TDZ ⇒ 照抄该顺序会在 import 时抛
 //    `ReferenceError: Cannot access 'PLAN_MODE_SECTION' before initialization`（LANES 同理）。
-//    ⇒ 本文件把**被引用者前置**（MCP_CLOSURE_EXPR / 三份 deny / PLATFORM_SHELL / PLAN_MODE_SECTION /
-//    LANES），再声明 topRows / groups。**所有值逐字照抄契约块，只调整声明次序。**
+//    ⇒ 本文件把**被引用者前置**（LANE_OFFICIAL / PLATFORM_SHELL / PLAN_MODE_SECTION / LANES），
+//    再声明 topRows / groups。**所有值逐字照抄契约块，只调整声明次序。**
 //
 // ⛔ LEGAL_TOOL_NAMES 是**参考清单（REFERENCE list）**，**⛔ 不是门**：
 //    禁止在生成器里用它断言 / 拦截 deny / allow 名单（「生成期闭集断言」机制已按用户裁决删除，
@@ -71,78 +71,25 @@ export const describeAegisSkillsInZh = false
 // description：默认文本（计划 T06 给定；约束：不得含被排除的上游项目文本（DESIGN.md §12.4/§12.5），不得含用户路径）
 export const description = 'A thin orchestration preset: aegis method pack for methodology, self-authored lane boundaries for delegation. Declares its full plugins[] because DSH presets have no inheritance.'
 
-// ── MCP loader 名：**按机器算**，不再静态写死（修「预设在新机器上不可用」的洞）──
-// loader 名 = `mcp_<server>`（默认命名，dsh-mcp-loader/src/index.ts:74）；用户在 web profile 里
-//   配了 4 个 server（playwright / jlceda / cloudflare-browser / desktop-touch）⇒ 4 个 loader 工具。
-//
-// 【能不能挡？能。源码依据】dsh-tools/lib/index.js:2895-2910 的 restrict() 把 deny 名校验
-//   against `view(scope).restrictableNames`（= **继承来的**名字集合，含 global 层），而 loader
-//   工具是**全局注册**的 ⇒ 在 restrictableNames 内 ⇒ deny 生效。
-// 【loader 自己的 hiddenTools **挡不住** loader 名】:117 `deny.delete(loaderName)` +
-//   :169-171 直接抛错（"rename the loader or drop the rule"）⇒ loader 名被结构性保护。
-//   ⇒ 只有 preset 的 toolFilter 能挡它。
-// ⚠️ **必须全部 10 个 agent 都 deny（不只只读 lane）** —— forge 若成为 holder，它派出的
-//    只读孙代会经 ancestryIds 继承该 server 的真实工具名，与只读边界直接冲突。
-// ⚠️ **orchestrator 无法被本 preset 收窄**（toolFilter 只是 `tool-subagent` row 的 config 字段，
-//    orchestrator 由 preset registry 创建 ⇒ 无该机制）⇒ 记为**已知残余风险，不假装解决**。
-//
-// ⛔ **为什么不能把这 4 个名字写死**：同一个 restrict() 对**未知名字直接抛错**
-//   （`tools.restrict() names unknown global tool "mcp_playwright"`）⇒ 名单一旦写死，
-//   在**没有配那条 server 的机器上**（新机器必然如此）lane 的工具过滤创建即失败 ⇒ 该 lane 不可用
-//   ⇒ 整个预设在新机器上不可用。而这 4 个名字正是 dsh-mcp-loader 为**用户自己配置的** server 生成的。
-//
-// 【修法 = 求值时从**已组装的 loader 树**里算】实测（`!!js` 求值上下文，见 `.dsh/evidence/` 的实验）：
-//   - `baseUrl` / `process`（含 `process.getBuiltinModule`）可用 ⇒ 任意文件读取也可用；
-//   - `ctx.loader` **可达**（`ctx.get('loader')` 亦可）⇒ `loader.entries()` 里能看到**整棵**已组装
-//     的 entry 列表，**含本行之后的行**（实测：即使 mcp-loader 行排在本行之后也能读到）⇒ 与顺序无关；
-//   - 但**工具注册表当时还看不到 mcp_* 名**：`ctx.get('tools')` → undefined、`ctx.reflect.get('tools')`
-//     严格模式 → undefined、非严格模式下 `restrictableNames` 里也还没有 mcp_* —— loader 是在
-//     dsh-mcp-loader 的 apply 里注册的（src/index.ts:1038），晚于本行的 config 求值。
-//   ⇒ 只能按**配置**算（而不是按当时已注册的名字算）。这就是 MCP_CLOSURE_EXPR 存在的原因。
-export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader || ctx.get('loader'); if (!l) return out; let rows = []; try { rows = Array.from(l.entries()) } catch (e) { return out } for (const r of rows) { let off = false; try { off = r.disabled === true } catch (e) { off = true } if (off) continue; const o = r.options || {}; if (!/mcp[-_]loader/i.test(String(o.id) + ' ' + String(o.name))) continue; const servers = (o.config && o.config.servers) || {}; for (const s of Object.keys(servers)) { const c = servers[s] || {}; if (c.mode === 'eager') continue; if (c.loaderName) { out.push(String(c.loaderName)); continue } if (!/^[A-Za-z0-9_-]{1,32}$/.test(s)) continue; out.push('mcp_' + s) } } return Array.from(new Set(out)).sort() })()"
-// 取值口径（逐条都能在被测源码上核对）：
-//   · 只认 **mcp-loader** 行（id/name 匹配 /mcp[-_]loader/i）—— 官方 `dsh-mcp-client` 注册的是
-//     `mcp__<server>__<tool>`，**没有** `mcp_<server>` 这种 loader ⇒ 把它算进来会得到不存在的名字。
-//   · `mode: 'eager'` 的 server **排除**：eager 的 loader 会被 probe 后 dispose（src/index.ts:1008-1025）
-//     ⇒ 届时该名字不存在 ⇒ deny 会炸。
-//   · `loaderName` 覆盖优先；server 名不合 `^[A-Za-z0-9_-]{1,32}$`（mcp-loader 自己会在 mount 时
-//     拒绝这种配置，src/connection.ts:248）且未给 loaderName ⇒ 跳过。
-//   · `entry.disabled` 为真 ⇒ 跳过（禁用的行不会注册 loader）。
-//
-// ⚠️ **已知残余（未消除，写在这里而不是留给下一个人发现）**：`mode: 'auto'`（默认）+ 
-//   `singleToolThreshold >= 1`（默认 1）+ 该 server 实际工具数 ≤ 阈值 ⇒ mcp-loader 会 **eager 注册并
-//   dispose 掉 loader**（src/index.ts:1008-1025）⇒ 上面算出来的名字届时**不存在** ⇒ 该 lane 首次派发
-//   仍会 loud 失败（restrict 抛 unknown）。本机不受影响（profile patch 设了 `singleToolThreshold: 0`，
-//   该设置下 auto 永不 eager）。要**彻底**消除只能靠运行时机制（对 child 施加 guard / 在 agent 创建时
-//   按当时注册表 restrict）——那需要新增插件文件，不在本单的面内；见证据文件的「Limits」。
-// ⚠️ **漂移提醒（改口径了）**：新增 MCP server **不再**需要同步任何名单（闭包按机器算）。
-//   但 dsh-mcp-loader 的**默认命名规则**（src/index.ts:74）或 **eager 判定**（src/index.ts:1008-1025、
-//   1038）若变了，必须改 MCP_CLOSURE_EXPR —— 它就是这两个事实的镜像。
-
-// ── `schedule_*`：**静态** deny（2026-10-10 裁决；版本条件已在 T1 退休）────────────
-// 2026-10-10 用户裁决：**放开 tool-schedule，但只给 Lead，9 个 lane 全部 deny**
-// （「选项1，只给主代理，不给子agent」）。
-//
-// 🔻 **退休记录**：本段原先是一套「按版本求值」的条件闭包，现已整体删除。它的退休触发条件
-//    写在原段第 ⑤ 条，两条判据**都**已满足 ——
-//      ① README「Host version gate」的表不再含 `0.2.0-rc.2`（支持集只剩 `0.2.1-rc.2`）；
-//      ② `package.json` 的 `peerDependencies` 已钉到 `0.2.1-rc.2`（下界越过 `0.2.0-rc.2`）。
-//    被删掉的四件：`SCHEDULE_TOOLS` / `SCHEDULE_RESOLVE` / `SCHEDULE_ABSENT_EXPR` /
-//    `SCHEDULE_DENY_EXPR` —— 连同「解析得到就 deny、解析不到就交空数组」的按机器求值。
-//    **替换物**：那四个名字移进三份静态 deny 名单（`READONLY_DENY` / `WRIGHT_DENY` /
-//    `FORGE_DENY`），`tool-schedule` 行不再带 `disabled`（裸一行，与官方骨架同形）。
-//
-// 为什么静态是对的（而不是「退回到一个更弱的写法」）：唯一受支持的宿主 `0.2.1-rc.2`
-//   **自己依赖** `@deepseek-ai/dsh-tool-schedule`（`dsh@0.2.1-rc.2` 的 dependencies 里有它，
-//   实测可解析）⇒ 这四个名字在**每一台**受支持的机器上都存在 ⇒ 静态名单正是表达
-//   「每台机器都有」的地方；条件求值反而多一层会漂移的机器相关性。
-// ⚠️ `lane-tool-gate` 的 deny 名单同样含这四个名字（见 `laneGateDeny`）：在 rc.2 上**真正**
-//   拦住 lane 的是那个 gate，静态名单是裁决的记录 —— 两者不得只做一半。
-
+// ── MCP server 名与 `schedule_*`：不再需要任何静态/闭包名单 ──────────────────────
+// 旧形态在这里算过两件事，现在两件都由机制自己兜住：
+//   ① **MCP 闭包**（按 `ctx.loader.entries()` 算出本机会注册的 `mcp_<server>` 名，
+//      再拼进 deny）。它存在的唯一理由是「deny 名单必须穷举要挡的名字」—— 本机没配的
+//      server 一旦写死就会在别的机器上炸 `names unknown global tool`。现在 lane 声明的是
+//      `official`（要什么），`lane-tool-gate` 按**当时**注册表求 deny ⇒ 晚注册的
+//      MCP 名字在 `tools/change` 的第二次求值里照样被剥掉（实测见 G5）。
+//      ⇒ 新增 MCP server **不需要**同步任何名单，也不再需要镜像 mcp-loader 的命名规则
+//        (`mcp_<server>`) 或 eager 判定 —— 那两条事实不再被本文件复制。
+//   ② **`schedule_*` 静态 deny**（2026-10-10 裁决：只给 Lead，9 条 lane 全部不给）。
+//      四个名字现在统一体现在「不在任何 lane 的 `official` 里」：`tool-schedule` 行仍在
+//      `topRows`（Lead 的工具面），而九条 lane 的 official 集都不含这四个名字。
+//      ⇒ 裁决不变，表达方式从「逐条 deny」换成「不授予」。
+// ⚠️ 唯一保留下来的相关事实是 `LEGAL_TOOL_NAMES`（参考清单，不是门）：它仍列着这些名字，
+//    供人读与产物自检使用。
 // ── 宿主形态探针：这个宿主的 `tool-subagent` 还在旧契约上吗 ────────────────────
 // ⚠️ **先读名字再读语义**：本常量叫 `LANE_FORM_SUPPORTED_EXPR`，但它为 **true 的含义是
-//    「宿主是旧形态」= 本包**不支持**它**。支持集现在恰好只有 `0.2.1-rc.2` 一个版本
-//    （`package.json` 的四个 peer 都钉死，README 的表只剩那一行），所以这条探针的职责
+//    「宿主是旧形态」= 本包**不支持**它**。支持集是**两个**版本
+//    （`SUPPORTED_HOST_VERSIONS`：`0.2.1-rc.2` 与 `0.2.1-rc.3`），所以这条探针的职责
 //    已经从「挑一种形态」缩成**一个开关**：**true ⇒ 每一条 lane 行与每一条 preset 行都
 //    `disabled`**，即在这台不受支持的宿主上本 bundle **什么都不挂**；false ⇒ 正常挂载。
 //    极性**没有**反转，也不得反转 —— 它仍然直接取自「`persona` 还在不在 Config 里」这个事实。
@@ -181,20 +128,27 @@ export const MCP_CLOSURE_EXPR = "(() => { const out = []; const l = ctx.loader |
 //    `./model-selection-settings` 等，**没有** `./lib/index.js` ⇒ 子路径解析恒抛
 //    `ERR_PACKAGE_PATH_NOT_EXPORTED`，于是本判据**永远**返回 true（= 在受支持的宿主上也判错，
 //    而且判错的方向是「整族关闭」，静默地少掉 9 个 lane）。
-// ── 受支持宿主的**版本**（单一来源）──────────────────────────────────────────────
-// 支持集恰好是这一个版本。它同时出现在三处，必须同值：
+// ── 受支持宿主的**版本集**（单一来源）────────────────────────────────────────────
+// 支持集是**两个**版本：`0.2.1-rc.2`（npm `latest`）与 `0.2.1-rc.3`（npm `next`）。
+// 它同时出现在三处，必须同值：
 //   · 本常量（宿主门的判据）
-//   · README「Host version gate」那张只剩一行的表（T3 的文件）
-//   · `install.sh` 的 MIN_HOST_VERSION（安装下限）
+//   · README / README.zh「Host version gate」那张两行的表
+//   · `install.sh` 的 SUPPORTED_HOST_VERSIONS（安装期的支持集检查）
+// ⚠️ **集合不是区间**：判据是逐字成员判断，不是 semver 比较。原因是 `dsh-tool-subagent`
+//    的 `version` 字段里 prerelease 段的写法属上游自由（`-rc.2` / `-rc3` 都可能是同一版），
+//    而「rc.2 与 rc.3 之间还有什么」这件事本包没有实测过 —— 一次 semver 比较会顺手把
+//    未测过的中间态也放进来。逐字成员只放行这里明确点名的版本。
 // ⚠️ 为什么门要按**版本**判而不是按 Config 形状判（第 24 轮更正，seer 提出）：
 //    旧判据读 `Config` 字面量里有没有 `persona:`。那个事实在 0.2.0-rc.2 / alpha.1 /
 //    alpha.2 上是 true、在 alpha.3 及以后是 false ⇒ 它只把**老**宿主关掉，而把
 //    alpha.3/4/5 **放进来**。可是 alpha.3 与受支持的 0.2.1-rc.2 在结构上**无法区分**：
 //    两者的 `Config` 键集相同（`agentPreset` / `allowedAgentPresets`，无 `persona`）、
 //    服务需求相同 —— **只有版本字符串能分开它们**。所以判据必须是版本。
-export const SUPPORTED_HOST_VERSION = '0.2.1-rc.2'
+//    rc.3 沿用同一判据：它与 rc.2 的结构差异没有被观察到，支持它的依据是实测（见 README
+//    的宿主表），而**不是**「rc.2 能用所以 rc.3 也能用」。
+export const SUPPORTED_HOST_VERSIONS = ['0.2.1-rc.2', '0.2.1-rc.3']
 
-// ── 宿主门：**这台宿主的 `dsh-tool-subagent` 版本不是受支持的那个吗** ────────────────
+// ── 宿主门：**这台宿主的 `dsh-tool-subagent` 版本不在受支持集里吗** ──────────────────
 // 名字仍然叫 `LANE_FORM_SUPPORTED_EXPR`，而 **true 的含义是「不受支持」**（保持既有极性，
 // 三族行——9 条 lane 行 / 9 条 preset 行 / fork 行——都直接取它作 `disabled`，不加 `!`）。
 //
@@ -203,7 +157,7 @@ export const SUPPORTED_HOST_VERSION = '0.2.1-rc.2'
 //
 //   ① **版本步 —— 严格（strict）**：`createRequire(baseUrl).resolve('@deepseek-ai/dsh-tool-subagent')`
 //      拿到入口，从它所在目录**向上最多走 6 层**，找 `name` 等于该包名的 `package.json`，读 `version`。
-//      **只要读得到一个版本，且它不是 `SUPPORTED_HOST_VERSION`，就返回 true（禁用）**。
+//      **只要读得到一个版本，且它不在 `SUPPORTED_HOST_VERSIONS` 里，就返回 true（禁用）**。
 //      这是区分 alpha.3/4/5 与受支持版本的**唯一**事实 —— 三者结构完全相同，只有版本不同。
 //   ② **结构步 —— 受支持宿主的回退（fallback）**：版本**读不到**时（walk-up 没找到匹配的
 //      `name`+`version`，例如 package.json 里没有 `version` 字段、或 `name` 被改写、或布局深于
@@ -243,7 +197,7 @@ export const LANE_FORM_SUPPORTED_EXPR = "(() => { try { "
   + "try { const j = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')); "
   + "if (j.name === '@deepseek-ai/dsh-tool-subagent' && j.version) { version = j.version; break } } catch (e) {} "
   + "const up = path.dirname(dir); if (up === dir) break; dir = up } "
-  + "if (version !== null && version !== '" + SUPPORTED_HOST_VERSION + "') return true; "
+  + "if (version !== null && ![" + SUPPORTED_HOST_VERSIONS.map((v) => "'" + v + "'").join(',') + "].includes(version)) return true; "
   // ⚠️ 括号必须配平：`.test(` 自己也要一对。漏掉最外层那个 `)` ⇒ 整条表达式
   //    **语法错误**（`missing ) after argument list`），而它被嵌进 `!!js` 后**不会**在
   //    生成期报错 —— 只会在宿主求值那条 `!!js` 时炸，或在 check 13 的求值测试里炸。
@@ -272,39 +226,16 @@ export const laneGatePlugin = bundlePkg + '/lane-tool-gate.mjs'
 //    这件事在契约测试里还要按 id 认（不得靠推断）。
 export const forkControlRowId = 'tool-subagent-fork'
 
-// 只读 lane（**25** 项静态 + 按机器算的 MCP 闭包）
-//   —— 控制面 3 名（DESIGN.md §3.3.4 的裁决：只读 lane 不得操纵/杀死他 lane）
-//   ⚠️ **+3 项（T16 / lane-composition.mjs）**：`subagent_children` / `subagent_send` / `subagent_interrupt`
-//   —— 它们是自写绑定器注册进 **Lead own scope** 的 lane 寻址名；scope 自己的层会被**其下每个 agent 继承**
-//   （`dsh-scope:162-171` `chainLayers` + `dsh-tools:2959-2974`）⇒ 不 deny 就会出现在 lane 的工具面里。
-//   这 3 名对 lane 是**继承来的** ⇒ 落在 `restrictableNames` 内 ⇒ deny **合法且生效**（不会抛掉整条 filter）。
-//   ⚠️ reader 用 `allow: ['read','read_image']` ⇒ 白名单天然不含 `schedule_*`，**不重复列**（列了反而越界，
-//   见 `patch-contract.test.mjs` 第 10 条：allow 面出现越界名即失败）。
-export const READONLY_DENY = ['write', 'edit', 'todo_write', 'ask_user_question', 'exit_plan_mode',
-  'send_message', 'interrupt_agent', 'list_agents',
-  'subagent_children', 'subagent_send', 'subagent_interrupt',
-  'subagent_fork',
-  'subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
-  'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
-  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
-// wright（**22** 项静态 + 同一份 MCP 闭包）—— 同上，叶子执行者不需要控制面
-//   （可写、可用 todo_write / skill）；⚠️ T16 的 3 个 lane 寻址名同样 deny（理由见上）
-export const WRIGHT_DENY = ['ask_user_question', 'exit_plan_mode',
-  'send_message', 'interrupt_agent', 'list_agents',
-  'subagent_children', 'subagent_send', 'subagent_interrupt',
-  'subagent_fork',
-  'subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
-  'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
-  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
-// forge（**17** 项静态 + 同一份 MCP 闭包）—— 保留 list_agents + send_message
-//   （它要管自己派出的只读孙代）；deny interrupt_agent。**MCP 也 deny**（理由见上）。
-//   ⚠️ T16 的 3 个 lane 寻址名同样 deny：本轮裁决是「这 3 件不出现在**任何 lane** 的工具面里」
-//   （见 T16 目标句）—— lane 用「派人」而不是「寻址」。
-export const FORGE_DENY = ['ask_user_question', 'exit_plan_mode', 'interrupt_agent',
-  'subagent_children', 'subagent_send', 'subagent_interrupt',
-  'subagent_fork',
-  'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
-  'subagent_analyst', 'subagent_auditor', 'subagent_reader', 'subagent_wright', 'subagent_forge', 'subagent_planner']
+// ── 为什么不再有三份静态 deny 名单 ─────────────────────────────────────────────
+// 每一条 lane 现在声明的是它**要什么**（`official`，见 LANES），不是它**不要什么**。
+// 这不是措辞偏好，是机制决定的：静态 deny 名单必须枚举「宿主工具面减去本 lane 的」，
+// 而宿主的全局工具面按部署漂移（MCP server、第三方插件、workbench 扩展）⇒ 名单只会
+// 越写越长、越写越漏。`official` 反过来：它只写本 lane 该有的名字，剩下的由
+// `lane-tool-gate` 按**当时**注册表算出来再说。
+// ⚠️ 因此这里**没有**三份静态名单可供对照 —— 想看某条 lane 能看见什么，
+//   看 `LANE_OFFICIAL` 里那一行，那就是全部。
+// ⚠️ 这也顺带消掉了一类缺陷：旧名单里 `subagent_*` 十三个名字必须逐条列全（漏一个 =
+//    lane 能派活给 sibling），而现在只要不在 `official` 里就进不了工具面。
 
 // ── shell 工具名派生（⚠️ 不能只用 process.platform）──────────────────────────
 // 在用户的部署里，**home 级 patch**（$DSH_HOME/cordis.patch.yml）把 host 层的
@@ -624,65 +555,108 @@ export const LANE_COMMON = { provider: 'spawn' }
 // `orch-` 前缀避免与官方 preset id（`standard`）和用户自己的 id 相撞。
 const lanePresetId = (lane) => 'orch-lane-' + lane.persona.replace(/\.md$/, '')
 
+// ── 九条 lane 的**官方工具集**（`official`）─────────────────────────────────────
+// 这份表是每条 lane 工具面的**唯一来源**：lane 的 preset 里挂哪些官方工具行、以及
+// `lane-tool-gate` 的 `official`，都从同一个 `official` 数组派生（见下方的 `laneToolRows`）。
+// 两个用途共用一个数组，是为了让「声明了却挂不上」与「挂上了却没声明」都**不可能发生** ——
+// 那两件事的组合正是「lane 的工具面与它的声明不符」，而这种不符不会有任何报错。
+//
+// ⚠️ **为什么是 `official`（要什么）而不是 deny（不要什么）**：见本文件上方
+//     「为什么不再有三份静态 deny 名单」段。一句话：宿主的全局工具面按部署漂移，
+//     「不要什么」永远列不全，「要什么」永远列得全。
+//
+// ⚠️ **shell 两个名字都写进 `official`**（`bash` 与 `pwsh`）：`official` 是**允许**名单，
+//     不是「本机注册了什么」的镜像 —— 多写一个没注册的名字是**无害**的（deny 只从
+//     **已知**名字里选，不存在的名字不会进 deny，因此 `restrict()` 不会抛 unknown），
+//     少写一个才是权限缺口。而本机到底注册哪个由 `plugins[]` 里那两条 `!!js` 平台表达式
+//     决定 ⇒ **两个都声明、两个都挂**，两边永远自洽，且与构建这台机器上的平台无关。
+//     ⚠️ 这正是上一轮在别处踩过的坑：只写 `bash` 又只挂 `tool-bash` 时，Windows 上
+//        两条都不生效 ⇒ 该 lane **完全没有 shell**（可写 lane 却跑不了命令）。
+export const LANE_OFFICIAL = {
+  // 只读侦查面：读文件 + 看图片 + 找路径 + 搜内容
+  scout:     ['read', 'read_image', 'glob', 'grep'],
+  seer:      ['read', 'read_image', 'glob', 'grep'],
+  analyst:   ['read', 'read_image', 'glob', 'grep'],
+  auditor:   ['read', 'read_image', 'glob', 'grep'],
+  // 档案 lane 额外能上网取证（它要给别的 lane 送外部事实）
+  archivist: ['read', 'read_image', 'glob', 'grep', 'web_fetch', 'web_search'],
+  // reader 是**唯一**的窄口：只有两把读的钥匙，连找路径都没有
+  reader:    ['read', 'read_image'],
+  // 可写 lane：在只读面之上加 write / edit / todo / skill / shell
+  wright:    ['read', 'read_image', 'glob', 'grep', 'write', 'edit', 'skill', 'todo_write', 'bash', 'pwsh'],
+  forge:     ['read', 'read_image', 'glob', 'grep', 'write', 'edit', 'skill', 'todo_write', 'bash', 'pwsh'],
+  // 规划 lane：能读能查、能取 skill 的用法，但**不能写**（它只产出计划）
+  planner:   ['read', 'read_image', 'glob', 'grep', 'skill'],
+}
+
 export const LANES = [
-  { tool: 'subagent_scout',     persona: 'scout.md',     maxDepth: 1, deny: READONLY_DENY },
-  { tool: 'subagent_archivist', persona: 'archivist.md', maxDepth: 1, deny: READONLY_DENY },
-  { tool: 'subagent_seer',      persona: 'seer.md',      maxDepth: 1, deny: READONLY_DENY },
-  { tool: 'subagent_reader',    persona: 'reader.md',    maxDepth: 1, allow: ['read', 'read_image'] },
-  { tool: 'subagent_analyst',   persona: 'analyst.md',   maxDepth: 1, deny: READONLY_DENY },
-  { tool: 'subagent_auditor',   persona: 'auditor.md',   maxDepth: 1, deny: READONLY_DENY },
-  { tool: 'subagent_wright',    persona: 'wright.md',    maxDepth: 1, deny: WRIGHT_DENY },
-  { tool: 'subagent_forge',     persona: 'forge.md',     maxDepth: 1, deny: FORGE_DENY },
-  { tool: 'subagent_planner',   persona: 'planner.md',   maxDepth: 1, deny: READONLY_DENY },
+  { tool: 'subagent_scout',     persona: 'scout.md',     maxDepth: 1, official: LANE_OFFICIAL.scout },
+  { tool: 'subagent_archivist', persona: 'archivist.md', maxDepth: 1, official: LANE_OFFICIAL.archivist },
+  { tool: 'subagent_seer',      persona: 'seer.md',      maxDepth: 1, official: LANE_OFFICIAL.seer },
+  { tool: 'subagent_reader',    persona: 'reader.md',    maxDepth: 1, official: LANE_OFFICIAL.reader },
+  { tool: 'subagent_analyst',   persona: 'analyst.md',   maxDepth: 1, official: LANE_OFFICIAL.analyst },
+  { tool: 'subagent_auditor',   persona: 'auditor.md',   maxDepth: 1, official: LANE_OFFICIAL.auditor },
+  { tool: 'subagent_wright',    persona: 'wright.md',    maxDepth: 1, official: LANE_OFFICIAL.wright },
+  { tool: 'subagent_forge',     persona: 'forge.md',     maxDepth: 1, official: LANE_OFFICIAL.forge },
+  { tool: 'subagent_planner',   persona: 'planner.md',   maxDepth: 1, official: LANE_OFFICIAL.planner },
 ].map((lane) => ({ ...lane, presetId: lanePresetId(lane) }))
 
 // ── lane 的 Agent Preset 声明（新形态用；旧形态不生成这些行）────────────────────
-// 每条含两件：该 lane 的 persona（沿用运行时读文件，行为与旧形态的 `persona: !!js …` 一致）
-// 与 `lane-tool-gate`（承接旧形态的 `toolFilter`，原因见上方 ⛔ 段）。
+// 每条 lane 的 preset 含三类行：
+//   ① `persona` —— 该 lane 的 persona 文件（沿用运行时读文件，与旧的 `persona: !!js …` 同形）；
+//   ② `lane-tool-gate` —— 持有 `official`，在**运行时**把其余一切从该 lane 的工具面上剥掉；
+//   ③ **官方工具行** —— 该 lane 真正需要的 `@deepseek-ai/*` 工具插件。
 //
-// ⚠️ **`allow` 的 lane（reader）在新形态下没有等价物**：gate 是「拒绝名单」，表达不了白名单
-//    （`tools.guard()` 只有 deny 语义，没有 allow —— 见 `dsh-tools` 的 `ToolGuard` 类型）。
-//    reader 的旧 `allow: ['read','read_image']` 是**允许名单**，含义是「只留这两个」。
-//    新形态下用 gate 表达它需要**枚举全部要拒的名字**（= 宿主工具面减去两个），而那份名单
-//    随宿主版本漂移 ⇒ 写死会在新宿主上拒掉不存在的名字，或在工具增加时漏放。
-//    ⇒ reader 的 gate **不收窄通用工具面**（它在新宿主上会看到比旧宿主更多的工具）；
-//      这一条退化在 README 的契约表里如实登记。
+// ⛔ **③ 不是「顺手也挂上」，它是必需的一半**：`official` 只是**允许**名单，不注册任何东西。
+//    一个在 `official` 里但没被 ③ 挂载的名字就是**不存在**的工具：「允许」一个不存在的工具，
+//    结果仍然是 lane 没有它。反过来，③ 挂了某个工具却不在 `official` 里，那个工具会被 gate
+//    立刻剥掉 —— 花了注册成本、产物看起来正常、lane 却拿不到。
+//    ⇒ 两半必须**同源**。所以 ③ 不手工书写，而是由 `laneToolRows()` 从 `official` **派生**：
+//      声明里有 `write` ⇒ 挂 `tool-fs` 且 `write: true`；有 `glob`/`grep` ⇒ 挂 `tool-fs-search`；
+//      有 `web_search` ⇒ 挂 `tool-web`；有 `skill` ⇒ 挂 `tool-skill`；有 `todo_write` ⇒ 挂 `tool-todo`；
+//      有 `bash`/`pwsh` ⇒ 各挂一条，带与 `topRows` **同形**的平台 `disabled` 表达式。
+//      这样「官方集」只有一个 home，产物与声明不可能分叉。
 //
-// ⛔ **但 lane 寻址名必须无条件挡住**（`LANE_ADDRESSING_DENY`）。这不是顺带的好意：
-//    旧形态下 reader 用 **allow** 白名单，白名单天然不含那 3 个名字 ⇒ 它**本来就**寻址不了别的 lane。
-//    若新形态直接 `lane.deny ?? []`，reader 的 gate 会变成空名单 ⇒ **它反而能寻址 sibling lane**，
-//    即「本来被挡住的能力被解锁」。那是权限放大，不是行为退化 ⇒ 必须显式补上，
-//    且这份名单与 `READONLY_DENY` 里那 3 个名字**同一个来源**，不得另写一份。
-export const LANE_ADDRESSING_DENY = ['subagent_children', 'subagent_send', 'subagent_interrupt']
+// ⚠️ **shell 的两条行必须都挂**（`tool-bash` + `tool-pwsh`）。它们的 `disabled` 是
+//    **未求值**的平台表达式（`process.platform === 'win32'` / `!== 'win32'`），与 `topRows`
+//    里那两条逐字同形 —— 宿主的 profile / home patch **够不到** preset 的 `plugins[]`，
+//    所以启用哪一个由这两条表达式在**运行时**决定，不由构建机器决定。
+//    只挂其中一条 = 在另一个平台上该 lane 没有 shell（静默的能力缺口，不报错）。
+const SHELL_ROWS = {
+  bash: { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash', disabled: "process.platform === 'win32'" },
+  pwsh: { id: 'tool-pwsh', name: '@deepseek-ai/dsh-tool-pwsh', disabled: "process.platform !== 'win32'" },
+}
 
-// ── 每条 lane 的 gate 名单：静态项 + 按机器算的 MCP 闭包 ────────────────────────
-// ⛔ **在 rc.2 上，lane 的收窄**全部**走这里**（`lane-tool-gate` 的 `tools.guard()`）：
-//    `dsh-tool-subagent@0.2.1-rc.2` 的 Config 里既没有 `persona` 也没有 `toolFilter`
-//    （只有 `agentPreset` / `allowedAgentPresets`），而 preset 的 `plugins[]` **只能加不能减**。
-//    ⇒ 若这里只列「声明里的 deny」，`allow` 形态的 reader 会拿到**空名单**，而其余 lane 也
-//      只会拿到静态项 —— **每一条只读 lane 都能调用 `mcp_*`**，并继承 `schedule_*`。
-//      那是权限放大，不是退化；而且产物看起来完全正常（名单在、只是短了）。
-//    ⇒ 名单 = `lane.deny`（reader 用 `LANE_ADDRESSING_DENY`）+ `LANE_ADDRESSING_DENY`
-//      + **MCP 闭包**（按机器算，理由见 `MCP_CLOSURE_EXPR` 段）+ **四个 `schedule_*`**。
-//      `schedule_*` 在这里是**静态**列出的：唯一受支持的宿主 rc.2 自己依赖
-//      `@deepseek-ai/dsh-tool-schedule` ⇒ 这四个名字在每台受支持机器上都存在（退休记录见上方段）。
-//      这也正是 2026-10-10 裁决「只给 Lead，9 个 lane 全部 deny」在 rc.2 上的**执行点**：
-//      静态名单是裁决的记录，这条 gate 名单是它真正生效的地方，两者缺一不可。
-// ⚠️ **MCP 闭包是表达式，不是字面数组** ⇒ 本函数只交出**静态段**；生成器
-//    （`gen-cordis-patch.mjs` 的 `lanePresetRow`）把它渲染成
-//    `!!js ([…静态…]).concat(<MCP_CLOSURE_EXPR>)`。与旧形态 lane 的 `toolFilter.deny`
-//    同一套渲染手法（同样是 plain scalar：无 `: `、无 `#`、无反斜杠、无双引号）。
-// ⚠️ 这里的 4 个 `schedule_*` 名字与 `READONLY_DENY` 里那 4 个**同一个裁决**，但**不是**
-//    同一份字面量 —— 前者要覆盖 reader（它的 `lane.deny` 是 undefined），后者是 deny 形态
-//    lane 的名单。两处都由 `SCHEDULE_TOOL_NAMES` 供值，不得各写一份。
-export const SCHEDULE_TOOL_NAMES = ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update']
-
-/** 一条 lane 在新形态下的 gate 静态名单：声明里的 deny（若有）+ 寻址名 + `schedule_*`。 */
-const laneGateDeny = (lane) => [...new Set([
-  ...(lane.deny ?? []),
-  ...LANE_ADDRESSING_DENY,
-  ...SCHEDULE_TOOL_NAMES,
-])]
+/** 由一个 `official` 集派生该 lane 的官方工具行。**唯一来源**，不得在别处另写一份。 */
+function laneToolRows(official) {
+  const has = (n) => official.includes(n)
+  const rows = []
+  if (has('read')) {
+    // `write` / `edit` 是 `tool-fs` 的两个开关；不开就等于注册了也拿不到那两个工具
+    rows.push({ id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs',
+      config: { write: has('write'), edit: has('edit') } })
+  }
+  if (has('glob') || has('grep')) {
+    // 与 `topRows` 同形：`glob` 结果超采样上限时不再追加，保持输出可预期
+    rows.push({ id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search',
+      config: { sampleOverCapGlobResults: false } })
+  }
+  if (has('web_fetch') || has('web_search')) {
+    rows.push({ id: 'tool-web', name: '@deepseek-ai/dsh-tool-web',
+      config: { fetch: true, searchTimeoutMs: 60000 } })
+  }
+  if (has('todo_write')) {
+    rows.push({ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo',
+      config: { allowParallelInProgress: true } })
+  }
+  if (has('skill')) {
+    rows.push({ id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' })
+  }
+  for (const name of ['bash', 'pwsh']) {
+    if (has(name)) rows.push({ ...SHELL_ROWS[name] })
+  }
+  return rows
+}
 
 export const lanePresetRows = LANES.map((lane) => ({
   id: 'preset-' + lane.presetId,
@@ -694,7 +668,9 @@ export const lanePresetRows = LANES.map((lane) => ({
       // `personaFile` 是**取值槽**：生成器把它渲染成与旧形态同形的运行时 `readFileSync`
       // 表达式（见 `gen-cordis-patch.mjs` 的 `personaExpr`）。本文件不产 `!!js`。
       { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { personaFile: lane.persona } },
-      { id: 'lane-gate', name: laneGatePlugin, config: { deny: laneGateDeny(lane) } },
+      // `official` 是**字面数组**（不是表达式）：它是声明，不带任何按机器求值的东西。
+      { id: 'lane-gate', name: laneGatePlugin, config: { official: lane.official } },
+      ...laneToolRows(lane.official),
     ],
   },
 }))
@@ -775,10 +751,10 @@ export const topRows = [
   //       时间感知是 `time-context`，自 0.1.4 起已在 `topRows` 第 5 行）。上游
   //       `dsh-tool-schedule/README.md`：它是 `@deepseek-ai/dsh-schedule` 服务的**面向模型的消费者**，
   //       在**挂载它的 preset 或 Agent scope** 里注册这四个工具 ⇒ 谁拿到由**装配**决定。
-  //    ② **它挂在这一层 = 只给 Lead**：四个名字进的是 preset 顶层的工具面，而**每一条** lane 都在
-  //       三份静态 deny 名单里列全了它们（`READONLY_DENY` / `WRIGHT_DENY` / `FORGE_DENY`），
-  //       lane 的 `lane-tool-gate` 也列全了（`laneGateDeny`）。**只做前一半 = 把提醒能力
-  //       静默发给所有 lane**，所以这两半必须一起改。
+  //    ② **它挂在这一层 = 只给 Lead**：四个名字进的是 preset 顶层的工具面，而**九条 lane 的
+  //       `official` 集都不含这四个名字**（见 `LANE_OFFICIAL`）⇒ `lane-tool-gate` 会把它们
+  //       从每条 lane 的工具面上剥掉。**只挂这一行而不看 official = 把提醒能力静默发给所有
+  //       lane**，所以「挂在这里」与「不进任何 official」是同一裁决的两半，必须一起改。
   //    ③ **本行为什么不再带宿主门**：唯一受支持的宿主 `0.2.1-rc.2` **自己依赖**
   //       `@deepseek-ai/dsh-tool-schedule`（`dsh@0.2.1-rc.2` 的 dependencies 里有它）⇒ 这个包在
   //       每一台受支持的机器上都可解析 ⇒ 不需要「解析不到就禁用」的那条按机器求值的 `disabled`。
@@ -821,9 +797,9 @@ export const groups = [
       //    `schedule_*` 名字**无法**在这条路径上被声明式 deny。0.1.9 声称它能，而那个声称在
       //    alpha.4 / alpha.5 上**已经**是假的；本轮只是把这句话改成真的。
       //    影响面：Lead 主动 fork 出来的 child 会看到提醒工具；9 条**具名** lane 不受影响
-      //    （`laneGateDeny` 列全了这四个名字，且 lane 自己 fork 不了 —— 它们的 deny 里含
-      //    `subagent_fork`）。
-      //    ⚠️ 要彻底关掉这个口子只能靠运行时机制（对 fork child 施加 guard），需要新增插件
-      //       文件，不在本轮面内。
+      //    （它们的 `official` 不含这四个名字 ⇒ gate 剥掉；而且 lane 自己 fork 不了 ——
+      //    `subagent_fork` 也不在任何 `official` 里）。
+      //    ⚠️ 要彻底关掉这个口子只能靠运行时机制（对 fork child 施加同一个 gate），需要新增
+      //       插件文件，不在本轮面内。
       { id: forkControlRowId,           name: '@deepseek-ai/dsh-tool-subagent', config: { provider: 'fork', toolName: 'subagent_fork' } },
       ...LANES ] } ]

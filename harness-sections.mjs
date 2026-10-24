@@ -62,8 +62,8 @@ export const inject = ['systemPrompt']
  * and `:111` registers the section; the body is `WEB_SURFACE_PROMPT` (`:28`),
  * **1005 characters** in source / **1002** as assembled (the join trims a trailing
  * newline). ⚠️ The name is `app:web-surface`, NOT `web-surface` — verified against
- * the installed `0.2.1-rc.2` tree in both `~/.dsh/node_modules` and the npm-global
- * install. Matching the bare `web-surface` would have silently filtered nothing.
+ * the installed `0.2.1-rc.2` and `0.2.1-rc.3` trees, in both `~/.dsh/node_modules` and
+ * the npm-global install. Matching the bare `web-surface` would have silently filtered nothing.
  *
  * The bare `web-surface` spelling is kept as a second exact match purely so a host
  * that renames the constant back still gets trimmed; it is not a wildcard and it
@@ -98,7 +98,7 @@ function keepsEverything(profile) {
  *    pointless then and an empty-filter warning would be noise.
  *    ⚠️ In `0.2.1-rc.2` the flag is **not** propagated into `assembly.sections` —
  *    `:386-393` copies only `name` / `text` / `interpolate` into each assembled
- *    entry. So `section.complete` is normally `undefined` here and the check below is
+ *    entry. Re-checked on `0.2.1-rc.3`: same shape at `:384-390`. So `section.complete` is normally `undefined` here and the check below is
  *    forward-compatibility, not a live path; the harness's own `:403` restore is what
  *    actually protects the prompt today. Do not read the check as evidence that a
  *    complete section is observable at this seam.

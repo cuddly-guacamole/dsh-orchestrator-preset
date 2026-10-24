@@ -11,19 +11,35 @@
  * plugins, so there is no longer any way to EXCLUDE a host tool from a lane
  * declaratively.
  *
- * The one per-agent lever left is `tools.guard()`, which the registry evaluates
- * along the calling agent's own scope chain (`dsh-tools` `guardReason` walks
- * `chainLayers(exec.agent)`). Mounting this plugin inside a lane's preset
- * therefore scopes the denial to that lane alone: the parent and every sibling
- * lane keep their full surface.
+ * ── Why `restrict` and not `guard` ──────────────────────────────────────────
+ * An earlier revision of this file used `tools.guard()`, which refuses a call
+ * but leaves the tool **visible**. That was the wrong instrument. The thing
+ * being reproduced is `toolFilter`'s behaviour, and `toolFilter` REMOVED the
+ * tool from the model's surface. A guard cannot: a lane would keep reading
+ * `write` and `ops_bash` in its own tool list and spend turns discovering it may
+ * not use them. `tools.restrict({ deny })` is the same operation `toolFilter`
+ * performed, so the narrowed surface is the one the lane actually sees.
  *
- * This is NOT the same instrument as the `toolFilter` it replaces, and the
- * difference is deliberate rather than incidental. A restriction removes the
- * tool from the model's visible surface; a guard leaves the tool visible and
- * refuses the call with a reason. Where a restriction could hide a capability,
- * a guard can only decline it. Verified on 0.2.1-alpha.3: a gated child's call
- * returns `tool "bash" is not available to this delegated lane` with no shell
- * spawned, while the parent's identical call succeeds.
+ * ── Why not `restrict({ allow })` ──────────────────────────────────────────
+ * An allow-list is the more natural statement of the intent ("these lanes may
+ * only use these tools"), and it is what the `reader` lane used to declare. It
+ * is unusable here: `restrict()` refuses names that are not registered yet, and
+ * the host's global tool set is not fixed at the moment a lane mounts. Third
+ * party and MCP tools register later (`dsh-mcp-loader` registers in its own
+ * `apply()`), so an allow-list written at mount time would either throw on a
+ * machine that lacks one of the listed names or freeze the surface against
+ * late arrivals. A deny-list computed from what is registered **right now**
+ * degrades correctly instead: the first pass covers what exists, and the
+ * recomputation below covers what shows up afterwards.
+ *
+ * ── Why the `tools/change` recomputation, and why de-duplicated ─────────────
+ * `restrict()` itself emits `tools/change`. Reacting to that event without a
+ * de-dup key makes the plugin recompute, re-restrict and re-emit forever. The
+ * key is the deny list itself, and it must be stored **before** calling
+ * `restrict()` so the emission that call triggers is already seen as a repeat.
+ * Without the earlier second pass, a lane mounted before an MCP server would
+ * keep that server's tools: the surface is computed once and the late names
+ * never get stripped — a silent permission grant rather than a visible failure.
  *
  * @module lane-tool-gate
  */
@@ -35,20 +51,50 @@ export const name = 'lane-tool-gate'
 export const inject = ['tools']
 
 /**
- * Refuse the configured tool names for every agent under this scope.
+ * Restrict every agent under this scope to the configured tool names.
  *
- * An empty or absent list is a no-op rather than an error: lanes that deny
- * nothing should not have to mount a gate at all, and a materialized-empty list
- * is legitimate here — unlike in `tools.restrict()`, where an empty filter means
- * a caller built its config wrong.
- *
- * @param ctx - the preset scope context; the guard covers only agents joined under it.
- * @param config - `deny`: host tool names this lane may not call.
+ * @param ctx - the preset scope context; the restriction covers only agents joined under it.
+ * @param config - `official`: the host tool names this lane is allowed to see.
  */
 export function apply(ctx, config) {
-  const deny = new Set(Array.isArray(config?.deny) ? config.deny : [])
-  if (deny.size === 0) return
-  ctx.tools.guard((exec) => (deny.has(exec.name)
-    ? `tool "${exec.name}" is not available to this delegated lane`
-    : undefined))
+  const official = new Set(Array.isArray(config?.official) ? config.official : [])
+
+  // The deny list is recomputed from the live registry rather than declared, so a
+  // tool registered after this plugin mounted is still stripped. See the
+  // `tools/change` note in the module comment.
+  let last = ''
+
+  const applyNow = () => {
+    const view = ctx.tools.view(undefined)
+    const known = view.knownNames ?? [...view.visible.keys()]
+    const deny = [...known].filter((n) => !official.has(n)).sort()
+    const key = deny.join('\u0000')
+    // A no-op recomputation is the common case: every mount and every unrelated
+    // tool change lands here. Returning early is what keeps the loop finite.
+    if (key === last) return
+    // Set `last` BEFORE restrict(): restrict() emits `tools/change`, and the
+    // handler for that event must see this key as already applied.
+    last = key
+    if (deny.length === 0) return
+    try {
+      ctx.tools.restrict({ deny })
+    } catch (error) {
+      // A lane that cannot be narrowed must not take the whole preset down with
+      // it, but it must not fail silently either: the warning names the error so
+      // a widened lane is visible in the log rather than inferred from behaviour.
+      ctx.logger.warn(`lane-tool-gate: failed to narrow this lane: ${String(error)}`)
+      // Do not keep `last`: a transient failure would otherwise be remembered as
+      // "already applied" and the lane would stay wide for the rest of the run.
+      last = ''
+    }
+  }
+
+  applyNow()
+  ctx.on('tools/change', () => {
+    try {
+      applyNow()
+    } catch (error) {
+      ctx.logger.warn(`lane-tool-gate: failed to recompute the lane surface: ${String(error)}`)
+    }
+  })
 }

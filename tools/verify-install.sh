@@ -1159,7 +1159,8 @@ head_ "check 13 — every lane's tool surface is narrowed by its preset gate, an
 # WHY THE `unsupported` MACHINE EXISTS (the fail-closed leg). The host axis used to
 # be about picking a lane FORM. It is now a single switch, and the switch reads the
 # VERSION: LANE_FORM_SUPPORTED_EXPR resolves dsh-tool-subagent, walks up to its
-# package.json and returns TRUE when that version is not the supported one. The old
+# package.json and returns TRUE when that version is not one of the supported two
+# (0.2.1-rc.2, 0.2.1-rc.3). The old
 # structural test (`/persona:/` in the Config literal) survives only as the fallback
 # for the case where no version can be read at all.
 #
@@ -1251,9 +1252,9 @@ STUBJS
 import { loadOverlayPatches } from "@deepseek-ai/dsh-app-boot"
 
 // Names every SUPPORTED machine has because rows this preset itself mounts register
-// them, or because the one supported host ships them. Since the supported set is the
-// single version 0.2.1-rc.2, and that version depends on @deepseek-ai/dsh-tool-schedule,
-// the four schedule_* names are UNCONDITIONAL: they are in the static deny lists and
+// them, or because every supported host ships them. The supported set is the pair
+// 0.2.1-rc.2 / 0.2.1-rc.3, and both depend on @deepseek-ai/dsh-tool-schedule,
+// so the four schedule_* names are UNCONDITIONAL: they are in the static deny lists and
 // in every gate deny. (They used to be a version-conditional tail; that was retired.)
 const SCHEDULE_NAMES = ["schedule_create", "schedule_delete", "schedule_list", "schedule_update"]
 // The three lane-addressing names this bundle registers into the Lead own scope, so

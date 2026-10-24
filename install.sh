@@ -7,9 +7,10 @@
 #   ./install.sh --check         # run the gates and report, change nothing
 #
 # What it does, in order:
-#   0. gate   — refuse to continue unless the host is exactly the one supported
-#               version, 0.2.1-rc.2 (the floor IS the supported set — see the note
-#               by MIN_HOST_VERSION)
+#   0. gate   — refuse to continue unless the host is at or above the floor,
+#               0.2.1-rc.2; report out loud when it is above the floor but not in
+#               the supported set (0.2.1-rc.2 / 0.2.1-rc.3 — see the note by
+#               MIN_HOST_VERSION)
 #   1. stage  — sync this repository's distributable set into $DSH_HOME/plugins/
 #               on every run, so the copy the host resolves is a projection of
 #               this repository rather than of the first install
@@ -30,18 +31,28 @@
 
 set -euo pipefail
 
-# The FLOOR for installing at all. It used to be deliberately looser than the
-# supported set, on the reasoning that a host between the two still worked. That
-# reasoning no longer holds: the supported set is exactly ONE version (0.2.1-rc.2,
-# pinned in package.json's peerDependencies and declared in README.md /
-# README.zh.md, section "0. Host version gate"), and every alpha and earlier rc is
-# out of support. So the floor IS the supported version — a floor below it would
-# install this bundle onto a host that cannot run it.
-# `ver_cmp` below already orders prereleases correctly, so this floor refuses the
+# The FLOOR for installing at all.
+#
+# It used to be deliberately looser than the supported set, on the reasoning that a
+# host between the two still worked. That reasoning was then over-corrected: for a
+# while the floor WAS the supported set, because the set held exactly one version.
+# It holds two now (0.2.1-rc.2 and 0.2.1-rc.3, pinned in package.json's
+# peerDependencies and declared in README.md / README.zh.md, section
+# "0. Host version gate"), so the floor is the LOWEST supported version and the
+# gap is back: a host above the floor but outside the set installs and mounts
+# nothing. That gap is not silent — the check below names it out loud, and the
+# artifact's own `disabled` expression is what actually enforces the set at mount
+# time. Nothing is copied or linked by this script that could half-work.
+# `ver_cmp` below already orders prereleases correctly, so the floor refuses the
 # hosts it must: 0.2.0-rc.2 -> -1 (refuse), 0.2.1-alpha.5 -> -1 (refuse),
-# 0.2.1-rc.1 -> -1 (refuse), while 0.2.1-rc.2 -> 0 (install) and anything above
-# it installs too (a future host is not something this floor can adjudicate).
+# 0.2.1-rc.1 -> -1 (refuse).
 MIN_HOST_VERSION="0.2.1-rc.2"
+# The supported set, space separated. Keep in sync with SUPPORTED_HOST_VERSIONS in
+# tools/preset-declaration.mjs (the artifact's gate) and the table in both READMEs —
+# those three are the only places this list lives. This copy cannot be derived from
+# the declaration: it must work before the bundle is staged, and on a machine with
+# no node_modules.
+SUPPORTED_HOST_VERSIONS="0.2.1-rc.2 0.2.1-rc.3"
 BUNDLE_DIRNAME="dsh-orchestrator-preset-bundle"
 # The module KEY a profile resolves this bundle by. It is deliberately NOT derived
 # from BUNDLE_DIRNAME: the on-disk directory keeps the bundle-dirname, while the key
@@ -86,16 +97,28 @@ ver_cmp() {
 }
 
 # --- 0. host version gate -------------------------------------------------
-say "0. host version gate (need >= ${MIN_HOST_VERSION})"
+say "0. host version gate (floor ${MIN_HOST_VERSION}; supported: ${SUPPORTED_HOST_VERSIONS})"
 HOST_BIN="$(command -v dsh || true)"
 [ -n "$HOST_BIN" ] || die "'dsh' not found on PATH. Install DeepSeek Harness, or re-run with it on PATH."
 HOST_VERSION="$("$HOST_BIN" --version 2>/dev/null | tr -d '[:space:]' | head -1)"
 [ -n "$HOST_VERSION" ] || die "could not read a version from 'dsh --version'."
 info "dsh --version = ${HOST_VERSION}"
 if [ "$(ver_cmp "$HOST_VERSION" "$MIN_HOST_VERSION")" = "-1" ]; then
-  die "host ${HOST_VERSION} is older than the required ${MIN_HOST_VERSION}. Refusing to install."
+  die "host ${HOST_VERSION} is older than the floor ${MIN_HOST_VERSION}. Refusing to install."
 fi
-info "gate passed"
+# Above the floor is not the same as supported. Say which one this is, out loud:
+# a host outside the set still installs, and then mounts nothing at all — that
+# absence is by design, but the user must not discover it later by accident.
+case " ${SUPPORTED_HOST_VERSIONS} " in
+  *" ${HOST_VERSION} "*)
+    info "gate passed — ${HOST_VERSION} is in the supported set" ;;
+  *)
+    info "WARNING: ${HOST_VERSION} is above the floor but NOT in the supported set"
+    info "         (${SUPPORTED_HOST_VERSIONS}). The bundle will install and then mount"
+    info "         nothing: every lane row, every lane preset row and the fork row are"
+    info "         disabled on this host by the artifact's own gate. Re-run on a"
+    info "         supported host, or check README section 0 for the current set." ;;
+esac
 
 if [ "$CHECK_ONLY" = "1" ]; then
   say "--check: gates only, nothing written."

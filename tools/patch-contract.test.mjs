@@ -238,16 +238,21 @@ function makeHostStub(kind, version, declaresPersona) {
   }
   return join(root, 'package.json')
 }
-// ── 三根**带版本**的桩：受支持版本 / rc.2 / alpha.5，外加一根读不到版本的旧契约桩 ──
+// ── 带版本的桩：受支持的两版 / 旧契约 / 结构与受支持版本相同的 alpha.5 / 读不到版本 ──
 // ⚠️ 这里替换了原来那两根「新形态 / 旧形态」桩。旧桩只区分 Config 形状，而 alpha.3/4/5
 //    与受支持的 0.2.1-rc.2 形状相同 ⇒ 旧桩**根本分不开**它们，门也就只关掉了老宿主。
 //    现在每根桩都带真实版本号，门读的就是那个版本。
-// · SUPPORTED：受支持版本，结构是新契约 ⇒ 门 false ⇒ 三族行**挂载**
-// · RC2      ：0.2.0-rc.2，结构是旧契约（声明 persona:）⇒ 门 true ⇒ 全关
-// · ALPHA5   ：0.2.1-alpha.5，结构**与受支持版本完全相同**、只有版本不同 ⇒ 门 true ⇒ 全关
-//              （这正是旧形状探针漏掉的那一档，也是这条断言存在的理由）
+// · SUPPORTED ：0.2.1-rc.2（支持集的第一项），结构是新契约 ⇒ 门 false ⇒ 三族行**挂载**
+// · NEWER     ：0.2.1-rc.3（支持集的第二项，结构同上）⇒ 门**也必须** false ⇒ 挂载。
+//               ⚠️ 这一根是「支持集是集合、不是单值」的唯一证据：删掉它，门退回单值相等
+//               仍然全绿，而那正是本轮修掉的东西。
+// · RC2       ：0.2.0-rc.2，结构是旧契约（声明 persona:）⇒ 门 true ⇒ 全关
+// · ALPHA5    ：0.2.1-alpha.5，结构**与受支持版本完全相同**、只有版本不同 ⇒ 门 true ⇒ 全关
+//               （这正是旧形状探针漏掉的那一档，也是这条断言存在的理由）
 // · UNRESOLVABLE：版本读不到 + 旧契约 ⇒ 门仍必须 true（fail-closed 方向）
-const NEW_BASE = makeHostStub('supported', d.SUPPORTED_HOST_VERSION, false)
+const SUPPORTED = d.SUPPORTED_HOST_VERSIONS
+const NEW_BASE = makeHostStub('supported', SUPPORTED[0], false)
+const NEWER_BASE = makeHostStub('newer', SUPPORTED[SUPPORTED.length - 1], false)
 const OLD_BASE = makeHostStub('rc2', '0.2.0-rc.2', true)
 const ALPHA5_BASE = makeHostStub('alpha5', '0.2.1-alpha.5', false)
 const UNRESOLVABLE_BASE = makeHostStub('unresolvable', 'not-a-version-' + process.pid, true)
@@ -382,26 +387,57 @@ function officialIds() {
 /** lane 的行 id（由 toolName 铸出，与 laneRow() 同一规则）。 */
 const laneRowId = (lane) => `tool-subagent-${lane.tool.replace(/^subagent_/, '').replace(/_/g, '-')}`
 
-// ── lane-gate 取值（0.2.1-rc.2 起的唯一收窄点）────────────────────────────────
-// lane 行的 `toolFilter` 已被删除：宿主 `apply()` 对它硬拒。收窄整体搬进了每条 lane
-// 自己的 Agent Preset 行里的 `lane-gate` 插件，值是一条 `!!js` 表达式
-// （静态名单 concat 按机器算的 MCP 闭包）。下面的 helper 从**产物文本**里取出那条表达式，
-// 在两个固定世界里各求值一次 —— 与 composedConfigOf 同一套手法，只是目标换成了预设行。
-const gateDenyExprOf = (presetRowId) => {
+// ── lane-gate 取值：`official` 是一份**字面名单**，不是表达式 ────────────────────────
+// lane 行的 `toolFilter` 早已被删除（宿主 `apply()` 对它硬拒）；收窄整体搬进了每条 lane
+// 自己的 Agent Preset 行里的 `lane-tool-gate` 插件。但**值的形式变了**：
+//   · 旧形态是一条 `!!js` 表达式（静态名单 concat 按机器算的 MCP 闭包）；
+//   · 现在是一份**字面数组** `official` —— 允许名单不需要按机器求值（理由见
+//     `preset-declaration.mjs` 的 `LANE_OFFICIAL` 段与 `gen-cordis-patch.mjs` 的同名段）。
+// ⇒ 下面的 helper 从**产物文本**里读出那份数组。它**不需要**两个世界各求值一次，因为
+//   已经没有表达式可求 —— 但「读产物而不是读声明」这一点保持不变：要测的是**产物**里的
+//   名单，声明自己算出来的东西不能当证据（那是 x === x）。
+const gateOfficialOf = (presetRowId) => {
   const block = blockText(presetRowId)
   if (block === null) return null
-  // `deny:` 那一行属于 `lane-gate` 插件（产物里它是该块中唯一以 `deny: !!js ` 开头的行）
-  const line = block.split('\n').find((l) => /^\s*deny: !!js /.test(l))
-  return line === undefined ? null : jsExprOf(line)
-}
-/** 在给定世界里求值某条 lane preset 的 gate 名单。 */
-const gateDenyOf = (presetRowId, baseUrl) => {
-  const expr = gateDenyExprOf(presetRowId)
-  assert.notEqual(expr, null, `${presetRowId}: 产物里没有 lane-gate 的 deny 表达式（该 lane 在 rc.2 上完全没有收窄）`)
-  return evalJs(expr, baseUrl)
+  const lines = block.split('\n')
+  const at = lines.findIndex((l) => /^\s*official:\s*$/.test(l))
+  if (at === -1) return null
+  const indent = /^ */.exec(lines[at])[0].length
+  const out = []
+  for (let i = at + 1; i < lines.length; i += 1) {
+    const m = /^( +)- (.+)$/.exec(lines[i])
+    if (m === null || m[1].length <= indent) break
+    out.push(unquote(m[2]))
+  }
+  return out
 }
 /** 一条 lane 的 preset 行 id（声明侧派生，测试不另写一份命名规则）。 */
 const presetRowIdOf = (lane) => `preset-${lane.presetId}`
+
+/**
+ * 某条 lane preset 的 `plugins[]` 里**实际挂载**了哪些插件行 id（从产物文本读）。
+ *
+ * 为什么需要它：`official` 是允许名单，它不注册任何东西。判断「该 lane 到底有没有这个工具」
+ * 必须看 `plugins[]` 里挂没挂对应的官方工具行 —— 那是两件不同的事实，本文件两件都断。
+ * 只认 `plugins:` 之下、缩进**恰好比它深两级**的 `- id:` 行，避免跨进嵌套插件的 config。
+ */
+const pluginIdsOf = (presetRowId) => {
+  const block = blockText(presetRowId)
+  if (block === null) return []
+  const lines = block.split('\n')
+  const at = lines.findIndex((l) => /^ +plugins:\s*$/.test(l))
+  if (at === -1) return []
+  const indent = /^ */.exec(lines[at])[0].length
+  const out = []
+  for (let i = at + 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === '') continue
+    const cur = /^ */.exec(lines[i])[0].length
+    if (cur <= indent) break
+    const m = /^( +)- id: '([\w-]+)'$/.exec(lines[i])
+    if (m !== null && m[1].length === indent + 2) out.push(m[2])
+  }
+  return out
+}
 
 
 /**
@@ -668,40 +704,73 @@ test('persona 行不带 suffix、promptProfile 取值合法，且产物里没有
 })
 
 // ============================================================================
-// 7. 每条 lane 的收窄住在它自己的 preset 的 lane-gate 里（0.2.1-rc.2 起）
-//    ⚠️ 这一条在 T1 之后**换了主语**：lane 行不再有 `toolFilter`（宿主 apply() 硬拒该键），
-//       收窄整体搬进该 lane 的 Agent Preset 行的 `lane-gate` 插件。
-//       旧版断言「每个 lane 行恰好有 toolFilter.allow 或 deny 之一」在主语搬走后
-//       只剩「每个 lane 行都没有 toolFilter」这一条恒真的残骸 —— 那正是要避免的假绿。
+// 7. 每条 lane 都声明了一份 `official`，且**与它自己挂载的官方工具行一致**
+//    ⚠️ 这一条在 restrict 迁移后换了**判据的形式**，但守的是同一件事：以前是
+//       「gate 的 deny 是一份非空名单」，现在是「lane 的允许集非空、且真的被挂上」。
+//       旧判据在新形态下必然失败（产物里已经没有 `deny:`），而如果只是删掉它，
+//       「lane 完全没有收窄」这件事就**没有任何断言**看着了 —— 那是假绿。
+//
+//    为什么必须两条一起断（声明非空 + 与 plugins[] 一致）：
+//      · `official` 只是**允许**名单，不注册任何东西。一个被允许却没挂载的名字 =
+//        不存在的工具 ⇒ lane 拿不到，而产物看起来完全正常。
+//      · 反过来，挂载了却不在 `official` 里的工具会被 gate 立刻剥掉 ⇒ 白花注册成本。
+//      ⇒ 两半同源（都由 `LANE_OFFICIAL` 派生）是声明侧的责任，**这条断言是它的探针**。
 // ============================================================================
-test('每条 lane 的 preset 里，lane-gate 的 deny 是一份非空名单，含 4 个 schedule_* 与 3 个寻址名', () => {
-  const SCHEDULE = ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update']
-  const ADDRESSING = ['subagent_children', 'subagent_send', 'subagent_interrupt']
+test('每条 lane 的 preset 里 official 非空，且与它 plugins[] 里的官方工具行一致', () => {
+  // 由 `official` 反推「该挂哪些工具行」——这是本文件对派生规则的**独立复述**，
+  // 故意不 import 声明侧的 `laneToolRows`：两边同源的话，改了规则两边一起错，探针就是瞎的。
+  const expectedRows = (official) => {
+    const has = (n) => official.includes(n)
+    const rows = []
+    if (has('read')) rows.push('tool-fs')
+    if (has('glob') || has('grep')) rows.push('tool-fs-search')
+    if (has('web_fetch') || has('web_search')) rows.push('tool-web')
+    if (has('todo_write')) rows.push('tool-todo')
+    if (has('skill')) rows.push('tool-skill')
+    for (const n of ['bash', 'pwsh']) if (has(n)) rows.push('tool-' + n)
+    return rows
+  }
   for (const lane of d.LANES) {
     const presetId = presetRowIdOf(lane)
-    // 两个世界都读：名单必须**两边都是数组**，否则「在一台机器上算得出来」就成了唯一证据。
-    const onSupported = gateDenyOf(presetId, NEW_BASE)
-    const onEmpty = gateDenyOf(presetId, LEGACY_BASE)
-    for (const [label, list] of [['supported', onSupported], ['no-MCP', onEmpty]]) {
-      assert.equal(Array.isArray(list), true, `${presetId} (${label}): gate deny 不是数组`)
-      assert.equal(list.length > 0, true, `${presetId} (${label}): gate deny 是空名单 ⇒ 该 lane 完全没有收窄`)
-      for (const name of [...SCHEDULE, ...ADDRESSING]) {
-        assert.equal(list.includes(name), true,
-          `${presetId} (${label}): gate deny 缺 ${name} —— schedule_* 缺 = 该 lane 拿到提醒工具（裁决是只给 Lead）；寻址名缺 = 该 lane 能操纵 sibling（权限放大）`)
-      }
-    }
-    // ⚠️ **reader 的 allow 白名单在 rc.2 上不存在**（gate 只有 deny 语义，见声明侧注释）。
-    //    这条退化已在 README 契约表登记，**不得**在这里用断言抹掉：reader 的 gate 名单
-    //    同样含那 3 个寻址名，但它的通用工具面**没有**被收窄到 read/read_image。
-    //    下面这条只锁「寻址名在 reader 的 deny 里」，不假装它有白名单。
-    if (lane.tool === 'subagent_reader') {
-      assert.equal(lane.allow !== undefined, true,
-        'reader 在声明侧应当仍带 allow（它是白名单 lane）；rc.2 上那份白名单没有等价物，这一点登记在 README')
-      for (const name of ADDRESSING) {
-        assert.equal(onSupported.includes(name), true, `reader 的 gate deny 缺 ${name}`)
-      }
-    }
+    const official = gateOfficialOf(presetId)
+    assert.notEqual(official, null, `${presetId}: 产物里没有 lane-gate 的 official 名单`)
+    assert.equal(Array.isArray(official), true, `${presetId}: official 不是数组`)
+    assert.equal(official.length > 0, true,
+      `${presetId}: official 是空名单 ⇒ 该 lane 什么都没有，连 read 都没有`)
+    // 名单本身不得有重复项（重复说明有人手工拼接了两份来源）
+    assert.equal(new Set(official).size, official.length, `${presetId}: official 有重复项`)
+    // 关键那条：产物里**实际挂载**的官方工具行，必须恰好是 official 反推出来的那些
+    const declared = new Set(expectedRows(official))
+    const mounted = pluginIdsOf(presetId)
+      .filter((id) => id.startsWith('tool-'))
+    const missing = [...declared].filter((id) => !mounted.includes(id))
+    const extra = mounted.filter((id) => !declared.has(id))
+    assert.deepEqual(missing, [],
+      `${presetId}: official 声明了这些工具需要的行却没挂 —— ${missing.join(', ')} ⇒ 名字被允许但工具不存在`)
+    assert.deepEqual(extra, [],
+      `${presetId}: 挂了这些官方工具行但 official 没点名 —— ${extra.join(', ')} ⇒ gate 会把它们剥掉，白挂一场`)
   }
+})
+
+// ============================================================================
+// 7a. 往下的 gate 不再有静态 deny：三份名单与 gate 的 deny 形态都已退休
+//     这条是**反证**（断言"不存在"），因为迁移后最容易犯的错是留下一半：
+//     声明侧删了名单、产物里却还带着旧表达式，或反过来。两边都必须干净。
+// ============================================================================
+test('gate 里不再出现静态 deny 名，声明侧也不再导出那三份名单', () => {
+  for (const gone of ['READONLY_DENY', 'WRIGHT_DENY', 'FORGE_DENY', 'LANE_ADDRESSING_DENY',
+    'SCHEDULE_TOOL_NAMES', 'MCP_CLOSURE_EXPR', 'laneGateDeny']) {
+    assert.equal(d[gone], undefined,
+      `声明侧仍导出 ${gone} —— 迁移只做了一半：新形态里这些名字没有任何消费者`)
+  }
+  // 产物侧：不允许残留 `deny:` 键（无论是字面量还是 `!!js` 表达式）
+  const denyLines = committed.split('\n').filter((l) => /^\s*deny:/.test(l))
+  assert.deepEqual(denyLines, [],
+    `产物里仍有 deny: 行（${denyLines.length} 处）—— lane-gate 的 config 现在是 official，不是 deny`)
+  // 产物侧：不允许残留旧表达式常量名（它们会以文本形式出现在 `!!js` 里）
+  const stale = committed.split('\n').filter((l) => /MCP_CLOSURE|laneGateDeny|READONLY_DENY/.test(l))
+  assert.deepEqual(stale, [],
+    `产物里仍有旧常量的痕迹（${stale.length} 行）—— 那些表达式已经没有任何意义`)
 })
 
 // ============================================================================
@@ -833,31 +902,27 @@ test('planning/compaction 的 isolate 与骨架逐字一致；delegation 组不�
 // ============================================================================
 const LANE_ADDRESSING_TOOLS = ['subagent_children', 'subagent_send', 'subagent_interrupt']
 
-test('lane 寻址的 3 个工具名出现在每个 lane 的 gate deny 里（deny 面必须列全）', () => {
+test('lane 寻址的 3 个工具名**不在任何 lane 的 official 里**（允许名单必须不含它们）', () => {
   // 依据：ADR「keep-lane-composition」的决定第 4 条。这三个名字由本包自己的插件**全局**注册
   // （`lane-composition.mjs:1-30`），对 lane 而言是从 Lead 那一层**继承**来的 ⇒ 落在
-  // `restrictableNames` 内 ⇒ deny 合法且生效（`preset-declaration.mjs` 的 LANE_ADDRESSING_DENY 段）。
-  // ⇒ 漏 deny 的后果**不是** loud 失败，是 lane 获得了寻址其它 lane 的能力：边界静默失效。
-  //   这是「不挂载 ⇒ 不存在」（§2.3 / §15 R16）那条纪律在**寻址面**上的等价要求。
+  // `restrictableNames` 内 ⇒ 只要**不授予**就一定会被 gate 剥掉。
   //
-  // ⚠️ **断言方向在 T1 之后翻转了**。旧版查的是「这 3 个名字**不在** lane 的工具面里」，
-  //    在 lane 行的 `toolFilter.deny` / `toolFilter.allow` 上判；那条路径已经不存在
-  //    （lane 行没有 toolFilter 了）。现在唯一承载它们的清单是每条 lane 自己的
-  //    `lane-gate` deny ⇒ 断言变成「必须**在** deny 名单里」。
-  //    「不在工具面里」与「在 deny 名单里」是同一件事的两面，前提是 deny 真的被挂载 ——
-  //    而这一点由 7b（preset 行在受支持的宿主上启用）与 check 13（unsupported 宿主全关）锁住。
-  //
-  // ⚠️ reader 的白名单（`allow: ['read','read_image']`）在 rc.2 上**没有等价物**：
-  //    `tools.guard()` 只有 deny 语义，表达不了白名单。那份退化已在 README 契约表登记，
-  //    本文件不假装它还在：reader 在这里只被要求「3 个寻址名在 deny 里」，不再被要求
-  //    「allow 白名单不含它们」（产物里已经没有 allow 了）。
+  // ⚠️ **断言方向在 restrict 迁移后换成了「不在 official 里」**，这比旧版更强：
+  //    · 旧版（guard 形态）要求「这 3 个名字**在 deny 名单里**」—— 那是一种**枚举式**保证，
+  //      漏列一个就静默失效，产物看起来完全正常（名单在、只是短了）。
+  //    · 现在要求「**不在**允许名单里」—— 那是**默认拒绝**：新增一个 lane 寻址工具时，
+  //      只要没被显式加进某个 official，它就自动进不了任何 lane。漏列不再可能。
+  //    ⇒ 这条断言比它替换掉的那条更难被绕过，而不是更松。
   for (const lane of d.LANES) {
-    const deny = gateDenyOf(presetRowIdOf(lane), NEW_BASE)
-    assert.equal(Array.isArray(deny), true, `${presetRowIdOf(lane)}: gate deny 不是数组`)
+    const official = gateOfficialOf(presetRowIdOf(lane))
+    assert.notEqual(official, null, `${presetRowIdOf(lane)}: 产物里没有 official 名单`)
     for (const name of LANE_ADDRESSING_TOOLS) {
-      assert.equal(deny.includes(name), true,
-        `${presetRowIdOf(lane)}: gate deny 没有 ${name} ⇒ 该 lane 能寻址别的 lane（权限放大）`)
+      assert.equal(official.includes(name), false,
+        `${presetRowIdOf(lane)}: official 含 ${name} ⇒ 该 lane 能寻址别的 lane（权限放大）`)
     }
+    // 同理：fork 能力不得授予任何 lane（lane 用「派人」而不是「复制自己」）。
+    assert.equal(official.includes('subagent_fork'), false,
+      `${presetRowIdOf(lane)}: official 含 subagent_fork ⇒ 该 lane 能 fork 出不受 maxDepth 约束的子代`)
   }
   // 反向：产物里**不得**再出现 lane 行的 toolFilter（宿主会硬拒该键）。
   for (const lane of d.LANES) {
@@ -868,11 +933,11 @@ test('lane 寻址的 3 个工具名出现在每个 lane 的 gate deny 里（deny
   }
 })
 // ============================================================================
-// 10b. tool-schedule：只给 Lead，四个名字在三条静态名单与九条 gate 里都列全
+// 10b. tool-schedule：只给 Lead —— 行挂在 Lead 的 plugins[]，且四个名字不在任何 lane 的 official 里
 // ============================================================================
 const SCHEDULE_TOOLS = ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update']
 
-test('tool-schedule 行是裸一行（无 disabled），四个名字在三条静态名单与九条 gate deny 里都列全', () => {
+test('tool-schedule 行是裸一行（无 disabled），且四个名字不在任何 lane 的 official 里', () => {
   // 依据：用户 2026-10-10 裁决「选项1，只给主代理，不给子agent」。每条断言都能单独失败。
   //
   // ⚠️ **这一条在 T1 之后换了承重点**。旧版断言「本行带宿主门 disabled」与「lane 的 deny
@@ -894,29 +959,23 @@ test('tool-schedule 行是裸一行（无 disabled），四个名字在三条静
   assert.equal(configLine, undefined,
     'tool-schedule 行带了 config —— 官方骨架那一行是裸的，本行应当同形')
 
-  // 四个名字必须进三条**静态**名单（裁决的记录）。
-  for (const [label, list] of [['READONLY_DENY', d.READONLY_DENY], ['WRIGHT_DENY', d.WRIGHT_DENY], ['FORGE_DENY', d.FORGE_DENY]]) {
-    assert.equal(Array.isArray(list), true, `${label} 不是数组`)
-    for (const name of SCHEDULE_TOOLS) {
-      assert.equal(list.includes(name), true,
-        `${label} 没有 ${name} —— 裁决是「9 个 lane 全部 deny」，静态名单是它的记录`)
-    }
-  }
-  // 且必须进九条 gate deny（裁决真正生效的地方）。
+  // 四个名字**不在任何 lane 的 official 里** —— 这是裁决在新形态下的唯一执行点。
+  // ⚠️ 旧版查的是「在三条静态 deny 名单里」（裁决的记录）+「在九条 gate deny 里」（生效点）。
+  //    静态名单已随迁移删除，gate 的 deny 也换成了 official ⇒ 两个承重点合并成一个，
+  //    但**保证更强**：不允许 = 默认拒绝，「漏列」这件事不再可能发生。
   for (const lane of d.LANES) {
-    const deny = gateDenyOf(presetRowIdOf(lane), NEW_BASE)
+    const official = gateOfficialOf(presetRowIdOf(lane))
+    assert.notEqual(official, null, `${presetRowIdOf(lane)}: 产物里没有 official 名单`)
     for (const name of SCHEDULE_TOOLS) {
-      assert.equal(deny.includes(name), true,
-        `${presetRowIdOf(lane)}: gate deny 没有 ${name} —— 该 lane 会拿到提醒工具（裁决是只给 Lead）`)
+      assert.equal(official.includes(name), false,
+        `${presetRowIdOf(lane)}: official 含 ${name} ⇒ 该 lane 拿到提醒工具（裁决是只给 Lead）`)
     }
   }
-  // 反向：这四个名字**不得**出现在 reader 的 allow 白名单里（它是白名单 lane）。
-  const reader = d.LANES.find((l) => l.tool === 'subagent_reader')
-  assert.notEqual(reader, undefined, '声明里找不到 reader lane')
-  for (const name of SCHEDULE_TOOLS) {
-    assert.equal((reader.allow ?? []).includes(name), false,
-      `reader 的 allow 白名单里出现了 ${name} —— 白名单 lane 不得点名提醒工具`)
-  }
+  // 正向也钉住：`tool-schedule` 行**确实挂在 Lead 的 plugins[] 里**，所以那四个名字对 Lead
+  // 是真实存在的工具 —— 少了这一条，「九条 lane 都没有 + Lead 也没有」会被误判成
+  // 「裁决执行得好」，而实际是提醒能力整个丢了。
+  assert.equal(idsAt(10).includes('tool-schedule'), true,
+    'tool-schedule 行不在 Lead 的 plugins[] 里 —— 提醒能力整个丢了，不是「只给 Lead」')
 
   // fork 控制行：**不再**带任何 toolFilter / persona（宿主 apply() 对两者都硬拒）。
   const forkBlock = blockOf(committed, d.forkControlRowId)
@@ -990,73 +1049,81 @@ test('lane roster === the literal 9 (declaration AND artifact, both directions)'
 })
 
 // ============================================================================
-// 10d. the three deny lists: FULL expected membership, from an explicit table
-//      ⚠️ 期望值**不能**从声明自己的数组取（那是 x === x）。下面这张表来自
-//      docs/DESIGN.md §3.3.4「最终 deny / allow 名单」（权威值，18 / 15 / 10 项）
-//      加两处后续裁决：
-//        · 3 个 lane 寻址名（ADR keep-lane-composition 决定 4）
-//        · 4 个 schedule_*（2026-10-10「只给 Lead」）
-//      ⇒ 期望规模 25 / 22 / 17，与声明当前一致（核对记录见 T2 证据档）。
+// 10d. 九条 lane 的 `official`：**逐条**与一张字面表核对（不读声明自己的数组）
+//      ⚠️ 期望值**不能**从声明取（那是 x === x）。下面这张表是本轮规格的**独立复述**：
+//        · scout / seer / analyst / auditor = read, read_image, glob, grep
+//        · archivist = 同上 + web_search, web_fetch
+//        · reader    = read, read_image（**唯一**的窄口）
+//        · wright / forge = read, read_image, glob, grep, write, edit, skill, todo_write + shell
+//        · planner   = read, read_image, glob, grep, skill
+//      ⇒ 九条 lane 的集合去重后是 **5 个互异集合**（四条只读侦查 lane 按规格**应当**相同），
+//        不是 9 个。这条注释就是为了让「互不相同」这个说法不被误读成 pairwise-distinct：
+//        那样写会与规格直接矛盾。真正的判别力在下面逐条比对与集合关系的断言里。
 // ============================================================================
-const DISPATCH_ALL = ['subagent_scout', 'subagent_archivist', 'subagent_seer', 'subagent_reader',
-  'subagent_analyst', 'subagent_auditor', 'subagent_wright', 'subagent_forge', 'subagent_planner']
-const DENY_EXPECTED = {
-  // 只读 lane：写面 + 问/计划面 + 队友面 + 寻址面 + fork + 全部 9 个派发名 + schedule_*
-  READONLY_DENY: {
-    must: ['write', 'edit', 'todo_write',
-      'ask_user_question', 'exit_plan_mode',
-      'send_message', 'interrupt_agent', 'list_agents',
-      ...LANE_ADDRESSING_TOOLS, 'subagent_fork', ...DISPATCH_ALL, ...SCHEDULE_TOOLS],
-    mustNot: [],
-  },
-  // wright：可写（write/edit/todo_write **不**在名单里），其余同只读 lane
-  WRIGHT_DENY: {
-    must: ['ask_user_question', 'exit_plan_mode',
-      'send_message', 'interrupt_agent', 'list_agents',
-      ...LANE_ADDRESSING_TOOLS, 'subagent_fork', ...DISPATCH_ALL, ...SCHEDULE_TOOLS],
-    mustNot: ['write', 'edit', 'todo_write'],
-  },
-  // forge：**保留** list_agents + send_message（它管自己派出的只读孙代）——
-  // 所以这两个名字**不在** deny 里，而是出现在 mustNot；deny interrupt_agent。
-  FORGE_DENY: {
-    must: ['ask_user_question', 'exit_plan_mode', 'interrupt_agent',
-      ...LANE_ADDRESSING_TOOLS, 'subagent_fork',
-      'subagent_reader', 'subagent_analyst', 'subagent_auditor',
-      'subagent_wright', 'subagent_forge', 'subagent_planner',
-      ...SCHEDULE_TOOLS],
-    mustNot: ['write', 'edit', 'todo_write', 'list_agents', 'send_message'],
-  },
+const OFFICIAL_EXPECTED = {
+  scout: ['read', 'read_image', 'glob', 'grep'],
+  archivist: ['read', 'read_image', 'glob', 'grep', 'web_fetch', 'web_search'],
+  seer: ['read', 'read_image', 'glob', 'grep'],
+  reader: ['read', 'read_image'],
+  analyst: ['read', 'read_image', 'glob', 'grep'],
+  auditor: ['read', 'read_image', 'glob', 'grep'],
+  wright: ['read', 'read_image', 'glob', 'grep', 'write', 'edit', 'skill', 'todo_write', 'bash', 'pwsh'],
+  forge: ['read', 'read_image', 'glob', 'grep', 'write', 'edit', 'skill', 'todo_write', 'bash', 'pwsh'],
+  planner: ['read', 'read_image', 'glob', 'grep', 'skill'],
 }
 
-test('三份静态 deny 名单的**成员**逐名核对（缺失与多余都失败）', () => {
-  for (const [listName, spec] of Object.entries(DENY_EXPECTED)) {
-    const list = d[listName]
-    assert.equal(Array.isArray(list), true, `${listName} 不是数组`)
-    const missing = spec.must.filter((n) => !list.includes(n))
-    assert.deepEqual(missing, [],
-      `${listName} 缺这些名字：${missing.join(', ')} —— 该 lane 会拿到它本该被挡住的工具`)
-    // 严格"不多"：名单里出现表外名字同样是失败（否则"多删一个"永远发现不了）。
-    const outside = list.filter((n) => !spec.must.includes(n))
-    assert.deepEqual(outside, [],
-      `${listName} 有表外的名字：${outside.join(', ')} —— 名单与设计表不一致（多一个就多一条未登记的边界）`)
-    for (const n of spec.mustNot) {
-      assert.equal(list.includes(n), false,
-        `${listName} 不该含 ${n} —— 那是该 lane 应当保留的能力`)
-    }
-    assert.equal(new Set(list).size, list.length, `${listName} 有重复项`)
+test('九条 lane 的官方集逐条核对：与字面表一致（不多、不少、不重）', () => {
+  const laneName = (lane) => lane.tool.replace(/^subagent_/, '')
+  // 名册双向：表里九条，声明也九条，且键集相同 —— 少一条会让下面的循环静默跳过它。
+  assert.deepEqual(Object.keys(OFFICIAL_EXPECTED).sort(), d.LANES.map(laneName).sort(),
+    '字面表的 lane 名与声明的 LANES 不一致 —— 加/删 lane 时这张表要一起改')
+  for (const lane of d.LANES) {
+    const name = laneName(lane)
+    const expected = [...OFFICIAL_EXPECTED[name]].sort()
+    const declared = [...lane.official].sort()
+    assert.deepEqual(declared, expected,
+      `${name} 的 official 与规格不符：${JSON.stringify(declared)} ≠ ${JSON.stringify(expected)}`)
+    // 产物里的名单也必须等于声明 —— 「声明对了但没进产物」是同一条缺陷的另一半。
+    const shipped = [...gateOfficialOf(presetRowIdOf(lane))].sort()
+    assert.deepEqual(shipped, expected,
+      `${presetRowIdOf(lane)} 产物里的 official 与规格不符：${JSON.stringify(shipped)}`)
   }
 })
 
-test('渲染产物里，只读 lane 的 gate deny 与该 lane 的静态名单逐名一致（名单 → 产物的通路）', () => {
-  // 覆盖"名单本身对"与"名单真的进了产物"两件事；只测其一会让另一半静默。
-  const readonlyLanes = d.LANES.filter((l) => l.deny === d.READONLY_DENY)
-  assert.equal(readonlyLanes.length >= 6, true,
-    `只读 lane 数量异常（${readonlyLanes.length}）—— 声明侧的 deny 复用关系变了，这条断言的前提要重看`)
-  for (const lane of readonlyLanes) {
-    const deny = gateDenyOf(presetRowIdOf(lane), NEW_BASE)
-    const missing = d.READONLY_DENY.filter((n) => !deny.includes(n))
-    assert.deepEqual(missing, [],
-      `${presetRowIdOf(lane)} 的 gate deny 缺 ${missing.join(', ')} —— 静态名单里有、产物里没有`)
+test('官方集的**关系**：reader 是只读侦查集的真子集；writer 两 lane 同集；去重后 5 个', () => {
+  const setOf = (name) => new Set(OFFICIAL_EXPECTED[name])
+  const subset = (a, b) => [...a].every((x) => b.has(x))
+  // reader 只能更窄，绝不能更宽 —— 它是「只给两把读的钥匙」的那条 lane。
+  const reader = setOf('reader'), scout = setOf('scout')
+  assert.equal(subset(reader, scout), true, 'reader 的 official 不是 scout 的子集 —— reader 比只读侦查面更宽')
+  assert.equal(reader.size < scout.size, true, 'reader 的 official 与 scout 等大 —— 那 reader 就没有「更窄」可言')
+  // wright 与 forge 是两条可写 lane，同一份能力面（差别在 persona 与派发权限，不在工具）。
+  assert.deepEqual([...setOf('wright')].sort(), [...setOf('forge')].sort(),
+    'wright 与 forge 的 official 不同 —— 两条可写 lane 的工具面应当一致')
+  // shell 必须在可写 lane 的 official 里**两个名字都在**：只写一个 = 另一个平台上没有 shell。
+  for (const n of ['wright', 'forge']) {
+    for (const sh of ['bash', 'pwsh']) {
+      assert.equal(setOf(n).has(sh), true, `${n} 的 official 缺 ${sh} ⇒ 该平台上这条 lane 没有 shell`)
+    }
+  }
+  // 去重后恰好 5 个互异集合（4 条侦查 lane 同集 + reader + archivist + writer 对 + planner）。
+  const distinct = new Set(Object.values(OFFICIAL_EXPECTED).map((a) => [...a].sort().join('|')))
+  assert.equal(distinct.size, 5,
+    `互异官方集不是 5 个（实得 ${distinct.size}）—— 有人给某条 lane 单独改了工具面，规格要一起改`)
+})
+
+test('没有任何官方集授予写面之外的危险名字（寻址 / fork / schedule / 写工具的交叉核对）', () => {
+  // 写面只属于 wright / forge。任何一个**别的** lane 出现 write/edit 就是权限放大。
+  for (const [name, list] of Object.entries(OFFICIAL_EXPECTED)) {
+    const writable = name === 'wright' || name === 'forge'
+    if (!writable) {
+      for (const n of ['write', 'edit', 'bash', 'pwsh', 'todo_write']) {
+        assert.equal(list.includes(n), false, `${name} 的官方集含 ${n} ⇒ 只读/规划 lane 拿到了写面`)
+      }
+    }
+    for (const n of [...LANE_ADDRESSING_TOOLS, 'subagent_fork', ...SCHEDULE_TOOLS]) {
+      assert.equal(list.includes(n), false, `${name} 的官方集含 ${n} ⇒ 越界的派发/提醒能力`)
+    }
   }
 })
 
@@ -1067,7 +1134,7 @@ test('渲染产物里，只读 lane 的 gate deny 与该 lane 的静态名单逐
 //     只会把 0.2.0-rc.2/alpha.1/alpha.2 关掉，而把 alpha.3/4/5 放进来。这条断言锁的正是
 //     「版本是唯一能区分它们的事实」。
 // ============================================================================
-test('宿主门：受支持版本启用，rc.2 与 alpha.5 禁用（形状相同也必须分开）', () => {
+test('宿主门：支持集里的两版都启用，rc.2 与 alpha.5 禁用（形状相同也必须分开）', () => {
   const gateOf = (block) => {
     const line = block.split('\n').find((l) => /^\s*disabled: !!js /.test(l))
     assert.notEqual(line, undefined, '该行没有 disabled 门')
@@ -1080,9 +1147,12 @@ test('宿主门：受支持版本启用，rc.2 与 alpha.5 禁用（形状相同
 
   for (const [label, block] of [['lane 行', laneBlock], ['preset 行', presetBlock]]) {
     const gate = gateOf(block)
-    // 受支持版本 ⇒ false（挂载）
-    assert.equal(evalJs(gate, NEW_BASE), false,
-      `${label}：受支持的 ${d.SUPPORTED_HOST_VERSION} 上被禁用了（极性反了）⇒ 整个 preset 不挂`)
+    // 支持集里的每一版 ⇒ false（挂载）。**逐版**断言，不只看第一项：
+    // 门若退回单值相等，只有「第二项」这一档会红，其余档仍然全绿。
+    for (const [version, base] of [[SUPPORTED[0], NEW_BASE], [SUPPORTED[SUPPORTED.length - 1], NEWER_BASE]]) {
+      assert.equal(evalJs(gate, base), false,
+        `${label}：受支持的 ${version} 上被禁用了（极性反了，或门退回单值相等）⇒ 整个 preset 不挂`)
+    }
     // 旧契约 ⇒ true（禁用）
     assert.equal(evalJs(gate, OLD_BASE), true,
       `${label}：0.2.0-rc.2（声明 persona:）上没有被禁用`)
@@ -1094,9 +1164,15 @@ test('宿主门：受支持版本启用，rc.2 与 alpha.5 禁用（形状相同
     assert.equal(evalJs(gate, UNRESOLVABLE_BASE), true,
       `${label}：版本读不到的旧契约宿主上没有被禁用 ⇒ fail-closed 方向反了`)
   }
-  // 门里必须真的出现受支持版本字符串（否则它不是在按版本判）
-  assert.equal(gateOf(laneBlock).includes(d.SUPPORTED_HOST_VERSION), true,
-    '宿主门表达式里没有受支持版本字符串 ⇒ 它没有在按版本判')
+  // 门里必须**逐字**出现支持集的每一个版本（否则它不是在按版本判，或只判了其中一版）
+  for (const version of SUPPORTED) {
+    assert.equal(gateOf(laneBlock).includes(version), true,
+      `宿主门表达式里没有受支持版本 ${version} ⇒ 它没有在按版本集合判`)
+  }
+  // 反向：最新一版必须在表达式里，且窗口是**成员判断**（`includes`），不是 semver 比较 ——
+  // 一次 semver 比较会顺手放行 rc.2 与 rc.3 之间未实测的中间态。
+  assert.equal(gateOf(laneBlock).includes('includes(version)'), true,
+    '宿主门的版本判断不是成员判断（缺 includes(version)）⇒ 支持集被写成了区间')
 })
 // ============================================================================
 // 11. 可再生成性：render() 的输出必须复现已提交的产物

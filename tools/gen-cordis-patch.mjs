@@ -210,7 +210,14 @@ function pushValue(lines, indent, key, value) {
         for (const l of head.slice(1)) lines.push(`${inner}  ${l}`)
         for (const [k, v] of entries.slice(1)) {
           const tail = []
-          pushValue(tail, 0, k, v)
+          // ⚠️ `disabled` 在**列表项里**也必须走 `pushDisabled`（它补 `!!js ` 前缀），
+          //    不能走 `pushValue`（它把字符串当 YAML 标量、于是整条表达式被**加了引号**
+          //    变成死字面量 —— 宿主不认 `!!js`，那一行等于永远 `disabled: '<表达式>'`
+          //    ⇒ 该插件在任何平台上都不挂）。官方工具行现在会出现在 lane preset 的
+          //    `plugins[]` 里，而 `tool-bash` / `tool-pwsh` 正是带 `disabled` 的，所以这一支
+          //    第一次被真正用到。此前 `plugins[]` 里的行都不带 `disabled`，这个缺口看不见。
+          if (k === 'disabled') pushDisabled(tail, 0, v)
+          else pushValue(tail, 0, k, v)
           for (const l of tail) lines.push(`${inner}  ${l}`)
         }
         continue
@@ -265,31 +272,18 @@ function pushRow(lines, row, indent) {
 const personaExpr = (bundlePkg, file) =>
   `process.getBuiltinModule('node:fs').readFileSync(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('${bundlePkg}/personas/${file}'), 'utf8')`
 
-// ── lane 的 deny 值 = 静态名单 **拼上**按机器算的 MCP 闭包（不是一份写死的名单）──────
-// 为什么不是列表项：`restrict()` 对**未知名字**直接抛错（dsh-tools/lib/index.js:2895-2910），而
-//   MCP loader 名（`mcp_<server>`）随**用户自己的** MCP 配置漂移 ⇒ 写死它 = 在没配那条 server 的
-//   机器上 lane 创建即失败。闭包在求值时从**已组装的 loader 树**算（口径与残余见
-//   preset-declaration.mjs 的 MCP_CLOSURE_EXPR 段）。
-// ⚠️ 必须渲染成**单个 plain scalar**（`!!js (["a"]).concat(<闭包>)`）：以 `(` 开头 ⇒ 不会被 YAML
-//   当成 flow sequence（那是 resolve 不掉的 `!!js`）。闭包体内**不得**出现 `: ` / `#` / 反斜杠 /
-//   双引号 —— 那是 plain scalar 的边界；这条约束由 T13/check 13 的求值测试兜住。
-const jsString = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
-
-// ── lane 的 gate 名单 = 静态名单 **拼上**按机器算的 MCP 闭包 ───────────────────
-// 与旧形态 lane 的 `toolFilter.deny` **同一套渲染手法**（那次的经验逐条仍然成立）：
-//   `restrict()` / `guard()` 面对的名字必须在本机存在，而 MCP loader 名（`mcp_<server>`）随
-//   **用户自己的** MCP 配置漂移 ⇒ 写死它 = 在没配那条 server 的机器上拒掉不存在的名字。
-//   闭包在求值时从**已组装的 loader 树**算（口径与残余见 `MCP_CLOSURE_EXPR` 段）。
-// ⚠️ 必须渲染成**单个 plain scalar**（`!!js (["a"]).concat(<闭包>)`）：以 `(` 开头 ⇒ 不会被 YAML
-//   当成 flow sequence（那是 resolve 不掉的 `!!js`）。闭包体内**不得**出现 `: ` / `#` / 反斜杠 /
-//   双引号 —— 那是 plain scalar 的边界；这条约束由 check 13 的求值测试兜住。
-const closureExpr = (staticNames, d) => {
-  if (typeof d.MCP_CLOSURE_EXPR !== 'string' || d.MCP_CLOSURE_EXPR.length === 0) {
-    throw new Error('MCP_CLOSURE_EXPR 缺失 / 非字符串 ⇒ 停（不得把 MCP 名退回静态名单：那正是「新机器上不可用」的成因）')
-  }
-  return `!!js ([${staticNames.map(jsString).join(', ')}]).concat(${d.MCP_CLOSURE_EXPR})`
-}
-
+// ── lane 的 `official`：**字面数组**，不拼任何按机器求值的闭包 ──────────────────
+// 旧形态在这里拼过一道 MCP 闭包（`!!js (["a"]).concat(<算出来的 mcp_* 名>)`），因为那时要
+// 交出去的是 **deny** 名单，而 deny 必须穷举「要挡的名字」⇒ 名字随部署漂移就必须在求值期算。
+//
+// 现在交出去的是 **official**（允许名单，见 `preset-declaration.mjs` 的 `LANE_OFFICIAL`）：
+// 它是**声明**，不是「本机注册了什么」的镜像，因此不需要、也不应该按机器求值。
+//   · 多写一个本机没注册的名字**无害**：`lane-tool-gate` 只从**已知**名字里选 deny，
+//     不存在的名字永远不会进 deny ⇒ `restrict()` 不会因它抛 unknown。
+//   · 少写一个才是权限缺口，而那由声明侧的官方集直接决定，与渲染无关。
+// ⇒ 渲染成普通 YAML 列表（`pushValue` 的 Array 分支），**不再有** `!!js`。
+// ⚠️ 这一点与「MCP server 新增后 lane 自动收紧」并不冲突：收紧发生在 `lane-tool-gate`
+//    对 `tools/change` 的第二次求值里（按当时注册表算 deny），不在渲染期。
 export function laneRow(lane, d) {
   const common = d.LANE_COMMON          // ⚠️ 必须复用声明里的那对值，不得另写一份
   const base = {
@@ -309,7 +303,7 @@ export function laneRow(lane, d) {
     ...(common.backgroundMode !== undefined ? { backgroundMode: common.backgroundMode } : {}),
     maxDepth: lane.maxDepth,
     // ⛔ **只有一种形态**：`agentPreset` + `allowedAgentPresets` **成对**写（`:209` 的硬约束：
-    //    只给前者不给后者 ⇒ 挂载期 throw）。受支持的宿主 `0.2.1-rc.2` 的 `tool-subagent` Config
+    //    只给前者不给后者 ⇒ 挂载期 throw）。受支持的两版 `0.2.1-rc.2` / `0.2.1-rc.3` 的 `tool-subagent` Config
     //    里有这两个键、且**没有** `persona` / `toolFilter`（后者在 `apply()` 里被硬拒，见下）。
     //    ⇒ 旧形态那条分支（`persona` + `toolFilter`）随支持集收缩一起删除：**没有**宿主需要它。
     agentPreset: lane.presetId,
@@ -333,7 +327,7 @@ export function laneRow(lane, d) {
   //    `persona`/`toolFilter`）。现在只有一种形态 ⇒ 键集固定 ⇒ 普通映射更简单也更好读。
   //    宿主门仍在，但它现在只决定**这一行挂不挂**（上面的 `disabled`），不决定**写哪些键**。
   //    ⇒ 旧写法里那套 plain-scalar 约束（不出现对象字面量、不出现三元）在这里不再适用；
-  //      它们仍然适用于上面 `closureExpr` 与 `personaExpr` 产出的 `!!js` 值。
+  //      它们仍然适用于 `personaExpr` 产出的 `!!js` 值。
   return {
     ...base,
     disabled: `(${d.LANE_FORM_SUPPORTED_EXPR})`,
@@ -349,14 +343,10 @@ export function laneRow(lane, d) {
 export function lanePresetRow(row, d) {
   // `personaFile` 是声明侧的取值槽 ⇒ 渲染成运行时 `readFileSync` 表达式，并从 config 里去掉。
   const plugins = row.config.plugins.map((p) => {
-    if (p.config?.personaFile === undefined && p.config?.deny === undefined) return p
-    if (p.config?.deny !== undefined) {
-      // `lane-gate` 的 `deny`：静态段由声明侧给（`laneGateDeny`），**MCP 闭包**必须在这里
-      // 拼上去 —— 声明侧不产 `!!js`（那是生成器的活），而闭包是表达式、不是字面数组。
-      // ⚠️ 少了这一步，每条 lane 的 gate 名单就只剩静态项 ⇒ **只读 lane 能调用 `mcp_*`**
-      //    （权限放大，且产物看起来完全正常）。check 13 的 lane 支路会抓到它。
-      return { ...p, config: { ...p.config, deny: RAW(closureExpr(p.config.deny, d)) } }
-    }
+    // `personaFile` 是**唯一**需要渲染成表达式的取值槽；其余插件行原样透传 ——
+    // 包括 `lane-gate` 的 `official`（字面数组，理由见上方「lane 的 `official`」段）
+    // 与官方工具行（它们的 `config` / `disabled` 已经是最终形态，`pushDisabled` 会自己补前缀）。
+    if (p.config?.personaFile === undefined) return p
     const { personaFile, ...rest } = p.config
     // `personaExpr` 返回裸表达式 ⇒ 这里补上唯一的一次 `!!js ` 前缀（`pushValue` 见到 `__raw`
     // 会整行原样写出，所以前缀必须由调用方给）。
@@ -408,8 +398,8 @@ export function groupEntry(group, d, section) {
 //     ⚠️ 极性**不加 `!`**：`pushDisabled` 自己补 `!!js `，表达式以 `(` 开头 ⇒ 不会被 YAML 当成
 //        第二个 tag。反了就会在**受支持的**宿主上把 fork 能力整个关掉。
 //
-// 🔻 **被接受的退化（写在这里，而不是留给下一个人发现；范围是"受支持的宿主"）**：在
-//    `0.2.1-rc.2` 上，**经 `subagent_fork` 派出的 child 会继承父 agent 的 preset 组合**
+// 🔻 **被接受的退化（写在这里，而不是留给下一个人发现；范围是"受支持的宿主"）**：在两版受支持的宿主
+//    `0.2.1-rc.2` / `0.2.1-rc.3` 上，**经 `subagent_fork` 派出的 child 会继承父 agent 的 preset 组合**
 //    （fork provider 自报 `capabilities.agentPreset = false`，见 `dsh-subagent-fork-in-process`），
 //    因此那四个 `schedule_*` 名字**无法**在这条路径上被声明式 deny ⇒ Lead 主动 fork 出来的
 //    child 仍会看到提醒工具。0.1.9 声称它能，而那个声称在 alpha.4 / alpha.5 上**已经**是假的
