@@ -1391,8 +1391,12 @@ head_ "check 13 — every lane preset declares the official tool set it may see,
 # `tools/preset-declaration.mjs`. The old deny table stated the rule and it applies
 # unchanged: deriving the expectation from the declaration makes the assertion
 # `x === x` — a mutated declaration produces a mutated artifact and the two agree
-# while the boundary is gone. So the table is the DESIGN (docs/DESIGN.md 3.3.4),
-# and only the roster-to-set assignment is read off the artifact.
+# while the boundary is gone. So the table's authority is THIS FILE — not
+# `docs/DESIGN.md`. §3.3.4 is still titled "toolFilter 名字目录与最终 deny 名单" and
+# enumerates the OLD deny lists; `official` reaches that document only through the
+# row-8 (`subagent_forge`) ruling. Migrating §3.3.3/§3.3.4 to `official` is
+# outstanding debt, so the design document is the debt here, not the source.
+# Only the roster-to-set assignment is read off the artifact.
 #
 # It parses the generated artifact with the host's own patch parser (so the `!!js`
 # dialect and the indentation are the ones the Loader reads), and evaluates each
@@ -1461,10 +1465,15 @@ STUBJS
   ( cd -- "$DSH_PKG_ROOT" && ARTIFACT="$DENY_JSON" DSH_PKG_ROOT="$DSH_PKG_ROOT" UNSUPPORTED_HOST_BASE="$TMP/unsupported-host" EXPECTED_LANE_IDS="$EXPECTED_LANE_IDS" EXPECTED_PRESET_IDS="$EXPECTED_PRESET_IDS" node --input-type=module -e '
 import { loadOverlayPatches } from "@deepseek-ai/dsh-app-boot"
 
-// ── the LITERAL design table ─────────────────────────────────────────────────
-// Which set each lane gets is a DESIGN fact (docs/DESIGN.md §3.3.4 "final allow
-// lists", plus the later rulings: three lane-addressing names, four schedule_*
-// names), written out here on purpose.
+// ── the LITERAL lane table (authority: this file) ────────────────────────────
+// Which set each lane gets is asserted against the literal table below, written
+// out here on purpose. Its authority is THIS FILE, not docs/DESIGN.md: §3.3.4 is
+// still titled "toolFilter 名字目录与最终 deny 名单" and enumerates the OLD deny
+// lists, and `official` reaches that document only through the row-8
+// (`subagent_forge`) ruling. For eight of the nine lanes the ONLY enumeration of
+// the allow-list is LANE_OFFICIAL in tools/preset-declaration.mjs — the very array
+// this literal table exists to police. Migrating §3.3.3/§3.3.4 to `official` is
+// outstanding debt; it is not a source this check can cite.
 // ⛔ NOT derived from tools/preset-declaration.mjs. A declaration-derived
 // expectation is x === x: mutate the declaration, regenerate, and the expectation
 // and the artifact agree while the boundary is gone. Only the roster-to-set
@@ -1655,7 +1664,9 @@ const nonForkLaneRows = laneRows.filter((r) => r.id !== FORK_CONTROL_ID)
 // self-fulfilling: remove a lane from `LANES`, regenerate, and the expected set and the
 // artifact both shrink together, so the sets still match and every gate stays green. The
 // literal below is the one thing that does NOT move when the lane list is edited, so it is
-// what makes "a lane disappeared" observable. It is the capability set DESIGN §3.3.3 names.
+// what makes "a lane disappeared" observable. DESIGN §3.3.3 names the same nine
+// lanes, but under the OLD deny mechanism, and only its row 8 states an `official`
+// set — so it corroborates this roster, it does not authorise it.
 const ROSTER_LANES = ["scout", "archivist", "seer", "reader", "analyst", "auditor", "wright", "forge", "planner"]
 const ROSTER_LANE_IDS = ROSTER_LANES.map((l) => "tool-subagent-" + l).sort()
 const ROSTER_PRESET_IDS = ROSTER_LANES.map((l) => "preset-orch-lane-" + l).sort()
