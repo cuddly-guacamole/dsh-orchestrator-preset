@@ -88,8 +88,8 @@ export const description = 'A thin orchestration preset: aegis method pack for m
 //    供人读与产物自检使用。
 // ── 宿主形态探针：这个宿主的 `tool-subagent` 还在旧契约上吗 ────────────────────
 // ⚠️ **先读名字再读语义**：本常量叫 `LANE_FORM_SUPPORTED_EXPR`，但它为 **true 的含义是
-//    「宿主是旧形态」= 本包**不支持**它**。支持集是**两个**版本
-//    （`SUPPORTED_HOST_VERSIONS`：`0.2.1-rc.2` 与 `0.2.1-rc.3`），所以这条探针的职责
+//    「宿主是旧形态」= 本包**不支持**它**。支持集见下方常量 `SUPPORTED_HOST_VERSIONS`
+//    （四个版本，单一来源 —— 这里不再复述版本号，免得两处漂移），所以这条探针的职责
 //    已经从「挑一种形态」缩成**一个开关**：**true ⇒ 每一条 lane 行与每一条 preset 行都
 //    `disabled`**，即在这台不受支持的宿主上本 bundle **什么都不挂**；false ⇒ 正常挂载。
 //    极性**没有**反转，也不得反转 —— 它仍然直接取自「`persona` 还在不在 Config 里」这个事实。
@@ -129,24 +129,38 @@ export const description = 'A thin orchestration preset: aegis method pack for m
 //    `ERR_PACKAGE_PATH_NOT_EXPORTED`，于是本判据**永远**返回 true（= 在受支持的宿主上也判错，
 //    而且判错的方向是「整族关闭」，静默地少掉 9 个 lane）。
 // ── 受支持宿主的**版本集**（单一来源）────────────────────────────────────────────
-// 支持集是**两个**版本：`0.2.1-rc.2`（npm `latest`）与 `0.2.1-rc.3`（npm `next`）。
+// 支持集是**四个**版本（升序）：`0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5` / `0.2.2-alpha.2`。
+// 为什么是这四版（三渠道同时真实存在，2026-10-30 用户裁定）：
+//   · `0.2.1-rc.3` —— 桌面 app 的 asar 树，也是本轮之前就在集合里的那一版
+//   · `0.2.1-rc.4` / `0.2.1-rc.5` —— npm `latest` 一侧推进到的版本（rc.5 是当前 latest）
+//   · `0.2.2-alpha.2` —— npm `next` / `alpha` 通道（本机 npm 安装树就是这一版）
+//   三条渠道各自都有用户在跑；任一档被判成「不支持」，都会让 19 行全关、九条 lane 静默消失，
+//   所以三条渠道的当前版本都要进集合。`0.2.1-rc.2` **退出**集合（它是上一轮的 latest）。
 // 它同时出现在三处，必须同值：
 //   · 本常量（宿主门的判据）
-//   · README / README.zh「Host version gate」那张两行的表
+//   · README / README.zh「Host version gate」那张支持集表（⛔ 不写行数：集合已经变过几轮，写死必漂）
 //   · `install.sh` 的 SUPPORTED_HOST_VERSIONS（安装期的支持集检查）
 // ⚠️ **集合不是区间**：判据是逐字成员判断，不是 semver 比较。原因是 `dsh-tool-subagent`
 //    的 `version` 字段里 prerelease 段的写法属上游自由（`-rc.2` / `-rc3` 都可能是同一版），
-//    而「rc.2 与 rc.3 之间还有什么」这件事本包没有实测过 —— 一次 semver 比较会顺手把
+//    而「相邻两版之间还有什么」这件事本包没有逐版实测过（例如 rc.3↔rc.4、rc.5↔alpha.2
+//    之间）—— 一次 semver 比较会顺手把
 //    未测过的中间态也放进来。逐字成员只放行这里明确点名的版本。
 // ⚠️ 为什么门要按**版本**判而不是按 Config 形状判（第 24 轮更正，seer 提出）：
 //    旧判据读 `Config` 字面量里有没有 `persona:`。那个事实在 0.2.0-rc.2 / alpha.1 /
 //    alpha.2 上是 true、在 alpha.3 及以后是 false ⇒ 它只把**老**宿主关掉，而把
-//    alpha.3/4/5 **放进来**。可是 alpha.3 与受支持的 0.2.1-rc.2 在结构上**无法区分**：
+//    alpha.3/4/5 **放进来**。可是 alpha.3 与当时受支持的 `0.2.1-rc.2` 在结构上**无法区分**：
 //    两者的 `Config` 键集相同（`agentPreset` / `allowedAgentPresets`，无 `persona`）、
 //    服务需求相同 —— **只有版本字符串能分开它们**。所以判据必须是版本。
-//    rc.3 沿用同一判据：它与 rc.2 的结构差异没有被观察到，支持它的依据是实测（见 README
-//    的宿主表），而**不是**「rc.2 能用所以 rc.3 也能用」。
-export const SUPPORTED_HOST_VERSIONS = ['0.2.1-rc.2', '0.2.1-rc.3']
+//    本轮扩到四版后同一条理由仍然成立，而且更清楚：**rc.3 / rc.4 / rc.5 逐字节相同**
+//    （两份 `patch.yml` + 7 个 `lib/index.js` 的 sha256 全同，`E:\dsh-verify` 矩阵实测），
+//    已退出集合的 `0.2.1-rc.2` 也在这条同结构线上 ⇒ 形状把「rc 线」整族判成同一种形态，
+//    既分不开 rc.5 与 rc.2，也分不开 rc.3 与 rc.5。**同一形状、一侧在集合内一侧在集合外
+//    ⇒ 判据只能是版本字符串**。
+//    ⚠️ `0.2.2-alpha.2` 的结构**不同**（矩阵实测），它的差异由另一条**结构**判据承担 ——
+//    见下方 `TOOL_PRESENTATION_RETIRED_EXPR`。两件事别混：**版本判据**管「这是哪一版」，
+//    **结构判据**管「宿主是否已经自己管了这一层」。
+// ⚠️ 每一版进集合的依据是**逐版实测**（矩阵），而**不是**「上一版能用所以这版也能用」。
+export const SUPPORTED_HOST_VERSIONS = ['0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-alpha.2']
 
 // ── 宿主门：**这台宿主的 `dsh-tool-subagent` 版本不在受支持集里吗** ──────────────────
 // 名字仍然叫 `LANE_FORM_SUPPORTED_EXPR`，而 **true 的含义是「不受支持」**（保持既有极性，
@@ -229,6 +243,38 @@ export const LANE_FORM_SUPPORTED_EXPR = "(() => { try { "
 export const OPS_INTEGRATION_UNSUPPORTED_EXPR = "(() => { try { "
   + "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-ops/integration'); "
   + "return false } catch (e) { return true } })()"
+
+// ── `tool-presentation` 行的宿主门（宿主**自己**已经在管 executor 时，这一行必须让位）─────────
+// **为什么是结构判据、不是版本判据**：这不是「挑一种形态」，而是**重复注册** —— 宿主 base 骨架
+//   若已经挂了 `tool-executor-native`，它就在管「模型看到什么形状的工具面」，本行再挂一次
+//   `dsh-agent-tool-presentation` 就会把 native executor 挂**第二遍**。判据读的是「这一层归谁管」，
+//   与 vendor 版本号无关：同一版本号里也能发生结构变化，所以这里读结构。
+// **两个世界的事实**（E:\dsh-verify 契约矩阵 + 两棵树逐包 ls 实测）：
+//   · rc.3 / rc.4 / rc.5（逐字节相同）：树里**没有** `@deepseek-ai/dsh-tool-executor-native`；
+//     它们的 `dsh-tools` 是 `mode: z.union(['native','ptc']).default('native')`。
+//   · `0.2.2-alpha.2`：树里**有** `@deepseek-ai/dsh-tool-executor-native`；`dsh-tools` 的 `mode`
+//     已收成 `z.never()`，宿主 base 骨架**自己**挂了 `tool-executor-native`（启用）与
+//     `tool-executor-ptc`（`disabled: true`），而 `dsh-agent-tool-presentation` 做的是
+//     `ctx.plugin(mode === 'native' ? Native : Ptc)` ⇒ 本行在 alpha.2 上是重复注册。
+// **判据**：`@deepseek-ai/dsh-tool-executor-native` 能 `resolve()` ⇒ 宿主自己管这一层 ⇒ 本行 disabled。
+// **极性**：与上面两条表达式**同向** —— `true` = 不可用 = 该行 `disabled`。
+// ⚠️ **`catch (e) { return false }` 与上面两条是反的，这是刻意的**：解析不到 = 这个包不在树里 =
+//   rc 线那种情形 ⇒ 保持现状（rc 线上本行照挂）。这里**不能** fail-closed —— 那会把 rc 线上本来
+//   合法的一行关掉。代价：若 alpha.2 的树因 `exports` 遮蔽而解析失败，本行会重复挂载；已接受的
+//   残余（实测该包在两棵树上都可解析，见矩阵）。
+// ⚠️ **rc 线上本行是冗余的**（`mode: 'native'` 与 schema 默认值相同）—— 保留它没有行为差异，
+//   所以**不改 rc 线现状**：最小风险，等上游把 `mode` 收干净再谈删行。
+// ⚠️ **退休触发（什么时候该删掉这条门）**：当受支持集里**不再有 rc 线** —— 也就是所有受支持宿主都
+//   自带 `@deepseek-ai/dsh-tool-executor-native` —— 本表达式会**恒为 true**（每台受支持宿主都关掉
+//   这一行）。届时正确的动作是把 `tool-presentation` 行与这条表达式**一起删掉**，而不是留一条永不
+//   打开的门：恒真的门会让下一个人以为它还在判什么。判据可读：只要 `SUPPORTED_HOST_VERSIONS` 里还有
+//   一个 rc 版本，这条门就仍然有用；最后一个 rc 版本移出集合的那一次，就是它退休的那一次。
+// ⚠️ **plain scalar 边界同 `LANE_FORM_SUPPORTED_EXPR`**：体内不得出现 `: ` / `#` / 反斜杠 /
+//   双引号 / 对象字面量 / 三元。下面这份形态已核对过该约束，**不要**为了「更好读」改写它。
+export const TOOL_PRESENTATION_RETIRED_EXPR = "(() => { try { "
+  + "const req = process.getBuiltinModule('node:module').createRequire(baseUrl); "
+  + "req.resolve('@deepseek-ai/dsh-tool-executor-native'); "
+  + "return true } catch (e) { return false } })()"
 
 // ⛔ **为什么新形态必须有 `lane-tool-gate`（不挂它 = 静默的权限放大）**：
 //    alpha.3 把工具组成搬进 Agent Preset，但 preset 的 `plugins[]` **只能加不能减** ——
@@ -760,7 +806,11 @@ export const topRows = [
   //       本 preset 明确删除（见下方 `topRows` 开头的删除说明），与工具呈现无关。
   //    ⑤ `native` 立即生效；`ptc` 要等 `ctx.ptcRuntime`。部署层没挂 runtime 时，选 ptc 的
   //       composition **拒绝挂载**并点名本行（失败落在运维能处理的地方，不是首次请求）。
-  { id: 'tool-presentation',  name: '@deepseek-ai/dsh-agent-tool-presentation', config: { mode: TOOL_PRESENTATION } },
+  //    ⑥ **宿主自己管 executor 时本行必须让位**：门取自 `TOOL_PRESENTATION_RETIRED_EXPR`
+  //       （`@deepseek-ai/dsh-tool-executor-native` 能 resolve ⇒ 本行 disabled）。理由与代价
+  //       写在那条常量上面：alpha.2 自己挂了 native executor，本行再挂一次就是重复注册；
+  //       rc 线上本行仍是冗余的（等于默认值），保留不动。
+  { id: 'tool-presentation',  name: '@deepseek-ai/dsh-agent-tool-presentation', config: { mode: TOOL_PRESENTATION }, disabled: TOOL_PRESENTATION_RETIRED_EXPR },
   { id: 'lane-composition',   name: bundlePkg + '/lane-composition.mjs' },
   { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
   { id: 'time-context',       name: '@deepseek-ai/dsh-time-context' },
@@ -780,9 +830,10 @@ export const topRows = [
   //       `official` 集都不含这四个名字**（见 `LANE_OFFICIAL`）⇒ `lane-tool-gate` 会把它们
   //       从每条 lane 的工具面上剥掉。**只挂这一行而不看 official = 把提醒能力静默发给所有
   //       lane**，所以「挂在这里」与「不进任何 official」是同一裁决的两半，必须一起改。
-  //    ③ **本行为什么不再带宿主门**：唯一受支持的宿主 `0.2.1-rc.2` **自己依赖**
-  //       `@deepseek-ai/dsh-tool-schedule`（`dsh@0.2.1-rc.2` 的 dependencies 里有它）⇒ 这个包在
-  //       每一台受支持的机器上都可解析 ⇒ 不需要「解析不到就禁用」的那条按机器求值的 `disabled`。
+  //    ③ **本行为什么不再带宿主门**：受支持的四个版本**每台都自带**
+  //       `@deepseek-ai/dsh-tool-schedule`（rc 线的 `dsh` 与 `0.2.2-alpha.2` 的 `dsh`，其
+  //       `dependencies` 里都有它）⇒ 这个包在每一台受支持的机器上都可解析 ⇒ 不需要
+  //       「解析不到就禁用」的那条按机器求值的 `disabled`。
   //       版本条件的完整退休记录见上方 `schedule_*` 段。
   { id: 'tool-schedule',      name: '@deepseek-ai/dsh-tool-schedule' },
   { id: 'skill-filesystem',   name: '@deepseek-ai/dsh-skill-filesystem' },
@@ -886,12 +937,15 @@ export const groups = [
       // 🔻 **本行不再带任何 `toolFilter` / `disabled`** —— 它就是一行普通声明
       //    （`provider: fork` / `toolName: subagent_fork`），与官方骨架同形。原先那条
       //    「只 deny `schedule_*` 的条件尾巴」是为**旧形态宿主**存在的（alpha.3 之前
-      //    `tool-subagent` 认 `toolFilter`）；受支持的 `0.2.1-rc.2` 会在 `apply()` 里对
-      //    `toolFilter` 键硬抛（`lib/index.js:355` 的 `Object.hasOwn`）⇒ 那条尾巴无处可挂。
+      //    `tool-subagent` 认 `toolFilter`）；而受支持的四个版本（rc 线与 `0.2.2-alpha.2`）的
+      //    `tool-subagent` 的 `Config` 里都没有 `toolFilter`，`apply()` 对残留键硬抛
+      //    （rc 线在 `lib/index.js:355` 的 `Object.hasOwn`）⇒ 那条尾巴无处可挂。
       //
-      //    **被接受的退化**：在 rc.2 上，经 `subagent_fork` 派出的 child **继承父 agent 的
-      //    preset 组合**（fork provider 自报 `capabilities.agentPreset = false`）⇒ 那四个
-      //    `schedule_*` 名字**无法**在这条路径上被声明式 deny。0.1.9 声称它能，而那个声称在
+      //    **被接受的退化**：经 `subagent_fork` 派出的 child **继承父 agent 的 preset 组合**
+      //    （fork provider 自报 `capabilities.agentPreset = false` —— ⚠️ **这条只在 rc 线上实读；
+      //    `0.2.2-alpha.2` 未单独读**：矩阵的十项与附录 B 的 sha 表都不含
+      //    `dsh-subagent-fork-in-process`，所以不要把它写成「四版都一样」）⇒ 那四个 `schedule_*`
+      //    名字**无法**在这条路径上被声明式 deny。0.1.9 声称它能，而那个声称在
       //    alpha.4 / alpha.5 上**已经**是假的；本轮只是把这句话改成真的。
       //    影响面：Lead 主动 fork 出来的 child 会看到提醒工具；9 条**具名** lane 不受影响
       //    （它们的 `official` 不含这四个名字 ⇒ gate 剥掉；而且 lane 自己 fork 不了 ——

@@ -207,11 +207,13 @@ function makeHostStub(kind, version, declaresPersona) {
   const pkgDir = join(root, 'node_modules', '@deepseek-ai', 'dsh-tool-subagent')
   mkdirSync(join(pkgDir, 'lib'), { recursive: true })
   // ⛔ The gate now reads the PACKAGE VERSION, so the stub must carry a real one.
-  // That is the discriminating fact: alpha.3 / alpha.4 / alpha.5 are structurally
-  // identical to the supported host (same Config keys, agentPreset +
-  // allowedAgentPresets, no persona) and differ ONLY in the version string. A
-  // shape-only stub cannot tell them apart — which is exactly why the old
-  // persona-shape probe let alpha.3 through.
+  // That is the discriminating fact: rc.3 / rc.4 / rc.5 are BYTE-IDENTICAL (sha256 of both
+  // patch.yml files and 7 lib/index.js files all match), and the exited 0.2.1-rc.2 sits on
+  // the same structural line (same Config keys, agentPreset + allowedAgentPresets, no
+  // persona) -- they differ ONLY in the version string. A shape-only stub cannot tell rc.2
+  // from rc.5, which is exactly why the old persona-shape probe let alpha.3 through.
+  // ⚠️ 0.2.2-alpha.2 is NOT on that line (the matrix measured it as structurally different);
+  // its one real breakage is carried by the tool-presentation structural gate instead.
   writeFileSync(join(pkgDir, 'package.json'),
     JSON.stringify({ name: '@deepseek-ai/dsh-tool-subagent', version, main: 'lib/index.js' }))
   // `declaresPersona` reproduces the OLD contract (0.2.0-rc.2 / alpha.1 / alpha.2).
@@ -238,23 +240,27 @@ function makeHostStub(kind, version, declaresPersona) {
   }
   return join(root, 'package.json')
 }
-// ── 带版本的桩：受支持的两版 / 旧契约 / 结构与受支持版本相同的 alpha.5 / 读不到版本 ──
+// ── 带版本的桩：集合内**每版**一根 / 旧契约 / 集合外但形状相同的两档 / 读不到版本 ──
 // ⚠️ 这里替换了原来那两根「新形态 / 旧形态」桩。旧桩只区分 Config 形状，而 alpha.3/4/5
-//    与受支持的 0.2.1-rc.2 形状相同 ⇒ 旧桩**根本分不开**它们，门也就只关掉了老宿主。
+//    与受支持的版本形状相同 ⇒ 旧桩**根本分不开**它们，门也就只关掉了老宿主。
 //    现在每根桩都带真实版本号，门读的就是那个版本。
-// · SUPPORTED ：0.2.1-rc.2（支持集的第一项），结构是新契约 ⇒ 门 false ⇒ 三族行**挂载**
-// · NEWER     ：0.2.1-rc.3（支持集的第二项，结构同上）⇒ 门**也必须** false ⇒ 挂载。
-//               ⚠️ 这一根是「支持集是集合、不是单值」的唯一证据：删掉它，门退回单值相等
-//               仍然全绿，而那正是本轮修掉的东西。
-// · RC2       ：0.2.0-rc.2，结构是旧契约（声明 persona:）⇒ 门 true ⇒ 全关
-// · ALPHA5    ：0.2.1-alpha.5，结构**与受支持版本完全相同**、只有版本不同 ⇒ 门 true ⇒ 全关
+// · SUPPORTED_BASES ：支持集里的**每一条**版本各一根桩，结构都是新契约 ⇒ 门 false ⇒ 三族行
+//               **挂载**。逐版建桩（不是只建首尾两根）是「集合」这个词的完整证据：门若退回
+//               单值相等，除第一根以外的每一根都会红。
+// · OLD_BASE  ：0.2.0-rc.2，结构是旧契约（声明 persona:）⇒ 门 true ⇒ 全关
+// · ALPHA5_BASE：0.2.1-alpha.5，结构**与受支持版本完全相同**、只有版本不同 ⇒ 门 true ⇒ 全关
 //               （这正是旧形状探针漏掉的那一档，也是这条断言存在的理由）
-// · UNRESOLVABLE：版本读不到 + 旧契约 ⇒ 门仍必须 true（fail-closed 方向）
+// · RC2_EXITED_BASE：0.2.1-rc.2，形状同样**与受支持版本完全相同**，但本轮**退出了支持集**
+//               ⇒ 门 true ⇒ 全关。这一根锁的是「集合边界是逐字成员」：rc.2 → rc.3 只差一个
+//               字符，形状分不开，`0.2.1` 这一族也不足以放行它。
+// · UNRESOLVABLE_BASE：版本读不到 + 旧契约 ⇒ 门仍必须 true（fail-closed 方向）
 const SUPPORTED = d.SUPPORTED_HOST_VERSIONS
-const NEW_BASE = makeHostStub('supported', SUPPORTED[0], false)
-const NEWER_BASE = makeHostStub('newer', SUPPORTED[SUPPORTED.length - 1], false)
+const SUPPORTED_BASES = SUPPORTED.map((v) => [v, makeHostStub('sup-' + v.replace(/[^A-Za-z0-9]+/g, '-'), v, false)])
+const NEW_BASE = SUPPORTED_BASES[0][1]
+const NEWER_BASE = SUPPORTED_BASES[SUPPORTED_BASES.length - 1][1]
 const OLD_BASE = makeHostStub('rc2', '0.2.0-rc.2', true)
 const ALPHA5_BASE = makeHostStub('alpha5', '0.2.1-alpha.5', false)
+const RC2_EXITED_BASE = makeHostStub('rc2-exited', '0.2.1-rc.2', false)
 const UNRESOLVABLE_BASE = makeHostStub('unresolvable', 'not-a-version-' + process.pid, true)
 
 /**
@@ -942,9 +948,10 @@ test('tool-schedule 行是裸一行（无 disabled），且四个名字不在任
   //
   // ⚠️ **这一条在 T1 之后换了承重点**。旧版断言「本行带宿主门 disabled」与「lane 的 deny
   //    按同一判据**条件**带上那 4 个名字」——两者都依赖「支持集含 0.2.0-rc.2，而 rc.2 没有
-  //    这个包」这个前提。支持集收缩到单版本后前提消失：唯一受支持的宿主 `0.2.1-rc.2`
-  //    自己依赖 `@deepseek-ai/dsh-tool-schedule` ⇒ 这个包在每台受支持机器上都可解析 ⇒
-  //    那 4 个名字是**无条件**的，`disabled` 门与条件尾巴一起退休。
+  //    这个包」这个前提。集合收缩**再扩张**之后前提仍不成立：受支持的四个版本**每台都自带**
+  //    `@deepseek-ai/dsh-tool-schedule`（rc 线与 `0.2.2-alpha.2` 的 `dsh` 的 dependencies 里都有它）
+  //    ⇒ 这个包在每台受支持机器上都可解析 ⇒ 那 4 个名字是**无条件**的，
+  //    `disabled` 门与条件尾巴一起退休。
   //    旧断言若原样保留，会在一个已经不存在的世界里要求一个已被删除的字段。
   const block = blockOf(committed, 'tool-schedule')
   assert.notEqual(block, null,
@@ -954,7 +961,7 @@ test('tool-schedule 行是裸一行（无 disabled），且四个名字不在任
   // 裸一行：没有 disabled（受支持的宿主一定装得上这个包），也没有 config。
   const disabledLine = block.find((l) => /^\s*disabled:/.test(l))
   assert.equal(disabledLine, undefined,
-    'tool-schedule 行仍带 disabled —— 唯一受支持的宿主自己依赖这个包，门已无对象')
+    'tool-schedule 行仍带 disabled —— 受支持的四个版本每台都自带这个包，这条门已无对象')
   const configLine = block.find((l) => /^\s*config:/.test(l))
   assert.equal(configLine, undefined,
     'tool-schedule 行带了 config —— 官方骨架那一行是裸的，本行应当同形')
@@ -1129,12 +1136,16 @@ test('没有任何官方集授予写面之外的危险名字（寻址 / fork / s
 
 // ============================================================================
 // 7c. 宿主门按**版本**判，不是按 Config 形状判
-//     alpha.3 / alpha.4 / alpha.5 与受支持的 0.2.1-rc.2 **结构完全相同**（同样的
-//     Config 键集、agentPreset/allowedAgentPresets、没有 persona）⇒ 形状探针**分不开**它们，
-//     只会把 0.2.0-rc.2/alpha.1/alpha.2 关掉，而把 alpha.3/4/5 放进来。这条断言锁的正是
-//     「版本是唯一能区分它们的事实」。
+//     实测（`E:\dsh-verify` 矩阵）：rc.3 / rc.4 / rc.5 **逐字节相同**（两份 patch.yml + 7 个
+//     lib/index.js 的 sha256 全同），已退出集合的 0.2.1-rc.2 也在同一条结构线上：它们同样是
+//     agentPreset/allowedAgentPresets、没有 persona ⇒ 形状探针**分不开** rc.2 与 rc.5，也分不开
+//     rc.3 与 rc.5。本组断言锁的正是「版本是唯一把它们分开的事实」：集合内（rc.5 那一侧）⇒ 挂载，
+//     集合外（rc.2 那一侧）⇒ 关闭。
+//     ⚠️ 0.2.2-alpha.2 **不在**这条同结构线上（矩阵实测结构不同），它的那一处真实破坏由
+//     `tool-presentation` 的**结构**判据承担（见文件末尾那条测试）⇒ 不要拿 alpha.2 当
+//     「结构相同」的样本。
 // ============================================================================
-test('宿主门：支持集里的两版都启用，rc.2 与 alpha.5 禁用（形状相同也必须分开）', () => {
+test('宿主门：支持集四版全开；同结构、已退出集合的 0.2.1-rc.2 关闭（rc.2 ↔ rc.5 只差版本）', () => {
   const gateOf = (block) => {
     const line = block.split('\n').find((l) => /^\s*disabled: !!js /.test(l))
     assert.notEqual(line, undefined, '该行没有 disabled 门')
@@ -1148,14 +1159,18 @@ test('宿主门：支持集里的两版都启用，rc.2 与 alpha.5 禁用（形
   for (const [label, block] of [['lane 行', laneBlock], ['preset 行', presetBlock]]) {
     const gate = gateOf(block)
     // 支持集里的每一版 ⇒ false（挂载）。**逐版**断言，不只看第一项：
-    // 门若退回单值相等，只有「第二项」这一档会红，其余档仍然全绿。
-    for (const [version, base] of [[SUPPORTED[0], NEW_BASE], [SUPPORTED[SUPPORTED.length - 1], NEWER_BASE]]) {
+    // 门若退回单值相等，除第一根以外的每一根都会红，其余档仍然全绿。
+    for (const [version, base] of SUPPORTED_BASES) {
       assert.equal(evalJs(gate, base), false,
         `${label}：受支持的 ${version} 上被禁用了（极性反了，或门退回单值相等）⇒ 整个 preset 不挂`)
     }
     // 旧契约 ⇒ true（禁用）
     assert.equal(evalJs(gate, OLD_BASE), true,
       `${label}：0.2.0-rc.2（声明 persona:）上没有被禁用`)
+    // 刚退出集合的那一版 ⇒ true。它与集合内版本形状完全相同，只有版本把它划在外面，
+    // 所以这一根同时锁住「集合边界是逐字成员」与「rc 线不等于集合」。
+    assert.equal(evalJs(gate, RC2_EXITED_BASE), true,
+      `${label}：0.2.1-rc.2 上没有被禁用 —— 它已退出支持集、形状与集合内版本相同；按形状判会放它进来`)
     // ⛔ 关键一档：结构与受支持版本相同、**只有版本不同** ⇒ 必须 true。
     //    旧形状探针在这里返回 false，于是 alpha.3/4/5 会挂载 —— 那正是被修掉的行为。
     assert.equal(evalJs(gate, ALPHA5_BASE), true,
@@ -1173,6 +1188,60 @@ test('宿主门：支持集里的两版都启用，rc.2 与 alpha.5 禁用（形
   // 一次 semver 比较会顺手放行 rc.2 与 rc.3 之间未实测的中间态。
   assert.equal(gateOf(laneBlock).includes('includes(version)'), true,
     '宿主门的版本判断不是成员判断（缺 includes(version)）⇒ 支持集被写成了区间')
+})
+// ============================================================================
+// 7d. 同一个支持集写在**五处**，必须**逐字同值同序**
+//     ——这一组是**决策文本**的断言，不是实现细节。
+// ⚠️ 别把下面的字面清单「重构」成从常量派生（`SUPPORTED.map(...)` / `for (const v of SUPPORTED)`）：
+//    本仓踩过这个坑——所有夹具都从常量派生 ⇒ **集合被悄悄缩小照样全绿**，而 `package.json`
+//    的 peers 与 `install.sh` 的集合是**手写副本**，与常量之间本来没有任何断言。
+//    缩小集合必须让这一组变红，这是有意的。
+// ============================================================================
+test('支持集五处同值同序：决策清单 = 声明常量 = peers 枚举 = install.sh 集合与 floor', () => {
+  const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+  // ⓐ 决策清单本身（字面量）。改它 = 改决策，必须同时改 ADR 与文档。
+  const DECIDED = ['0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-alpha.2']
+  assert.deepEqual(DECIDED, ['0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-alpha.2'],
+    '决策清单被改动了 —— 这一行是决策本身；改动必须是有意的，并同步 ADR 与三份文档')
+
+  // ⓑ 声明常量 == 决策清单（**顺序**也是判据：升序）
+  assert.deepEqual(SUPPORTED, DECIDED,
+    `SUPPORTED_HOST_VERSIONS 是 ${SUPPORTED.join(', ')}，与决策清单不同 —— 缩小、扩大或调序都会让这条红，这是有意的`)
+
+  // ⓒ package.json 的 peers：按 `||` 切分、trim 之后与常量**逐字**比较（不推断 semver 区间）
+  const pkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'))
+  for (const name of ['@deepseek-ai/dsh-skill-filesystem', '@deepseek-ai/dsh-tools']) {
+    const parts = String(pkg.peerDependencies[name]).split('||').map((s) => s.trim())
+    assert.deepEqual(parts, SUPPORTED,
+      `${name} 的 peer 枚举是 ${parts.join(' | ')}，与支持集不同值或不同序`)
+    assert.equal(pkg.peerDependenciesMeta[name]?.optional, true,
+      `${name} 的 peer 必须是 optional（不强制安装）`)
+  }
+  // `cordis` / `schemastery` 跨**两代**：只断言「每个宿主代数各有一项」，不推断范围
+  for (const g of [
+    { name: '@deepseek-ai/cordis', rcLine: '4.0.5', alphaLine: '4.0.6-alpha.1' },
+    { name: '@deepseek-ai/schemastery', rcLine: '3.18.5', alphaLine: '3.18.6-alpha.1' },
+  ]) {
+    const parts = String(pkg.peerDependencies[g.name]).split('||').map((s) => s.trim())
+    assert.equal(parts.length, 2,
+      `${g.name} 应当恰好枚举两个宿主代数（rc 线与 alpha 线），实际是 ${parts.join(' | ')}`)
+    assert.deepEqual(parts, [g.rcLine, g.alphaLine],
+      `${g.name} 的两代取值是 ${parts.join(' | ')}，期望 [${g.rcLine}, ${g.alphaLine}]`)
+    assert.equal(pkg.peerDependenciesMeta[g.name]?.optional, true,
+      `${g.name} 的 peer 必须是 optional（不强制安装）`)
+  }
+
+  // ⓓ install.sh 的两份手写副本：集合按空格切分逐字相等；floor === 常量的第一项
+  const sh = readFileSync(join(REPO, 'install.sh'), 'utf8')
+  const shSet = /SUPPORTED_HOST_VERSIONS="([^"]+)"/.exec(sh)
+  assert.notEqual(shSet, null, 'install.sh 里找不到 SUPPORTED_HOST_VERSIONS 的字符串字面量')
+  assert.deepEqual(shSet[1].trim().split(/\s+/), SUPPORTED,
+    `install.sh 的 SUPPORTED_HOST_VERSIONS 是 "${shSet[1]}"，与支持集不同值或不同序`)
+  const shFloor = /MIN_HOST_VERSION="([^"]+)"/.exec(sh)
+  assert.notEqual(shFloor, null, 'install.sh 里找不到 MIN_HOST_VERSION 的字符串字面量')
+  assert.equal(shFloor[1], SUPPORTED[0],
+    `install.sh 的 floor 是 ${shFloor[1]}，不等于支持集的最低版 ${SUPPORTED[0]}`)
 })
 // ============================================================================
 // 11. 可再生成性：render() 的输出必须复现已提交的产物
@@ -1356,4 +1425,54 @@ test('`ops-integration` 行：specifier 是 dsh-ops 的子路径、落在 plugin
   // 0.5.0 对**未知键直接抛 ConfigError** ⇒ 这里只允许这四个键。多写一个键 = 在每台机器上炸。
   assert.deepEqual(Object.keys(cfg).sort(), ['preset', 'profile', 'replaceOfficial', 'shell'],
     `config 的键集是 ${Object.keys(cfg).sort().join(',')} —— 0.5.0 对未知键抛 ConfigError，只允许 preset + profile + shell + replaceOfficial`)
+})
+
+// ============================================================================
+// `tool-presentation` 行：宿主**自己**管 executor 时本行必须关闭
+//   —— 这是**结构判据**，不是版本判据（理由与代价见 declaration 的 `TOOL_PRESENTATION_RETIRED_EXPR`）。
+//   两个世界（实测）：
+//     · rc.3 / rc.4 / rc.5（逐字节相同）：树里**没有** `@deepseek-ai/dsh-tool-executor-native`
+//       ⇒ 本行照挂（`mode: 'native'` 与 schema 默认值相同：冗余，但无行为差异）。
+//     · 0.2.2-alpha.2：树里**有**它，且宿主 base 骨架**自己**挂了 native executor（ptc 那个是
+//       `disabled: true`）⇒ 本行若照挂，`dsh-agent-tool-presentation` 会按 `mode` 再
+//       `ctx.plugin(Native)` 一次 = **重复注册**。这是四版支持集里唯一一处真实破坏点。
+//   ⚠️ 版本判据在这里是**盲的**：alpha.2 在支持集内，宿主门对它返回 false（= 挂载），所以这条
+//      破坏只能由结构判据承担 —— 这也是「结构判据」与「版本判据」并存的原因，不是两层冗余。
+// ============================================================================
+function makeExecutorStub(kind, hostOwnsExecutor) {
+  const root = join(tmpdir(), `orch-contract-exec-${kind}-${process.pid}`)
+  mkdirSync(root, { recursive: true })
+  if (hostOwnsExecutor) {
+    const dir = join(root, 'node_modules', '@deepseek-ai', 'dsh-tool-executor-native')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'index.js'), 'export default {}\n')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-tool-executor-native', version: '0.0.0-stub', main: 'index.js',
+    }))
+  }
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'stub-root', version: '0.0.0' }))
+  return join(root, 'package.json')
+}
+const EXECUTOR_OWNED_BASE = makeExecutorStub('owned', true)
+const EXECUTOR_ABSENT_BASE = makeExecutorStub('absent', false)
+
+test('`tool-presentation` 行：host 自己管 executor ⇒ disabled；rc 线没有那个包 ⇒ 挂载', () => {
+  const block = blockOf(committed, 'tool-presentation')
+  assert.notEqual(block, null, '产物里没有 `tool-presentation` 行')
+
+  const gateLine = block.find((l) => /^\s*disabled: !!js /.test(l))
+  assert.notEqual(gateLine, undefined,
+    '`tool-presentation` 没有 `disabled: !!js` 门 —— 在 alpha.2 上会把 native executor 挂第二遍（重复注册）')
+  const gate = jsExprOf(gateLine)
+  assert.equal(gate.includes('dsh-tool-executor-native'), true,
+    '门里没有解析 `@deepseek-ai/dsh-tool-executor-native` ⇒ 它没有在判「这一层归谁管」')
+  assert.equal(/^\(/.test(gate), true,
+    '门不是以 `(` 开头 —— 以 `!` 开头会被 YAML 当成第二个 tag（`disabled: !!js !…`）')
+
+  // 极性：宿主自己有 executor ⇒ true（禁用）。方向反了就是「该关的照挂」，也就是重复注册。
+  assert.equal(evalJs(gate, EXECUTOR_OWNED_BASE), true,
+    '宿主树里有 dsh-tool-executor-native 时本行没有被禁用 ⇒ native executor 被挂第二遍')
+  // rc 线：树里没有那个包 ⇒ false（照挂）。这里**不能** fail-closed，否则 rc 线上合法的一行被关掉。
+  assert.equal(evalJs(gate, EXECUTOR_ABSENT_BASE), false,
+    'rc 线（没有 dsh-tool-executor-native）上本行被禁用了 ⇒ 宿主不再自己挂 executor，工具面会缺一层')
 })

@@ -8,9 +8,9 @@
 #
 # What it does, in order:
 #   0. gate   — refuse to continue unless the host is at or above the floor,
-#               0.2.1-rc.2; report out loud when it is above the floor but not in
-#               the supported set (0.2.1-rc.2 / 0.2.1-rc.3 — see the note by
-#               MIN_HOST_VERSION)
+#               0.2.1-rc.3; report out loud when it is above the floor but not in
+#               the supported set (0.2.1-rc.3, 0.2.1-rc.4, 0.2.1-rc.5, 0.2.2-alpha.2
+#               — see the note by MIN_HOST_VERSION)
 #   1. stage  — sync this repository's distributable set into $DSH_HOME/plugins/
 #               on every run, so the copy the host resolves is a projection of
 #               this repository rather than of the first install
@@ -36,23 +36,25 @@ set -euo pipefail
 # It used to be deliberately looser than the supported set, on the reasoning that a
 # host between the two still worked. That reasoning was then over-corrected: for a
 # while the floor WAS the supported set, because the set held exactly one version.
-# It holds two now (0.2.1-rc.2 and 0.2.1-rc.3, pinned in package.json's
-# peerDependencies and declared in README.md / README.zh.md, section
-# "0. Host version gate"), so the floor is the LOWEST supported version and the
-# gap is back: a host above the floor but outside the set installs and mounts
-# nothing. That gap is not silent — the check below names it out loud, and the
-# artifact's own `disabled` expression is what actually enforces the set at mount
-# time. Nothing is copied or linked by this script that could half-work.
+# It holds four now (0.2.1-rc.3, 0.2.1-rc.4, 0.2.1-rc.5 and 0.2.2-alpha.2, pinned in
+# package.json's peerDependencies and declared in README.md / README.zh.md, section
+# "0. Host version gate"), so the floor is the LOWEST supported version (0.2.1-rc.3)
+# and the gap is back: a host above the floor but outside the set (say 0.2.1-rc.6,
+# or a later alpha) installs and mounts nothing. That gap is not silent — the check
+# below names it out loud, and the artifact's own `disabled` expression is what
+# actually enforces the set at mount time. Nothing is copied or linked by this
+# script that could half-work.
 # `ver_cmp` below already orders prereleases correctly, so the floor refuses the
 # hosts it must: 0.2.0-rc.2 -> -1 (refuse), 0.2.1-alpha.5 -> -1 (refuse),
-# 0.2.1-rc.1 -> -1 (refuse).
-MIN_HOST_VERSION="0.2.1-rc.2"
+# 0.2.1-rc.1 -> -1 (refuse), and 0.2.1-rc.2 -> -1 (refuse) now that rc.2 has left
+# the set — it sits below the rc.3 floor, so this script stops before staging anything.
+MIN_HOST_VERSION="0.2.1-rc.3"
 # The supported set, space separated. Keep in sync with SUPPORTED_HOST_VERSIONS in
 # tools/preset-declaration.mjs (the artifact's gate) and the table in both READMEs —
 # those three are the only places this list lives. This copy cannot be derived from
 # the declaration: it must work before the bundle is staged, and on a machine with
 # no node_modules.
-SUPPORTED_HOST_VERSIONS="0.2.1-rc.2 0.2.1-rc.3"
+SUPPORTED_HOST_VERSIONS="0.2.1-rc.3 0.2.1-rc.4 0.2.1-rc.5 0.2.2-alpha.2"
 BUNDLE_DIRNAME="dsh-orchestrator-preset-bundle"
 # The module KEY a profile resolves this bundle by. It is deliberately NOT derived
 # from BUNDLE_DIRNAME: the on-disk directory keeps the bundle-dirname, while the key
@@ -114,10 +116,14 @@ case " ${SUPPORTED_HOST_VERSIONS} " in
     info "gate passed — ${HOST_VERSION} is in the supported set" ;;
   *)
     info "WARNING: ${HOST_VERSION} is above the floor but NOT in the supported set"
-    info "         (${SUPPORTED_HOST_VERSIONS}). The bundle will install and then mount"
-    info "         nothing: every lane row, every lane preset row and the fork row are"
-    info "         disabled on this host by the artifact's own gate. Re-run on a"
-    info "         supported host, or check README section 0 for the current set." ;;
+    info "         (${SUPPORTED_HOST_VERSIONS}). In the DEFAULT world this host's own"
+    info "         loader sees that the peers do not cover ${HOST_VERSION} and skips this"
+    info "         bundle whole at load time: nothing composes, so the artifact's gate"
+    info "         never even runs. Only if you exempt the peers by version"
+    info "         (dsh plugin allow-version) does the bundle compose — and then the"
+    info "         artifact's own gate answers true and disables all nineteen rows."
+    info "         Either way this host mounts nothing. Re-run on a supported host, or"
+    info "         check README section 0 for the current set." ;;
 esac
 
 if [ "$CHECK_ONLY" = "1" ]; then
@@ -239,16 +245,28 @@ cat <<EOF
 
        which creates the real symlink under node_modules/@quill507/.
 
-   (b) In ~/.dsh/profiles/<profile>/cordis.patch.yml — select the preset:
+   (b) In ~/.dsh/profiles/<profile>/cordis.patch.yml — select the preset by
+       patching the REGISTRY row, not the preset's own row:
 
-         - id: preset-dsh-orchestrator-preset
-           name: '@deepseek-ai/dsh-agent-preset'
+         - id: agent-preset-registry
+           name: '@deepseek-ai/dsh-agent-preset-registry'
            config:
+             default: standard
              selectedDefault: dsh-orchestrator-preset
 
-   A patch REPLACES the whole row rather than deep-merging it, so a row that
-   overrides config must restate every key it needs; the snippet above is the
-   whole row, not an addition to a larger one.
+       Keep whatever \`default:\` your registry already carries (a stock profile
+       has \`standard\`); only \`selectedDefault\` is the part that changes.
+
+   ⚠️ A patch replaces a row BY ID rather than deep-merging it, so a row that
+   overrides config must restate **every** key it needs. That is why both keys
+   above are printed: dropping \`default\` leaves the registry with a selection
+   and no fallback. It is also why the target is \`agent-preset-registry\` and NOT
+   \`preset-dsh-orchestrator-preset\`: the latter is the bundle's own row, and
+   patching it replaces that row whole — which discards its plugins[] and takes
+   every lane row with it. Measured on an isolated home with the 0.2.2-alpha.2
+   CLI: the bundle's row alone composes to 2106 lines with 9 lane preset rows;
+   patching \`preset-dsh-orchestrator-preset\` with a three-key selection row
+   instead composes to 1243 lines with ZERO lane preset rows.
 
    Inspect   ~/.dsh/profiles/<profile>/cordis.patch.yml   <- decides the preset
    Ignore    ~/.dsh/profiles/<profile>/cordis.yml        <- empty by design
