@@ -54,6 +54,8 @@ Every lane call carries this packet; an empty field blocks the dispatch.
 
 Location `.dsh/evidence/<task-id>-<slug>.md`, one file per task. Exactly one line in the whole file matches `^RESULT: (PASS|FAIL)$`, as the last line. `PASS` only from a check that can fail; "it did not complain" is not a check. Format and per-criterion testability: `orch-evidence-protocol`.
 
+`frozen`, beside the scope classes rather than a fifth of them: a change to `personas/*.md`, `cordis.patch.yml`, or the evidence skill that carries a verdict line is refused at completion unless this task's evidence file carries `AUDITED-BY: <path>`.
+
 ## State model
 
 | State | Meaning | Advances the checkbox? |

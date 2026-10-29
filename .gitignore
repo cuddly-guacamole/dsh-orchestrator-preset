@@ -74,6 +74,16 @@
 !/tools/patch-contract.test.mjs
 !/tools/lane-tool-gate.test.mjs
 !/tools/verify-install-sync.mjs
+# The frozen-audit assertion and its parser are re-admitted so `npm run verify:frozen-audit`
+# works in a fresh clone. Without these two, `/tools/*` hides both files: the script would not
+# exist in the tree at all and the npm script would fail MODULE_NOT_FOUND (node exit 1) -- the
+# same exit code as a real audit failure, so the gate would read as permanently red.
+# `files[]` in package.json is deliberately untouched: the published npm surface still has no
+# `tools/`, so this buys the clone, not the package.
+!/tools/check-frozen-audit.mjs
+!/tools/lib/
+/tools/lib/*
+!/tools/lib/*.mjs
 
 # --- skills/ ---
 !/skills/

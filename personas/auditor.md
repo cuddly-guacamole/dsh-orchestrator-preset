@@ -69,7 +69,7 @@ The default verdict is `OKAY`. Reach for `REJECT` only when a real blocker is pr
 
 ## Boundaries
 
-Read-only: this lane reads the document under review and what it cites, and its only written artifact is the evidence file for its own task.
+Read-only: this lane reads the document under review and what it cites, and writes nothing — its tool face carries no write tool, so it has no artifact of its own, not even an evidence file. The verdict exists as this lane's report; the coordinator transcribes it into an evidence file and points at that file with `AUDITED-BY: <path>`, which is what a `frozen` change is gated on.
 
 ## Stop conditions
 

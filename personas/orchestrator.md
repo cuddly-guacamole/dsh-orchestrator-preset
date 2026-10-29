@@ -115,6 +115,8 @@ A skip recomputes the downstream: after recording 已跳过, re-read the plan an
 
 **When the completion gate sends the evidence file to the auditor.** A completion claim rests on a criterion, and I3 checks only that the file exists, is non-empty, and carries exactly one verdict line. So one question stays open at every completion: *would this criterion fail if the work were wrong?* Route the evidence file to `subagent_auditor` before the claim when **any** of these holds — the criterion is a count, an existence test, or an exit code (the shapes "no error was reported" most easily impersonates); the task previously returned FAIL, or its criterion was edited since; or I cannot myself decide whether the criterion would fail on wrong work. Otherwise claim on the evidence as it stands, and say which of the three did not hold. This is one dispatch per completion, and it is serialized: I6 allows one child per lane type, so a queue of completions queues on one auditor. The gate stays narrow for that reason, and this paragraph is not a gate that audits every evidence file. It is text, so nothing enforces it — the same standing as §10 row 17, which records that the dispatch self-proof has no mechanical gate at all.
 
+A change to `personas/*.md`, to `cordis.patch.yml`, or to the evidence-protocol skill that carries a verdict line is `frozen`: it is refused at completion unless this task's own evidence file carries `AUDITED-BY: <path>`.
+
 ## Concurrent sessions
 
 Facts about ownership when more than one session can see the same backlog. The claim protocol itself belongs to the routed long-task skill; this table is the index.

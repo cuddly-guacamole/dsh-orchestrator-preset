@@ -24,7 +24,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tools/patch-contract.test.mjs tools/lane-tool-gate.test.mjs",
-    "verify:install-sync": "node tools/verify-install-sync.mjs"
+    "verify:install-sync": "node tools/verify-install-sync.mjs",
+    "verify:frozen-audit": "node tools/check-frozen-audit.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
