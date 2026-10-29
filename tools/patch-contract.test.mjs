@@ -1221,3 +1221,98 @@ test('render() 是纯函数（同输入两次渲染字节相同）', () => {
   const b = render(d, section, d.SHELL_SOURCE)
   assert.equal(a, b)
 })
+
+// ============================================================================
+// 12. `dsh-ops/integration` 的接入（dsh-ops **0.5.0** 的公开 opt-in 子路径）
+//
+// `ops-integration` 是产物里**唯一**一条指向外部包的行：挂上了就活，宿主没装或装的是
+// 0.4.4（npm latest，`exports` 里没有 `./integration`）就该关。⇒ 「接进来了」这件事由
+// 三部分组成，缺一条都是假的：
+//   ⓐ specifier 是 **OPS 的**子路径（写成**本包的**那个会让这道题永远假绿 —— 本包永远
+//     解析得到，门恒 false，而宿主上根本没有那个模块 ⇒ mount 期炸）；
+//   ⓑ 它落在 **preset 的 `plugins[]`** 里（组成面），不是顶层 `- insert:`；
+//   ⓒ 门在**装了 0.5.0 的宿主**上求值为 `false`，在**装 0.4.4 / 解析不到**的宿主上为 `true`。
+// ⛔ 只查文本（`name: 'dsh-ops/integration'` 在不在）不够：门反着写、或被渲染成死字面量，
+//    文本全都对得上，行为却正好相反 —— 这就是上一节 `!!js` 求值断言存在的理由。
+// ============================================================================
+/**
+ * 第四类桩：`dsh-ops` 的两种**真实形状**（照本机两个 profile 的 `node_modules/dsh-ops`
+ * 抄的：desktop = 0.4.4、ops-probe = 0.5.0）。
+ * · `exposesIntegration: true`  ⇒ 0.5.0：`exports` 含 `./integration` ⇒ 门 `false`（挂载）
+ * · `exposesIntegration: false` ⇒ 0.4.4：`exports` **不含** `./integration`
+ *   ⇒ `resolve()` 抛 `ERR_PACKAGE_PATH_NOT_EXPORTED` ⇒ 门 `true`（禁用）
+ * ⚠️ 0.4.4 桩**必须**带一份不含该键的 `exports`，不能「干脆不写 exports」：没有 `exports`
+ *    字段时 Node 会退回**按路径**解析子路径（`node_modules/dsh-ops/integration` 直接命中
+ *    目录里的同名文件）⇒ 桩会假阳性解析成功，把「有门」误读成「没门」。
+ * ⚠️ 为什么不直接指向本机 `~/.dsh/profiles/<profile>/node_modules/dsh-ops`：那样读数会随「本机装的
+ *    是哪一版 dsh-ops」漂移 —— 在只装了 0.4.4 的机器上这组断言会全红，而它要考的是
+ *    **产物在这两个世界里的行为**（与 `makeHostStub` 同一条理由）。
+ */
+function makeOpsStub(kind, version, exposesIntegration) {
+  const root = join(tmpdir(), `orch-contract-ops-${kind}-${process.pid}`)
+  const dir = join(root, 'node_modules', 'dsh-ops')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'integration.js'), "export const name = 'dsh-ops/integration'\nexport function apply() {}\n")
+  writeFileSync(join(dir, 'index.js'), 'export default {}\n')
+  writeFileSync(join(dir, 'policy.js'), 'export default {}\n')
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: 'dsh-ops',
+    version,
+    // 键集是这两个世界**唯一**的差别 —— 与真实包一致（`exports` 是唯一的判据来源）。
+    exports: exposesIntegration
+      ? { '.': './index.js', './integration': './integration.js', './package.json': './package.json' }
+      : { '.': './index.js', './policy': './policy.js', './package.json': './package.json' },
+  }))
+  return join(root, 'package.json')
+}
+const OPS_050_BASE = makeOpsStub('050', '0.5.0', true)
+const OPS_044_BASE = makeOpsStub('044', '0.4.4', false)
+
+test('`ops-integration` 行：specifier 是 dsh-ops 的子路径、落在 plugins[]、门按 OPS 是否暴露 ./integration 判别', () => {
+  const block = blockOf(committed, 'ops-integration')
+  assert.notEqual(block, null, '产物里没有 `ops-integration` 行 ⇒ dsh-ops 的 integration 没有被接进来')
+  const row = rows().find((r) => r.id === 'ops-integration')
+
+  // ⓐ specifier 是 OPS 的，不是本包的
+  assert.equal(scalarOf(block, 'name'), 'dsh-ops/integration',
+    '`ops-integration` 的 name 不是 `dsh-ops/integration` —— 写成别的 specifier，这一行指向的就不是 OPS')
+
+  // ⓑ 层级：`plugins[]` 里的行缩进 10；顶层 `- insert:` 的行缩进 4
+  assert.equal(row.indent, 10,
+    `\`ops-integration\` 的缩进是 ${row.indent}，不是 10 —— 它没有落在 preset 的 plugins[] 里（OPS 要求挂在 preset composition scope）`)
+
+  // ⓒ 门：必须是 `!!js` 表达式（不是 true / 引号包起来的死字符串），且真的在解析 OPS 的子路径
+  const gateLine = block.find((l) => /^\s*disabled: !!js /.test(l))
+  assert.notEqual(gateLine, undefined,
+    '`ops-integration` 没有 `disabled: !!js` 门 —— 在没装 dsh-ops（或装了 0.4.4）的宿主上这行会在 mount 期抛错')
+  const gate = jsExprOf(gateLine)
+  assert.equal(gate.includes('dsh-ops/integration'), true,
+    '门里没有解析 `dsh-ops/integration` ⇒ 它没有在判这一行该不该挂')
+  assert.equal(/^\(/.test(gate), true,
+    '门不是以 `(` 开头 —— 以 `!` 开头会被 YAML 当成第二个 tag（`disabled: !!js !…`）')
+
+  // ⓒ 求值：0.5.0 形状 ⇒ false（挂载）
+  assert.equal(evalJs(gate, OPS_050_BASE), false,
+    '装了 dsh-ops 0.5.0（exports 含 ./integration）的宿主上这行被禁用了 —— 极性反了，OPS 永远接不进来')
+  // 0.4.4 形状（`exports` 不含 ./integration）⇒ true（禁用）。这是门存在的**唯一**理由。
+  assert.equal(evalJs(gate, OPS_044_BASE), true,
+    '装了 dsh-ops 0.4.4 的宿主上这行没有被禁用 ⇒ mount 期抛 ERR_PACKAGE_PATH_NOT_EXPORTED，整个 preset 跟着不挂')
+  // 解析不到（宿主没有 dsh-ops）⇒ true：fail-closed
+  assert.equal(evalJs(gate, UNRESOLVABLE_BASE), true,
+    '没有 dsh-ops 的宿主上这行没有被禁用 ⇒ fail-closed 方向反了')
+  // baseUrl 本身不可用（`LEGACY_BASE` 是相对路径，`createRequire()` 自己就抛）⇒ 仍必须 true：
+  // 门**不得**把任何异常漏给宿主（漏出去 = 求值期硬失败，比这一行不挂严重得多）。
+  assert.equal(evalJs(gate, LEGACY_BASE), true,
+    'baseUrl 不可用的世界上这行没有被禁用 ⇒ 门把异常漏出去了（宿主求值 `!!js` 时会硬失败）')
+
+  // ⑤ config：`preset` 必须**精确等于**宿主 preset id（不是随手写的字面量），profile 是 discovery
+  const cfg = scalarMap(block)
+  assert.notEqual(cfg, null, '`ops-integration` 没有 config 映射 ⇒ 0.5.0 的 `preset` 是必填键，缺它必抛')
+  assert.equal(cfg.preset, d.presetId,
+    `config.preset 是 ${cfg.preset}，不是宿主 preset id ${d.presetId} ⇒ 挂载期点名不符`)
+  assert.equal(cfg.profile, 'discovery',
+    `config.profile 是 ${cfg.profile}，不是 discovery ⇒ 会重复注册本 preset 已有的官方 read/write/edit/glob/grep`)
+  // 0.5.0 对**未知键直接抛 ConfigError** ⇒ 这里只允许这两个键。多写一个键 = 在每台机器上炸。
+  assert.deepEqual(Object.keys(cfg).sort(), ['preset', 'profile'],
+    `config 的键集是 ${Object.keys(cfg).sort().join(',')} —— 0.5.0 对未知键抛 ConfigError，只允许 preset + profile`)
+})

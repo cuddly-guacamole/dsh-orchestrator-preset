@@ -1,8 +1,8 @@
 // ============================================================================
-// preset-declaration.mjs — 新 preset 的 31 个 row 的唯一来源（声明清单）
+// preset-declaration.mjs — 新 preset 的 32 个 row 的唯一来源（声明清单）
 // ============================================================================
 //
-// 定位：把「31 个 row」从散文描述变成机器可读的单一来源，让 cordis.patch.yml 可再生成
+// 定位：把「32 个 row」从散文描述变成机器可读的单一来源，让 cordis.patch.yml 可再生成
 //       （DESIGN.md §14 D9「引入生成器」的对价；计划 T06 的产物）。
 //
 // 消费者：
@@ -37,8 +37,8 @@
 //    禁止在生成器里用它断言 / 拦截 deny / allow 名单（「生成期闭集断言」机制已按用户裁决删除，
 //    见 DESIGN.md §3.3.4 的 ⛔ 段）。它只供人读 + 产物自检。新的兜底 = 「首次派发时 loud 失败」。
 
-// 18 个顶层 row（14 个保留行 + 4 个新增挂载行：routing-sections / harness-sections /
-// tool-presentation / lane-composition；口径见 topRows 处）
+// 19 个顶层 row（14 个保留行 + 4 个新增挂载行：routing-sections / harness-sections /
+// tool-presentation / lane-composition + 1 个 OPS 接入行 ops-integration；口径见 topRows 处）
 // 3 个 group · 3 个 delegation 控制行 · 9 个 lane 行
 
 export const presetId = 'dsh-orchestrator-preset'
@@ -206,6 +206,29 @@ export const LANE_FORM_SUPPORTED_EXPR = "(() => { try { "
   + "if (at < 0) return true; "
   + "return /persona:/.test(src.slice(at, src.indexOf('});', at))) "
   + "} catch (e) { return true } })()"
+
+// ── `dsh-ops/integration` 的宿主门（这个子路径是 dsh-ops **0.5.0** 才有的）──────────
+// **为什么需要门**：`dsh-ops` 不是本 bundle 的依赖 —— 装不装、装哪一版由用户机器决定。
+//   而 `dsh-ops/integration` 是 0.5.0 新增的**公开 opt-in 子路径**：0.4.4（当时的 npm
+//   latest）没有它，`resolve()` 抛 `ERR_PACKAGE_PATH_NOT_EXPORTED`（本机两个 profile 实测：
+//   装了 0.5.0 的那个解析成功，装 0.4.4 的 desktop profile 抛这个错）。
+//   没有门时，`- id: ops-integration` 会在「没装 OPS」或「装了 0.4.4」的机器上于 mount 期
+//   抛错；而 preset 的 `plugins[]` 是**整体装配** —— 一行炸掉，整个 preset 不挂
+//   （persona / routing / 9 条 lane 一起消失）。一个可选增强不该有这种爆炸半径。
+// **极性**：与 `LANE_FORM_SUPPORTED_EXPR` **同向** —— `true` = 不可用 = 该行 `disabled`。
+//   装配面上只允许一种读法：门为真即关。反着写会让「该关的挂上、该挂的关掉」。
+// **判据为什么是 `resolve()` 而不是读 `version`**：`./integration` 有没有被 `exports`
+//   暴露，才是宿主能不能挂这一行的**直接**事实；版本号还要经过一层「哪几版有它」的映射，
+//   多一步推导就多一处会漂的假设（0.4.4 → 0.5.0 之间的小版本也可能变 exports）。
+// **`catch (e) { return true }` 是 fail-closed**：解析不到 = 连入口文件都没有，那种情况
+//   强行挂上去必然在 mount 期炸 ⇒ 关掉它（与上面那条表达式同一个失败方向）。
+// ⚠️ **plain scalar 边界同 `LANE_FORM_SUPPORTED_EXPR`**：表达式体内**不得**出现
+//   `: `（冒号+空格）/ `#` / 反斜杠 / 双引号 / 对象字面量 / 三元 —— 它被嵌进 YAML 的
+//   `!!js` plain scalar。所以这里只用 `try` / `return`、单引号字符串、`;` 收尾。
+//   下面这份形态已核对过该约束，**不要**为了「更好读」改写它。
+export const OPS_INTEGRATION_UNSUPPORTED_EXPR = "(() => { try { "
+  + "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-ops/integration'); "
+  + "return false } catch (e) { return true } })()"
 
 // ⛔ **为什么新形态必须有 `lane-tool-gate`（不挂它 = 静默的权限放大）**：
 //    alpha.3 把工具组成搬进 Agent Preset，但 preset 的 `plugins[]` **只能加不能减** ——
@@ -675,7 +698,9 @@ export const lanePresetRows = LANES.map((lane) => ({
   },
 }))
 
-// ── 18 个顶层 row（14 个保留行 + 4 个新增挂载行）──────────────────────────
+// ── 19 个顶层 row（14 个保留行 + 4 个新增挂载行 + 1 个 OPS 接入行）──────────────────
+// ⚠️ 计数随 2026-10-27 的 `ops-integration` 接入从 18 变 19（该行不属于「保留行」，也不属于
+//    那 4 个自写挂载行：它是**外部包** dsh-ops 的公开子路径，带自己的宿主门）。
 // ⚠️ 计数随 T11（2026-10-22，`tool-presentation`）从 17 变 18；上两轮的 `harness-sections`（T7-T9）
 //    与 `tool-presentation` 都是「刻意用通用 id 的自写挂载行」，所以这条注释里的加数要一起变。
 //    「保留行」= 权威骨架 `standard.patch.yml` 里也有同名 id 的行（含被本包**替换**的 `persona`）。
@@ -765,6 +790,46 @@ export const topRows = [
   { id: 'tool-ask-user',      name: '@deepseek-ai/dsh-tool-ask-user' },
   { id: 'tool-todo',          name: '@deepseek-ai/dsh-tool-todo',          config: { allowParallelInProgress: true } },
   { id: 'tool-web',           name: '@deepseek-ai/dsh-tool-web',           config: { fetch: true, searchTimeoutMs: 60000 } },
+  // ── `dsh-ops/integration`（dsh-ops 0.5.0 的公开 opt-in 接口，2026-10-27 接入）──────
+  //
+  // ① **为什么排进本 preset 的 `plugins[]`，而不是 bundle 顶层 `- insert:`**：
+  //    OPS 文档要求「mount at the preset composition scope」。preset 的组成面才是本
+  //    preset 的 Lead 拿到的那份工具面；这一行渲染进 `preset.config.plugins[]`
+  //    （`- id:` 缩进 **10**）。顶层 `- insert:`（缩进 **4**）是**部署层**的挂载点 ——
+  //    挂在那儿是把工具面加到 host 层，既不是这个 preset 的 Lead，也与本文件其余
+  //    「本 preset 的工具面」脱节（同一件事就有了两个家）。
+  //    形态上它就是一条普通 row：该模块导出 `{ name, apply }`，与 `topRows` 里每条
+  //    插件行同形 ⇒ 不需要新 .mjs 文件，也不需要动 `exports` / `files` / `.gitignore`。
+  //
+  // ② **为什么 `profile: 'discovery'`**：该 profile = files:false / shell:false /
+  //    presentation:native / discovery:true ⇒ **只新增** `ops_discover_tools` 与
+  //    `ops_status` 两个工具，**不重复**本 preset 已有的官方 `read` / `write` / `edit` /
+  //    `glob` / `grep`（那些要 files:true 才注册）。OPS 的额外能力（read_pdf /
+  //    read_docx / read_table / replace / diff / stat / copy / move / remove 等）由
+  //    `ops_discover_tools` **按需解锁**，而不是在常驻工具面上再挂一套并行的文件工具
+  //    （常驻双份 = 每次请求都付两份 schema 的 token，还要面对「同一件事两个实现」）。
+  //
+  // ③ **为什么不开 `shell`**（留默认 false）：OPS 的 shell 能力**只有 bash** ——
+  //    它的 `resolvePwsh()` 硬编码返回 `available: false`；而本 preset 在 Windows 上是
+  //    pwsh 优先（见上方 `tool-bash` / `tool-pwsh` 的平台门）。在这个部署上开 shell
+  //    等于开一个**没有解释器**的工具：工具面变大、能力为零。
+  //
+  // ④ **为什么不开 `replaceOfficial`**（留默认 false）：那会在 Lead 作用域**遮蔽**官方
+  //    `read` / `glob` / `grep`，把现有工具的行为换成 OPS 的实现。这是改变**已有**行为，
+  //    不是新增能力，不在本次接入范围内（想换是一份独立裁决，得单独量账）。
+  //    ⚠️ 在这个 profile 上它其实**不可选**：dsh-ops 的 `resolveIntegrationConfig()` 对
+  //    `replaceOfficial && !files && !shell` 直接抛 `replaceOfficial requires files or shell`
+  //    （`dsh-ops/lib/integration/config.js:49-51`，0.5.0 实测读到的实现）—— discovery
+  //    恰好 files=false / shell=false。所以打开它不是「多一个开关」，是装配期炸。
+  //
+  // ⑤ **`config.preset` 必须精确等于宿主 preset id**（用导出的 `presetId`，不写字面量）：
+  //    这一键是「我声明自己在哪个 composition 里」的自述，写错 ⇒ 挂载期点名不符。
+  //    其余 18 个键全部走 0.5.0 的默认值（未知键会直接抛 ConfigError，所以这里不许多写）。
+  //
+  // ⑥ **`disabled` 用上面那条 `OPS_INTEGRATION_UNSUPPORTED_EXPR`**：没装 dsh-ops、或装的
+  //    是不带 `./integration` 导出的 0.4.4 ⇒ 该行禁用，而不是让整个 preset 在 mount 期炸。
+  { id: 'ops-integration', name: 'dsh-ops/integration', disabled: OPS_INTEGRATION_UNSUPPORTED_EXPR,
+    config: { preset: presetId, profile: 'discovery' } },
 ]
 
 // ── 3 个 group ───────────────────────────────────────────────────────────────
