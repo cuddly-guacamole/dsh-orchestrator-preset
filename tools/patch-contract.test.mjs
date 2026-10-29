@@ -1231,13 +1231,20 @@ test('render() 是纯函数（同输入两次渲染字节相同）', () => {
 //   ⓐ specifier 是 **OPS 的**子路径（写成**本包的**那个会让这道题永远假绿 —— 本包永远
 //     解析得到，门恒 false，而宿主上根本没有那个模块 ⇒ mount 期炸）；
 //   ⓑ 它落在 **preset 的 `plugins[]`** 里（组成面），不是顶层 `- insert:`；
-//   ⓒ 门在**装了 0.5.0 的宿主**上求值为 `false`，在**装 0.4.4 / 解析不到**的宿主上为 `true`。
+//   ⓒ 门在**装了 0.5.0 的宿主**上求值为 `false`，在**装 0.4.4 / 解析不到**的宿主上为 `true`；
+//   ⓓ config 面是 `profile: 'discovery'` + `shell: true` + `replaceOfficial: true`
+//      （2026-10-29 用户裁决）⇒ 常驻工具面多出 `ops_bash`（原有的 `ops_discover_tools` /
+//      `ops_status` 不变），win32 上 `pwsh` / `pwsh_persistent` 被它顶掉，而 `files: false`
+//      ⇒ 官方 `read` / `glob` / `grep` **不动**。少写任何一个开关，行为都与这条裁决不符。
 // ⛔ 只查文本（`name: 'dsh-ops/integration'` 在不在）不够：门反着写、或被渲染成死字面量，
 //    文本全都对得上，行为却正好相反 —— 这就是上一节 `!!js` 求值断言存在的理由。
 // ============================================================================
 /**
- * 第四类桩：`dsh-ops` 的两种**真实形状**（照本机两个 profile 的 `node_modules/dsh-ops`
- * 抄的：desktop = 0.4.4、ops-probe = 0.5.0）。
+ * 第四类桩：`dsh-ops` 的两种**真实形状** —— 0.5.0 那一侧按它的 `exports` 实际形状造，
+ * 0.4.4 是由桩覆盖的**另一个可能世界**（不是「本机哪个 profile 装了哪一版」的记录：本机装什么
+ * 会随机器变，而这里要的是两个世界都能被稳定复现）。
+ * ⚠️ 所以**不要**把本机 profile 的版本写进这段注释（写过一次「desktop = 0.4.4 / ops-probe =
+ *    0.5.0」，本机换版后就变成假话，审计把它记成 finding）。
  * · `exposesIntegration: true`  ⇒ 0.5.0：`exports` 含 `./integration` ⇒ 门 `false`（挂载）
  * · `exposesIntegration: false` ⇒ 0.4.4：`exports` **不含** `./integration`
  *   ⇒ `resolve()` 抛 `ERR_PACKAGE_PATH_NOT_EXPORTED` ⇒ 门 `true`（禁用）
@@ -1310,9 +1317,43 @@ test('`ops-integration` 行：specifier 是 dsh-ops 的子路径、落在 plugin
   assert.notEqual(cfg, null, '`ops-integration` 没有 config 映射 ⇒ 0.5.0 的 `preset` 是必填键，缺它必抛')
   assert.equal(cfg.preset, d.presetId,
     `config.preset 是 ${cfg.preset}，不是宿主 preset id ${d.presetId} ⇒ 挂载期点名不符`)
+  // `profile` 仍然是 discovery：`files: false` 是「不重复挂一套并行文件工具」的唯一来源，
+  // 而 shell / replaceOfficial 是**显式键覆盖** profile 默认值（见 ③④ 那条裁决），不是换 profile。
   assert.equal(cfg.profile, 'discovery',
     `config.profile 是 ${cfg.profile}，不是 discovery ⇒ 会重复注册本 preset 已有的官方 read/write/edit/glob/grep`)
-  // 0.5.0 对**未知键直接抛 ConfigError** ⇒ 这里只允许这两个键。多写一个键 = 在每台机器上炸。
-  assert.deepEqual(Object.keys(cfg).sort(), ['preset', 'profile'],
-    `config 的键集是 ${Object.keys(cfg).sort().join(',')} —— 0.5.0 对未知键抛 ConfigError，只允许 preset + profile`)
+  // ⚠️ 下面这两条 `assert.equal` 考的是**文本内容**（产物里写的是 `true` 还是 `false`），
+  //    它们**不**考 YAML 类型：`scalarMap()` 走文本解析、`unquote()` 只去引号，所以带引号的
+  //    `shell: 'true'`（字符串）与裸的 `shell: true`（布尔）读出来**都是** `'true'`。
+  //    前者会让 0.5.0 在 Boolean 校验里抛 `shell must be boolean`（`integration/config.js:27-33`）
+  //    ⇒ 整台机器 mount 失败，而值比较照样全绿。类型这一维由紧跟着的**裸 token 断言**负责
+  //    （直接对产物那一行做整行文本匹配）—— 两条各锁一半，合起来才是「键在、值对、类型对」。
+  // 2026-10-29 用户裁决：发布 `ops_bash` 并顶掉官方 `pwsh`（代价见 declaration 的 ③④ 段）。
+  assert.equal(cfg.shell, 'true',
+    `config.shell 是 ${cfg.shell}，不是 true ⇒ ops_bash 不会被发布，这行退化成「只看 discovery」`)
+  assert.equal(cfg.replaceOfficial, 'true',
+    `config.replaceOfficial 是 ${cfg.replaceOfficial}，不是 true ⇒ 官方 pwsh 不会被 ops_bash 顶掉，` +
+    '而 shell 已开、工具面里会同时出现 bash 与 pwsh 两套 shell（与本轮裁决不符）')
+  // 裸 token：`'true'` 与 `true` 的差别**只有**在整行文本上看得出来（见上面的 ⚠️）。
+  // 锚定 `^\s*<key>: true$` 而不是 `includes(key)`：产物若写成 `shell: 'true'` / `shell: "true"` /
+  // `shell: True`，这一行就匹配不上 —— 那正是会让宿主 mount 失败的那几种写法。
+  const shellLine = block.find((l) => /^\s*shell:/.test(l))
+  const replaceOfficialLine = block.find((l) => /^\s*replaceOfficial:/.test(l))
+  assert.notEqual(shellLine, undefined,
+    '`ops-integration` 的 config 里没有 `shell:` 行 ⇒ 这个键在产物里根本不存在')
+  assert.match(shellLine, /^\s*shell: true$/,
+    '`shell` 不是裸布尔 true（写成了带引号的字符串或其他值）—— 0.5.0 会抛 shell must be boolean，' +
+    '而值比较读不出这个差别')
+  assert.notEqual(replaceOfficialLine, undefined,
+    '`ops-integration` 的 config 里没有 `replaceOfficial:` 行 ⇒ 这个键在产物里根本不存在')
+  assert.match(replaceOfficialLine, /^\s*replaceOfficial: true$/,
+    '`replaceOfficial` 不是裸布尔 true（写成了带引号的字符串或其他值）—— 0.5.0 会抛 ' +
+    'replaceOfficial must be boolean，而值比较读不出这个差别')
+  // `files` 键**不得出现**：它一旦为 true，0.5.0 会按 files && native 再挂一套常驻文件工具
+  // （read_files / inspect_local_file / glob / grep / result），与官方 read/write/edit/glob/grep
+  // 重复 —— 那与「只多一个 ops_bash」的决策直接相悖，且每请求多付一份 schema。
+  assert.equal(Object.hasOwn(cfg, 'files'), false,
+    `config 里出现了 files 键（${cfg.files}）⇒ 常驻文件工具面被打开，与决策不符`)
+  // 0.5.0 对**未知键直接抛 ConfigError** ⇒ 这里只允许这四个键。多写一个键 = 在每台机器上炸。
+  assert.deepEqual(Object.keys(cfg).sort(), ['preset', 'profile', 'replaceOfficial', 'shell'],
+    `config 的键集是 ${Object.keys(cfg).sort().join(',')} —— 0.5.0 对未知键抛 ConfigError，只允许 preset + profile + shell + replaceOfficial`)
 })

@@ -801,35 +801,67 @@ export const topRows = [
   //    形态上它就是一条普通 row：该模块导出 `{ name, apply }`，与 `topRows` 里每条
   //    插件行同形 ⇒ 不需要新 .mjs 文件，也不需要动 `exports` / `files` / `.gitignore`。
   //
-  // ② **为什么 `profile: 'discovery'`**：该 profile = files:false / shell:false /
-  //    presentation:native / discovery:true ⇒ **只新增** `ops_discover_tools` 与
-  //    `ops_status` 两个工具，**不重复**本 preset 已有的官方 `read` / `write` / `edit` /
-  //    `glob` / `grep`（那些要 files:true 才注册）。OPS 的额外能力（read_pdf /
-  //    read_docx / read_table / replace / diff / stat / copy / move / remove 等）由
-  //    `ops_discover_tools` **按需解锁**，而不是在常驻工具面上再挂一套并行的文件工具
-  //    （常驻双份 = 每次请求都付两份 schema 的 token，还要面对「同一件事两个实现」）。
+  // ② **为什么 `profile: 'discovery'`**：该 profile 给出 `files: false` /
+  //    `presentation: 'native'` / `discovery: true` ⇒ **不重复**本 preset 已有的官方
+  //    `read` / `write` / `edit` / `glob` / `grep`（OPS 的文件工具要 `files: true` 才注册）。
+  //    OPS 的额外能力（read_pdf / read_docx / read_table / replace / diff / stat / copy /
+  //    move / remove 等）由 `ops_discover_tools` **按需解锁**，而不是在常驻工具面上再挂一套
+  //    并行的文件工具（常驻双份 = 每次请求都付两份 schema 的 token，还要面对「同一件事两个
+  //    实现」）。
+  //    ⚠️ `shell` / `replaceOfficial` **不取自 profile**，而是下面 ③④ 的**显式键覆盖**：
+  //    `resolveIntegrationConfig()` 先取 profile 默认值、再用同名布尔键覆盖
+  //    （`dsh-ops/lib/integration/config.js:26-49`，0.5.0 实测读到的实现）。
   //
-  // ③ **为什么不开 `shell`**（留默认 false）：OPS 的 shell 能力**只有 bash** ——
-  //    它的 `resolvePwsh()` 硬编码返回 `available: false`；而本 preset 在 Windows 上是
-  //    pwsh 优先（见上方 `tool-bash` / `tool-pwsh` 的平台门）。在这个部署上开 shell
-  //    等于开一个**没有解释器**的工具：工具面变大、能力为零。
+  // ③ **`shell: true` —— 2026-10-29 用户裁决：要 `ops_bash`，并顶掉官方 `pwsh`**。
+  //    这是本行**唯一**一次「改变已有行为」的开关，代价照实记在这里，不淡化：
+  //    · **Lead 从此没有直接的 `pwsh`**：`replaceOfficial: true` + `shell: true` + win32
+  //      ⇒ `integration/index.js:59-61` 把 `SHELL_OFFICIAL_NAMES`（`pwsh` /
+  //      `pwsh_persistent`，`modes/plan.js:5`）逐一映射到 `ops_bash`，由
+  //      `publication/replacements.js` 在该 agent scope 上 `tools.restrict({ deny })`。
+  //    · **PowerShell 没消失，只是不再是一等工具**：cmdlet / `.ps1` 要在 `ops_bash` 里
+  //      显式起 `powershell.exe` / `pwsh.exe` 才能用。`ops_bash` 是 MSYS bash（包内
+  //      `runtime/win32-x64` 与 `@dsh-ops/bash-win32-x64` 均已就位）。
+  //    · **9 条 lane 不受影响**：替换是**按 agent 门控**的 —— `matches(agent) =
+  //      gate.allows(agent)`，而 `gate.allows` 要求该 agent 的 preset id ===
+  //      `config.preset`（也就是本 preset 的 Lead）。lane 的 preset id 各不相同 ⇒ 它们仍
+  //      看得见官方 `pwsh`，用法与现在完全一致。
+  //    · **fail-safe**：`plan()` 只在「对方 counterpart 可见」时才隐藏官方工具
+  //      （`replacements.js:35-37`）⇒ 万一 `ops_bash` 没发出来，`pwsh` 自动保留，不会出现
+  //      「两个都没有」。
+  //    · 常驻工具面的实际变化（`files: false` 时）：**+`ops_bash`**，`pwsh` /
+  //      `pwsh_persistent` 被顶掉；原有的 `ops_discover_tools` 与 `ops_status` 不变。
+  //    · win32 上还会 `mountWorkspacePreparation()`（`integration/index.js:31-32`），但它只在
+  //      `workspace-write` 策略下真的动手（`workspace-preparation.js:27-28`），
+  //      `danger-full-access` 下是 no-op。
+  //    · `promptPolicy` 默认为 true，`shell && !files` ⇒ 还会挂一段作用域化的 shell 路由文本
+  //      （`integration/index.js:35-42` → `policy.js` 的 `renderToolingPolicy`）。
+  //      **`ops_bash` 的调用约定与 `pwsh` 不同，那段文本就是唯一来源**：必须带
+  //      `description`；返回 `kind: foreground / background / promoted` 的结构化结果；长脚本
+  //      （约 1 KB 以上，或含 heredoc / 引号 / 反斜杠 / 非 ASCII）应**先写文件再传
+  //      `script_path`**，别塞进 `command`。
   //
-  // ④ **为什么不开 `replaceOfficial`**（留默认 false）：那会在 Lead 作用域**遮蔽**官方
-  //    `read` / `glob` / `grep`，把现有工具的行为换成 OPS 的实现。这是改变**已有**行为，
-  //    不是新增能力，不在本次接入范围内（想换是一份独立裁决，得单独量账）。
-  //    ⚠️ 在这个 profile 上它其实**不可选**：dsh-ops 的 `resolveIntegrationConfig()` 对
-  //    `replaceOfficial && !files && !shell` 直接抛 `replaceOfficial requires files or shell`
-  //    （`dsh-ops/lib/integration/config.js:49-51`，0.5.0 实测读到的实现）—— discovery
-  //    恰好 files=false / shell=false。所以打开它不是「多一个开关」，是装配期炸。
+  // ④ **`replaceOfficial: true` —— 在这里只对 shell 生效，因为 `files: false`**。
+  //    文件替换分支要求 `config.files && presentation === 'native'`
+  //    （`integration/index.js:55-58`）；本行的 `files` 为假 ⇒ 官方 `read` / `glob` / `grep`
+  //    保持原实现，**不**被 OPS 顶掉。这也正是**不**连带打开 `files` 的理由：那会白白多挂
+  //    一套并行文件工具（`read_files` / `inspect_local_file` / `glob` / `grep` / `result`），
+  //    与官方 `read` / `write` / `edit` / `glob` / `grep` 重复，每次请求多付一份 schema。
+  //    ⚠️ 不能只写 `replaceOfficial: true` 而 `shell` / `files` 都不开 —— 0.5.0 对此直接抛
+  //    `replaceOfficial requires files or shell`（`integration/config.js:50-51`）。这里合法
+  //    是因为 `shell: true` 同时成立（旧注释那条「本 profile 上它不可选」的前提，正是
+  //    `shell` 也为 false）。
   //
   // ⑤ **`config.preset` 必须精确等于宿主 preset id**（用导出的 `presetId`，不写字面量）：
-  //    这一键是「我声明自己在哪个 composition 里」的自述，写错 ⇒ 挂载期点名不符。
-  //    其余 18 个键全部走 0.5.0 的默认值（未知键会直接抛 ConfigError，所以这里不许多写）。
+  //    这一键是「我声明自己在哪个 composition 里」的自述，同时也是 ③ 里那道替换门的判据 ——
+  //    写错 ⇒ 挂载期点名不符，且替换永远匹配不到任何 agent。
+  //    这里**只写这四个键**（`preset` / `profile` / `shell` / `replaceOfficial`），其余键全部
+  //    走 0.5.0 的默认值：`resolveIntegrationConfig()` 先校验键集，未知键直接抛 `ConfigError`
+  //    （`integration/config.js:18-20`），所以不许多写。
   //
   // ⑥ **`disabled` 用上面那条 `OPS_INTEGRATION_UNSUPPORTED_EXPR`**：没装 dsh-ops、或装的
   //    是不带 `./integration` 导出的 0.4.4 ⇒ 该行禁用，而不是让整个 preset 在 mount 期炸。
   { id: 'ops-integration', name: 'dsh-ops/integration', disabled: OPS_INTEGRATION_UNSUPPORTED_EXPR,
-    config: { preset: presetId, profile: 'discovery' } },
+    config: { preset: presetId, profile: 'discovery', shell: true, replaceOfficial: true } },
 ]
 
 // ── 3 个 group ───────────────────────────────────────────────────────────────
