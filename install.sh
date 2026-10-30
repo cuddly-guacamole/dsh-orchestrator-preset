@@ -8,9 +8,9 @@
 #
 # What it does, in order:
 #   0. gate   — refuse to continue unless the host is at or above the floor,
-#               0.2.1-rc.3; report out loud when it is above the floor but not in
-#               the supported set (0.2.1-rc.3, 0.2.1-rc.4, 0.2.1-rc.5, 0.2.2-alpha.2
-#               — see the note by MIN_HOST_VERSION)
+#               0.2.1-rc.5; report out loud when it is above the floor but not in
+#               the supported set (0.2.1-rc.5, 0.2.2-alpha.2 — see the note by
+#               MIN_HOST_VERSION)
 #   1. stage  — sync this repository's distributable set into $DSH_HOME/plugins/
 #               on every run, so the copy the host resolves is a projection of
 #               this repository rather than of the first install
@@ -36,25 +36,30 @@ set -euo pipefail
 # It used to be deliberately looser than the supported set, on the reasoning that a
 # host between the two still worked. That reasoning was then over-corrected: for a
 # while the floor WAS the supported set, because the set held exactly one version.
-# It holds four now (0.2.1-rc.3, 0.2.1-rc.4, 0.2.1-rc.5 and 0.2.2-alpha.2, pinned in
-# package.json's peerDependencies and declared in README.md / README.zh.md, section
-# "0. Host version gate"), so the floor is the LOWEST supported version (0.2.1-rc.3)
+# It holds two now (0.2.1-rc.5 and 0.2.2-alpha.2, pinned in package.json's
+# peerDependencies and declared in README.md / README.zh.md, section
+# "0. Host version gate"), so the floor is the LOWEST supported version (0.2.1-rc.5)
 # and the gap is back: a host above the floor but outside the set (say 0.2.1-rc.6,
-# or a later alpha) installs and mounts nothing. That gap is not silent — the check
-# below names it out loud, and the artifact's own `disabled` expression is what
-# actually enforces the set at mount time. Nothing is copied or linked by this
+# or a later alpha) installs and mounts nothing.
+# The two barriers are separate, and the order matters: by default the host's own
+# loader skips a bundle whose peerDependencies do not cover it — so an out-of-set
+# version normally never reaches a `disabled` expression at all. Only after a
+# version exemption (`dsh plugin allow-version`) does the artifact's own `disabled`
+# expression answer, and then it shuts the nineteen rows. The check below names the
+# out-of-set case out loud either way; nothing is copied or linked by this
 # script that could half-work.
 # `ver_cmp` below already orders prereleases correctly, so the floor refuses the
 # hosts it must: 0.2.0-rc.2 -> -1 (refuse), 0.2.1-alpha.5 -> -1 (refuse),
-# 0.2.1-rc.1 -> -1 (refuse), and 0.2.1-rc.2 -> -1 (refuse) now that rc.2 has left
-# the set — it sits below the rc.3 floor, so this script stops before staging anything.
-MIN_HOST_VERSION="0.2.1-rc.3"
+# 0.2.1-rc.1 -> -1 (refuse), 0.2.1-rc.2 -> -1 (refuse), and now 0.2.1-rc.3 /
+# 0.2.1-rc.4 -> -1 as well — both left the set when the floor moved to rc.5, so
+# this script stops before staging anything.
+MIN_HOST_VERSION="0.2.1-rc.5"
 # The supported set, space separated. Keep in sync with SUPPORTED_HOST_VERSIONS in
 # tools/preset-declaration.mjs (the artifact's gate) and the table in both READMEs —
 # those three are the only places this list lives. This copy cannot be derived from
 # the declaration: it must work before the bundle is staged, and on a machine with
 # no node_modules.
-SUPPORTED_HOST_VERSIONS="0.2.1-rc.3 0.2.1-rc.4 0.2.1-rc.5 0.2.2-alpha.2"
+SUPPORTED_HOST_VERSIONS="0.2.1-rc.5 0.2.2-alpha.2"
 BUNDLE_DIRNAME="dsh-orchestrator-preset-bundle"
 # The module KEY a profile resolves this bundle by. It is deliberately NOT derived
 # from BUNDLE_DIRNAME: the on-disk directory keeps the bundle-dirname, while the key

@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.3_%7C_0.2.1--rc.4_%7C_0.2.1--rc.5_%7C_0.2.2--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.5_%7C_0.2.2--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [English](README.md) · [归属与来源](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -65,7 +65,7 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 
 这件事值得比通常更较真，因为一个 preset 就是一堆关于别人运行时的主张。
 
-**请把下表里的版本号读成「测量地点」，不是支持声明。** 受支持的宿主集合是四个版本，`0.2.1-rc.3`、`0.2.1-rc.4`、`0.2.1-rc.5` 与 `0.2.2-alpha.2` —— 见[宿主版本门](#0-宿主版本门)。下面若干行引用了 `0.2.0-rc.2`、`0.2.1-alpha.1` … `0.2.1-alpha.5`、`0.2.1-rc.2`；每一个都只是某次测量的发生地，而它们**全部不受支持**。保留它们，是因为它们是产物至今仍然体现的那些决定的证据 —— 哪些键缺失、为什么需要一道门、为什么 MCP 名字是按机器算而不是写死的。记录**当前**受支持宿主事实的行会明确说出来。
+**请把下表里的版本号读成「测量地点」，不是支持声明。** 受支持的宿主集合是两个版本，`0.2.1-rc.5` 与 `0.2.2-alpha.2` —— 见[宿主版本门](#0-宿主版本门)。下面若干行引用了 `0.2.0-rc.2`、`0.2.1-alpha.1` … `0.2.1-alpha.5`、`0.2.1-rc.2`、`0.2.1-rc.3`、`0.2.1-rc.4`；每一个都只是某次测量的发生地，而它们**全部不受支持**。保留它们，是因为它们是产物至今仍然体现的那些决定的证据 —— 哪些键缺失、为什么需要一道门、为什么 MCP 名字是按机器算而不是写死的。记录**当前**受支持宿主事实的行会明确说出来。
 
 | 主张 | 状态 |
 |---|---|
@@ -74,10 +74,10 @@ aegis 提供**方法**：怎么写计划、怎么做严格 TDD、怎么系统调
 | 精确的层序：先按 `dsh.profile.bundles` 的顺序应用各 bundle patch，然后是 profile 自己的 `cordis.patch.yml`，然后是 `$DSH_HOME/cordis.patch.yml`，最后是每个 `--patch` 覆盖层。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
 | 一个 profile 位于 `~/.dsh/profiles/<name>/`，内含 `cordis.yml`、`cordis.patch.yml` 与 `package.json`。 | **在宿主 0.2.0-rc.1 上实测。** 未对着上游文档确认。 |
 | `config.selectedDefault` 在 preset 的 schema 里，且是生效的那个值；schema 里还有 `config.default`，而 `defaultId` 解析 `selectedDefault ?? default`。 | **在宿主 0.2.0-rc.1 上实测**，对着 `@deepseek-ai/dsh-agent-preset-registry`。 |
-| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测**（历史测量 —— 点名的两个版本都不受支持）。在 `0.2.0-rc.2` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**自 `0.2.1-alpha.2` 起不存在**（只有 `provider`/`model` —— 已在已装的 `0.2.1-alpha.5` 上复核，并在四个受支持版本上各复核一次：`dsh-agent-loop` 的变量表在 rc 线 `:1591-1592` / `0.2.2-alpha.2` `:1345-1346`，都没有 `cwd`）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。`suffix` 这个字段本身**仍在** `dsh-persona` 的 `Config` 里；消失的是它引用的那个变量，所以 suffix 只能是空的 —— 这就是 `persona` 行不写 suffix 的原因。见[宿主版本门](#0-宿主版本门)。 |
+| `{{cwd}}` 是一个已注册的提示词变量；引用一个未知的 `{{…}}` 会在装配期抛错。 | **随版本而异，且逐版实测**（历史测量 —— 点名的两个版本都不受支持）。在 `0.2.0-rc.2` 上已注册（`dsh-agent-loop` 注册 `provider`/`model`/`cwd`），**自 `0.2.1-alpha.2` 起不存在**（只有 `provider`/`model` —— 已在已装的 `0.2.1-alpha.5` 上复核，并在两个受支持版本上各复核一次：`dsh-agent-loop` 的变量表在 rc 线 `:1591-1592` / `0.2.2-alpha.2` `:1345-1346`，都没有 `cwd`）。已对着已装宿主自己的 `renderPrompt` 复现：`unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`。上游 `dsh-system-prompt/README.md` 现已要求使用者删掉这个子句。`suffix` 这个字段本身**仍在** `dsh-persona` 的 `Config` 里；消失的是它引用的那个变量，所以 suffix 只能是空的 —— 这就是 `persona` 行不写 suffix 的原因。见[宿主版本门](#0-宿主版本门)。 |
 | `tool-subagent` 的 `Config` 接受 `backgroundMode`。 | **随版本而异**（历史测量 —— 点名的版本都不受支持）。在 `0.2.1-alpha.1` 上存在（`lib/index.js:257`），**自 `0.2.1-alpha.2` 起不存在**。schemastery 容忍未知键，所以这次移除是静默的 —— 已把两种写法都喂给已装 schema 核过。continuable 现在由 provider 的 `prepareContinuable` 决定：spawn provider 与 rc 线的 fork provider（`dsh-subagent-fork-in-process`）都实现了它 —— ⚠️ **只在 rc 线上实读；`0.2.2-alpha.2` 未对该 fork 包单独读**（契约矩阵不含这个包）。⇒ lane 行**完全不写** `backgroundMode`。 |
-| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测**（历史测量 —— 点名的版本没有一个受支持）。它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。已在已装的 `0.2.1-alpha.5` 上复测：128 行，仍带 `time-context` 与 `tool-schedule`，仍没有那三条被删的行。**四个受支持版本逐一读过：**真正点名的骨架是 `dsh-web-app/presets/standard.patch.yml` —— rc 线 128 行 / 33 row（rc.3、rc.4、rc.5 逐字节相同），`0.2.2-alpha.2` 上 127 行 / 32 row（正好少一条 row：`tool-subagent-list-agents`）。`time-context`（`:19`）与 `tool-schedule`（`:35`）在四个版本上都是**那份文件**里的行；`dsh-base/cordis.patch.yml` 里**没有**它们，那里的一条是 `working-directory`（`:166`）与 `tool-working-directory`（`:169`）。 |
-| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **现在为真 —— 因为受支持集合就是 rc.3 + rc.4 + rc.5 + alpha.2 这四版。** 每一台受支持宿主都自带它，且是精确的 lockstep pin：`dsh@0.2.1-rc.3` 依赖 `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.3`，rc.4、rc.5 与 `0.2.2-alpha.2` 各自钉自己那一版。在旧的**三版**集合下这条是**假的** —— npm 上它只发布在 `0.0.1-rc.2`（另一代）以及 `0.2.1-alpha.1` … `0.2.1-alpha.5`，而 `dsh@0.2.0-rc.2` 不依赖它（rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`）。那段历史正是这四个名字过去必须放在条件尾巴里、现在可以静态列出的原因。 |
+| `standard` preset 骨架是「有哪些行」的权威。 | **逐版实测**（历史测量 —— 点名的版本没有一个受支持）。它从 162 行（`0.2.0-rc.2`、`0.2.1-alpha.1`）缩到 137 行（`0.2.1-alpha.2`），去掉了 `tool-ralph`、`tool-subagent-codex` 与 `tool-subagent-claude-code`；`tool-schedule` 是新增的 —— **在 alpha.1 上有，在 rc.2 上没有**。已在已装的 `0.2.1-alpha.5` 上复测：128 行，仍带 `time-context` 与 `tool-schedule`，仍没有那三条被删的行。**两个受支持版本逐一读过：**真正点名的骨架是 `dsh-web-app/presets/standard.patch.yml` —— rc 线 128 行 / 33 row（`0.2.1-rc.5`；已退出集合的 rc.3 与 rc.4 与它逐字节相同），`0.2.2-alpha.2` 上 127 行 / 32 row（正好少一条 row：`tool-subagent-list-agents`）。`time-context`（`:19`）与 `tool-schedule`（`:35`）在两个版本上都是**那份文件**里的行；`dsh-base/cordis.patch.yml` 里**没有**它们，那里的一条是 `working-directory`（`:166`）与 `tool-working-directory`（`:169`）。 |
+| `@deepseek-ai/dsh-tool-schedule` 在每一个受支持的宿主上都存在。 | **现在为真 —— 因为受支持集合就是 rc.5 + alpha.2 这两版。** 每一台受支持宿主都自带它，且是精确的 lockstep pin：`dsh@0.2.1-rc.5` 依赖 `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.5`，`dsh@0.2.2-alpha.2` 依赖 `0.2.2-alpha.2`。在旧的**三版**集合下这条是**假的** —— npm 上它只发布在 `0.0.1-rc.2`（另一代）以及 `0.2.1-alpha.1` … `0.2.1-alpha.5`，而 `dsh@0.2.0-rc.2` 不依赖它（rc.2 的提醒工具是那个*可选、默认关*的 `dsh-experimental-schedule-bundle`，它插入 `time-context`/`schedule`/`ui-schedule`，而**不是** `tool-schedule`）。那段历史正是这四个名字过去必须放在条件尾巴里、现在可以静态列出的原因。 |
 | deny 名单里点了一个宿主没注册的工具，会在派发时响亮失败，而不是在挂载时。 | **在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 上实测，行为一致**（历史测量 —— 两个版本都不受支持）。`tools.restrict()` 抛 `names unknown global tool`（rc 线 `dsh-tools/lib/index.js:2991-3004` / `0.2.2-alpha.2` `:453-466` —— 方法体相同、消息文本相同，只是行号不同），而 `dsh-subagent` 在组合一个 child 时不加保护地调用它（`lib/index.js`：rc 线 `:401` / alpha.2 `:396`）。这正是 `mcp_*` 那些名字必须**按机器算**、不能写成字面量的原因：一份硬编码清单会在缺某个 server 的机器上弄坏每一次派发。而 `schedule_*` 现在可以静态列出，正是因为**每一台**受支持宿主都一定有它们。拥有 `restrict()` 的那个类在 alpha.2 上由 `ToolRuntime` 改名 `ToolsService`，但它注册的服务键仍是 `"tools"`，所以走 `ctx.tools` 的调用点不受影响。 |
 | `tool-subagent` 的行 `Config` 仍然接受 `persona` 与 `toolFilter`。 | **在每一台受支持宿主上都为假。** `dsh-tool-subagent` 的 `Config` 字面量两个键都不声明（rc 线 `lib/index.js:311-324` / `0.2.2-alpha.2` `:301-315`），且 `apply()` 在挂载期对两者硬抛（rc 线 `:355` / alpha.2 `:346` —— 文本逐字相同，只是行号移了）。`Config` 的**键集**在集合内也不一致：alpha.2 把 `modelSelectionSettings` 换成了 `modelSelection` + `modelDiscovery`，而 schema 不认识的键是被**静默丢弃**而不是被拒 —— 这正是那道门按版本判、而不按 `Config` 形状判的全部理由。本包两个键都不写。⇒ 因此只提供**一种** lane 形态，即 Agent-Preset 形态 —— 见[只有一种 lane 形态，以及为什么](#只有一种-lane-形态以及为什么)。 |
 | Agent Preset 能表达「排除某个工具」。 | **假的，而这正是本包新增 `lane-tool-gate.mjs` 的原因。** preset 的 `plugins[]` **只能加不能减**。`0.2.1-alpha.3` 上实测（历史测量；该版本不受支持）：只挂 persona 的 preset 让 child 拿到 **25** 个工具（含 `edit`/`bash`/`send_message`/`interrupt_agent`），而在 preset 里把 `tool-bash` 标 `disabled: true` 之后 `bash` **依然在**（23 个工具）。`toolFilter` 在那条路径上也不可达：全新派发只带 `composition: { agentPreset }`（`dsh-subagent/lib/index.js:1452`），而 `:395` 那个唯一消费点读的字段是**恢复**路径从持久化 descriptor 里读回的（`:2177`）。 |
@@ -124,12 +124,12 @@ node tools/gen-cordis-patch.mjs
 
 | 包 | 版本声明 | 为什么 |
 |---|---|---|
-| `@deepseek-ai/dsh-skill-filesystem` | `0.2.1-rc.3 \|\| 0.2.1-rc.4 \|\| 0.2.1-rc.5 \|\| 0.2.2-alpha.2` | 本 bundle 挂载的 provider |
-| `@deepseek-ai/dsh-tools` | `0.2.1-rc.3 \|\| 0.2.1-rc.4 \|\| 0.2.1-rc.5 \|\| 0.2.2-alpha.2` | `defineTool`，`lane-composition.mjs` 用 |
+| `@deepseek-ai/dsh-skill-filesystem` | `0.2.1-rc.5 \|\| 0.2.2-alpha.2` | 本 bundle 挂载的 provider |
+| `@deepseek-ai/dsh-tools` | `0.2.1-rc.5 \|\| 0.2.2-alpha.2` | `defineTool`，`lane-composition.mjs` 用 |
 | `@deepseek-ai/cordis` | `4.0.5 \|\| 4.0.6-alpha.1` | 插件契约 |
 | `@deepseek-ai/schemastery` | `3.18.5 \|\| 3.18.6-alpha.1` | 设置卡片据以生成的 `Config` schema |
 
-这一列里没有范围。两个 dsh 包写的是**支持集本身** —— 与[宿主版本门](#0-宿主版本门)那张表、以及 `install.sh` 自己那份清单是同四个名字、同一顺序。`cordis` 与 `schemastery` 写的是**两个**取值而不是一个，因为支持集横跨它们的两代：rc 线上是 `4.0.5` / `3.18.5`，`0.2.2-alpha.2` 上是 `4.0.6-alpha.1` / `3.18.6-alpha.1`，没有任何一个取值能同时为四版作真。`||` 仍然是**枚举而不是范围**：它点名的就是写下来的那些版本，解析到别的宿主按构造即出约。写成 `>=0.2.1-rc.3` 那样的真范围会顺手把命名版本**之间**的东西、以及已退出集合的 `0.2.1-rc.2` 也宣称进来，而那正是没人测过的部分；这里没有带可供下限去指。
+这一列里没有范围。两个 dsh 包写的是**支持集本身** —— 与[宿主版本门](#0-宿主版本门)那张表、以及 `install.sh` 自己那份清单是同两个名字、同一顺序。`cordis` 与 `schemastery` 写的是**两个**取值而不是一个，因为支持集横跨它们的两代：rc 线上是 `4.0.5` / `3.18.5`，`0.2.2-alpha.2` 上是 `4.0.6-alpha.1` / `3.18.6-alpha.1`，没有任何一个取值能同时为两个成员作真。`||` 仍然是**枚举而不是范围**：它点名的就是写下来的那些版本，解析到别的宿主按构造即出约。写成 `>=0.2.1-rc.5` 那样的真范围会顺手把命名版本**之间**的东西、以及已退出集合的每一个更早 rc 都宣称进来，而那正是没人测过的部分；这里没有带可供下限去指。
 
 **诚实的附注：npm 对这一切没有强制力 —— 但宿主有，而且是在两个地方，其中只有一处叫 `disabled`。** 四个 peer 全标了 `optional`，所以 npm 本身不会因为解析到别的宿主就拒绝安装，也不会给出任何有人会当真的警告。真正发生什么，取决于宿主先碰到哪一道屏障：
 
@@ -144,7 +144,7 @@ node tools/gen-cordis-patch.mjs
 
 **两道屏障的判据不同，是有意的。** peers 那道是**semver 范围式** —— 它问「这台宿主被覆盖了吗」，而这个字符串在 loader 眼里是一串区间的并。这里要分清两句话：我们写下的字符串是逐字枚举（没有 `>=`），loader 则拿它当区间的并去判覆盖；两者在枚举点名的那些版本上给出同一答案，只可能在**命名版本之间**分开 —— 而那正是本 preset 拒绝声张的区域。`SUPPORTED_HOST_VERSIONS` 是**逐字成员式**：它问「这是不是有人真读过的那一版」。所以「范围放行、成员拒绝」是合法且**有意**的组合，不是矛盾：范围管**加载**，成员管**挂载**。`install.sh` 的版本门是成员判据的第三份拷贝，仍是**可选的** —— 用 `npm install` 安装、或手写 `link:` 依赖的人根本不会跑到它。
 
-**这就是为什么本轮的 peers 改动是承重的，不是记账。** 旧枚举停在 `0.2.1-rc.2 || 0.2.1-rc.3`，而 npm `latest` 已经到 `0.2.1-rc.5`、`next` / `alpha` 通道到了 `0.2.2-alpha.2` —— 在这两个渠道上，bundle 不是「挂载时被门关掉」，而是**从未被加载**，那十九条表达式连回答的机会都没有。把枚举扩到四个名字，才让那些用户够得到 `disabled` 表达式；有了它，同一台宿主会把 bundle 组合出来、门回答 false —— 也就是[第 5 节](#5-接入-profile)那段读数所在的树。
+**这就是为什么 peers 改动是承重的，不是记账。** 旧枚举停在 `0.2.1-rc.2 || 0.2.1-rc.3`，而 npm `latest` 已经到 `0.2.1-rc.5`、`alpha` 通道到了 `0.2.2-alpha.2` —— 在这些渠道上，bundle 不是「挂载时被门关掉」，而是**从未被加载**，那十九条表达式连回答的机会都没有。把枚举扩到渠道真正承载的那些版本，才让那些用户够得到 `disabled` 表达式；有了它，同一台宿主会把 bundle 组合出来、门回答 false —— 也就是[第 5 节](#5-接入-profile)那段读数所在的树。今天这恰好就是上表那两个名字：npm 的 `latest` 与 `next` 都指向 `0.2.1-rc.5`，`alpha` 标签指向 `0.2.2-alpha.2`。
 
 **产物里为什么会有宿主门 —— 历史记录。** 有两次宿主发布打断了本包所依赖的东西，而它们打断的方式**完全不同**，这正是产物里存在 `disabled` 表达式的原因。这些是测量，保留是因为它们解释了产物的形状；它们**不是**支持声明，其中点名的版本没有一个受支持：
 
@@ -153,7 +153,7 @@ node tools/gen-cordis-patch.mjs
 
 宿主版本之间的差异**没有一处**是被静默容忍的（见[来源](#来源哪些是上游的哪些是在这里实测的)），因为一个只在自己的最新宿主上正确的 preset，在其它任何宿主上都**不**受支持 —— 而一个只在自己的最新宿主上正确、**却看起来加载成功了**的 preset，比一个直接失败的更糟。
 
-**提醒工具只属于 Lead，而这一点现在是静态声明。** 持久提醒（`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`）来自 `@deepseek-ai/dsh-tool-schedule`。**每一台受支持的宿主自己都带它**，且是精确的 lockstep pin —— `dsh@0.2.1-rc.3` 依赖 `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.3`，rc.4、rc.5 与 `0.2.2-alpha.2` 各自钉自己那一版 —— 所以挂载它的那一行是一条**裸行**，与官方骨架同形，不带 `disabled` 表达式。那四个名字只出现在 Lead 自己的工具面上：九条 lane 的 `official` 集合**都不含**它们，闸按默认剥掉，而不是靠逐条列举。
+**提醒工具只属于 Lead，而这一点现在是静态声明。** 持久提醒（`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`）来自 `@deepseek-ai/dsh-tool-schedule`。**每一台受支持的宿主自己都带它**，且是精确的 lockstep pin —— `dsh@0.2.1-rc.5` 依赖 `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.5`，`dsh@0.2.2-alpha.2` 依赖 `0.2.2-alpha.2` —— 所以挂载它的那一行是一条**裸行**，与官方骨架同形，不带 `disabled` 表达式。那四个名字只出现在 Lead 自己的工具面上：九条 lane 的 `official` 集合**都不含**它们，闸按默认剥掉，而不是靠逐条列举。
 
 这是对一个更早的条件写法的简化，而它之所以安全、之所以诚实，是同一个理由：本 bundle 早先的版本在挂载期求值宿主，只在那个包解析得到的地方加上这四个名字，因为 `0.2.0-rc.2` 没有 `@deepseek-ai/dsh-tool-schedule`。支持集里每一版都自带该包之后，「这台宿主上解析得到吗」已经不是一个值得问的问题 —— 静态名单正是「每一台受支持机器都有」的正确表达。
 
@@ -164,29 +164,29 @@ node tools/gen-cordis-patch.mjs
 ### 0. 宿主版本门
 
 ```sh
-dsh --version          # 低于 0.2.1-rc.3 时 install.sh 拒绝继续
+dsh --version          # 低于 0.2.1-rc.5 时 install.sh 拒绝继续
 ```
 
-这是 `install.sh` 内部的硬检查。**下限与支持集不再是同一个值**，而这是有意回到本文档曾经反对过的那种区分：下限是**最低**的受支持版本 `0.2.1-rc.3`，支持集则是下面那张表里的四个版本。高于下限、却不在支持集里的宿主同样**什么都不挂**，但**在默认世界里它根本不会被组合**：宿主自己的 loader 发现这个版本不被 `peerDependencies` 覆盖，就把整个 bundle 跳过 ⇒ 产物那道 `disabled` 门**根本没有机会运行**。只有你按版本豁免了 peers（`dsh plugin allow-version`）之后，bundle 才会被组合，那时产物自己的门才回答 `true`、把十九条全部禁用。两段式、同一个结局；`install.sh` 会把这件事明说出来 —— 但它判的是**下限**，不是集合。
+这是 `install.sh` 内部的硬检查。**下限与支持集不再是同一个值**，而这是有意回到本文档曾经反对过的那种区分：下限是**最低**的受支持版本 `0.2.1-rc.5`，支持集则是下面那张表里的两个版本。高于下限、却不在支持集里的宿主同样**什么都不挂**，但**在默认世界里它根本不会被组合**：宿主自己的 loader 发现这个版本不被 `peerDependencies` 覆盖，就把整个 bundle 跳过 ⇒ 产物那道 `disabled` 门**根本没有机会运行**。只有你按版本豁免了 peers（`dsh plugin allow-version`）之后，bundle 才会被组合，那时产物自己的门才回答 `true`、把十九条全部禁用。两段式、同一个结局；`install.sh` 会把这件事明说出来 —— 但它判的是**下限**，不是集合。
 
 这道门是**下限**，不是等值判定 —— `install.sh` 拒绝**更旧**的宿主、放行更新的宿主，因为「未来的宿主」不是一道下限能裁决的东西。真正决定本 bundle 在那种宿主上能不能用的，按顺序是**宿主自己的 loader（peers）**与**产物自己的 `disabled` 表达式**（见下一段），不是这道门。
 
-**受支持的集合恰好是四个宿主版本：**
+**受支持的集合恰好是两个宿主版本：**
 
 | 宿主版本 | npm dist-tag | 你会拿到什么 |
 |---|---|---|
-| `0.2.1-rc.3` | 上一张表撰写时为 `next`；撰写时桌面 app 自带的那棵树 | 受支持 —— 从上一轮的集合延续下来，已按它自己的面实测（见下） |
-| `0.2.1-rc.4` | 发布在 rc.3 与 rc.5 之间，本身没有 dist-tag | 受支持 —— **与 rc.3 逐字节相同**：两份骨架与本包读到的每一个宿主 `lib/index.js` 的 sha256 全同（见下） |
-| `0.2.1-rc.5` | 撰写时为 `latest` | 受支持 —— **与 rc.3 逐字节相同**，同一份证据 |
-| `0.2.2-alpha.2` | 撰写时为 `next` / `alpha` | 受支持 —— **结构不同**，不只是标签不同：十项契约在它上面逐项读了一遍，然后**真的挂载了一次**（见下） |
+| `0.2.1-rc.5` | 撰写时为 `latest` 与 `next` | 受支持 —— 在本包读到的每一个面上**都与 rc.3 / rc.4 逐字节相同**（sha256，见下），**并且**是桌面 app 真正自带的那棵树：它的 asar 里 `0.2.1-rc.5` 标记有 4,623 处、`rc.3` 标记一处也没有 |
+| `0.2.2-alpha.2` | 撰写时为 `alpha` | 受支持 —— **结构不同**，不只是标签不同：十项契约在它上面逐项读了一遍，然后**真的挂载了一次**（见下） |
 
-四个版本，不是一条带：四版都被逐字点名，产物里那道门是**成员判断**而不是 semver 范围。这是有意的 —— 范围会顺带放行两条命名版本**之间**的任何东西，而那正是没人测过的部分。三个 rc 名字是最清楚的一例：它们逐字节相同，所以一次测量能为三个名字作证；而这**不是** `>=` 可以安全的理由 —— 同一个范围会连同已退出集合的 `0.2.1-rc.2` 一起放进来。
+两个版本，不是一条带：两版都被逐字点名，产物里那道门是**成员判断**而不是 semver 范围。这是有意的 —— 范围会顺带放行两条命名版本**之间**的任何东西，而那正是没人测过的部分。rc 线是最清楚的一例：rc.3、rc.4 与 rc.5 逐字节相同，所以一次测量能为本文点名的那个成员作证；而这**不是** `>=` 可以安全的理由 —— 同一个范围会连同每一个更早的 rc（含 `0.2.1-rc.2`）一起放回来。
 
-其余一切**都不受支持，而且不兼容** —— 不只是「未测」。这涵盖每一个 `0.2.1-alpha.*`、`0.2.1-rc.1`、`0.2.0-rc.2`、`0.2.1-rc.2`（下限移到 rc.3 时它退出了集合），以及比 `0.2.2-alpha.2` 更新的版本。没有「大概没问题」那一档，也没有部分分：四个版本，边界就是契约。
+其余一切**都不受支持，而且不兼容** —— 不只是「未测」。这涵盖每一个 `0.2.1-alpha.*`、`0.2.1-rc.1`、`0.2.0-rc.2`、`0.2.1-rc.2`（下限移到 rc.3 时它出局）、`0.2.1-rc.3` 与 `0.2.1-rc.4`（下限移到 rc.5 时它们出局），以及比 `0.2.2-alpha.2` 更新的版本。没有「大概没问题」那一档，也没有部分分：两个版本，边界就是契约。
 
-**rc.3 为什么在这张表上，以及这里的「实测」指什么。** 这个声称不是「rc.2 能用，所以 rc.3 也能用」。四条事实是直接从一个真实的 `0.2.1-rc.3` 安装里读出来的（2026-10-24）：产物点名的每一个官方插件行 —— 二十二个 `@deepseek-ai/*` 包，含 `dsh-tool-schedule` 与 `dsh-tool-subagent-control/list-agents` 这个子路径 —— 在 `0.2.1-rc.3` 上都解析得到；`dsh-tool-subagent@0.2.1-rc.3` 仍然声明 `agentPreset` / `allowedAgentPresets`、仍然不声明 `persona`（`lib/index.js:311-324`），这正是那道门的结构面；产物能被宿主自己的 patch 加载器解析，且十九条门的表达式保持为表达式；这十九条在那台宿主上全部求值为 **false**，也就是挂载。**没有**做的是把 rc.3 当作作者自己的日常宿主跑一整场会话：证据是解析、结构与门的求值，本文档就照实这么说，不往上取整。
+**rc.5 为什么在这张表上 —— 两条独立的依据，而第二条才是决定性的。** 第一条是逐字节相同：在本包读到的每一个面上，rc.5 **就是** rc.3 与 rc.4。依据不是在同一批面上再测一遍 —— 后者只是方便，而这是证据能取的最强形式。两份骨架（`dsh-base/cordis.patch.yml`、`dsh-web-app/presets/standard.patch.yml`）与本包读到的七个宿主 `lib/index.js`（`dsh-tool-subagent`、`dsh-tools`、`dsh-agent-loop`、`dsh-agent-tool-presentation`、`dsh-experimental-tool-agent-team`、`dsh-harness-dev-context`、`dsh-web-app`）在 rc.3 / rc.4 / rc.5 上 sha256 全同。**这里必须交代来源：**这些 sha256 读数是**上一轮**契约矩阵的测量，记录在 `.dsh/tmp-diag/host-matrix/matrix.md`（附录 B，仍可查）。本轮**没有重算任何一个哈希** —— 当初取读数的隔离安装树此后已被删除 —— 所以这一页上写的是**一次已记录测量的引用**，不是本轮的新读数。manifest **不在**这份同一性之内，也没有这样声称：它们的 `package.json` 各不相同，也必须不同，因为版本串与 lockstep 依赖 pin 就写在那里面。声称的正是上面那一条 —— 本包读到的代码与骨架文件相同 —— 而逐字节相同意味着行号与文本都相同，这正是本文里那些行号只写一遍「rc 线」、而不写三遍的原因。
 
-**rc.4 与 rc.5 为什么在这张表上：在本包依赖的每一个面上，它们就是 rc.3。** 依据是逐字节相同，而不是在同一批面上再测一遍 —— 后者只是方便，而这是证据能取的最强形式。两份骨架（`dsh-base/cordis.patch.yml`、`dsh-web-app/presets/standard.patch.yml`）与本包读到的七个宿主 `lib/index.js`（`dsh-tool-subagent`、`dsh-tools`、`dsh-agent-loop`、`dsh-agent-tool-presentation`、`dsh-experimental-tool-agent-team`、`dsh-harness-dev-context`、`dsh-web-app`）在 rc.3 / rc.4 / rc.5 上 sha256 全同。manifest **不在**这份同一性之内，也没有这样声称：它们的 `package.json` 各不相同，也必须不同，因为版本串与 lockstep 依赖 pin 就写在那里面。声称的正是上面那一条 —— 本包读到的代码与骨架文件相同。逐字节相同意味着行号与文本都相同，所以三个名字靠同一批读数支撑 —— 这正是本文里那些行号只写一遍「rc 线」、而不写三遍的原因。
+第二条依据是**渠道真正承载哪个 rc**。rc.3 与 rc.4 是测量点，不是目的地：桌面 app 的 asar 是 `0.2.1-rc.5`（mtime 2026-10-29 22:02，内含 **4,623** 处 `0.2.1-rc.5` 标记、**零处** `0.2.1-rc.3` 标记），npm 的 `latest` 与 `next` 两个 tag 都解析到 `0.2.1-rc.5`。今天已经没有任何渠道发 rc.3 或 rc.4，把它们留在集合里等于点名没人投递的宿主 —— 而移出它们不付任何代价，因为 rc.5 是同一批字节。**它们的测量作为历史保留在下面**，因为那些读数正是「rc 线」那些行号与逐字节同一性可被读懂的凭据；它们不再是支持声明。
+
+**rc.3 的逐面读数，作为历史保留 —— 上面那条逐字节同一性正是靠它站住的。** `0.2.1-rc.3` **已退出支持**（它与 rc.4 同批离开集合），这一段是测量，不是支持声明。四条事实是直接从一个真实的 `0.2.1-rc.3` 安装里读出来的（2026-10-24）：产物点名的每一个官方插件行 —— 二十二个 `@deepseek-ai/*` 包，含 `dsh-tool-schedule` 与 `dsh-tool-subagent-control/list-agents` 这个子路径 —— 在 `0.2.1-rc.3` 上都解析得到；`dsh-tool-subagent@0.2.1-rc.3` 仍然声明 `agentPreset` / `allowedAgentPresets`、仍然不声明 `persona`（`lib/index.js:311-324`），这正是那道门的结构面；产物能被宿主自己的 patch 加载器解析，且十九条门的表达式保持为表达式；这十九条在那台宿主上全部求值为 **false**，也就是挂载。**没有**做的是把 rc.3 当作作者自己的日常宿主跑一整场会话：证据是解析、结构与门的求值，本文档就照实这么说，不往上取整。保留它的理由有两条：rc.5 与 rc.3 是同一批字节，所以这些读数可转移到受支持的那个成员；而本文引用的行号属于 rc 线，也就是 rc.3 的文件。
 
 **alpha.2 为什么在这张表上：十项契约在它上面逐项读过。** 它是集合里唯一「不是换了个名字的同一个文件」的成员，所以它与 rc 线逐项比对 —— 同十项，每版一行，每一格都给行号。差异大部分是位移：`tool-subagent` 的拒绝循环、`dsh-tools` 的三个入口、`fs-search` 与 `web` 的注册行都移了。实质性的差异，以及各自对本包意味着什么：
 
@@ -198,18 +198,18 @@ dsh --version          # 低于 0.2.1-rc.3 时 install.sh 拒绝继续
 - `dsh-agent-tool-presentation` 整包标了 `@deprecated`（`:8`、`:19`、`:26`），而 base 骨架现在自己挂 `tool-executor-native`（`:497`）与 `tool-executor-ptc`（`:500`）。这是唯一咬到本包的差异：`tool-presentation` 行会把 native executor **挂第二遍**，所以它现在带一道**结构门** —— 见[只有一种 lane 形态，以及为什么](#只有一种-lane-形态以及为什么)。
 - `cordis` / `schemastery` 在 `4.0.6-alpha.1` / `3.18.6-alpha.1` 上，而 rc 线是 `4.0.5` / `3.18.5`，所以两条 peer 声明都写两代取值，而不是钉死一个。
 
-**而 alpha.2 不只是读过：它被真挂载了一次。** 在一棵隔离的 `DSH_HOME` 上、用 npm 的 `0.2.2-alpha.2` CLI，本包的行走完了组合并挂载，门给出的答案与本节所述一致：**十九条**受门控的行全部求值为 **`disabled: false`** —— 九条 lane 行、九条 lane preset 行与 `subagent_fork` 控制行，因为 alpha.2 在集合内。`tool-presentation` 行上的**结构门**求值为 **`true`** ⇒ 该行关闭，组合树里在的是宿主自己的 `tool-executor-native`（启用）与 `tool-executor-ptc`（`disabled: true`）。对启动日志全量扫 `error` / `warn` / `duplicate` / `already registered` / `EEXIST` / `conflict` ⇒ **零条**，也就是没有重复注册 —— 而重复注册正是那道结构门存在的理由。web app 真起来了并服务根页面：**HTTP 200、38,581 bytes**。
+**而 alpha.2 不只是读过：它被真挂载了一次。** 在一棵隔离的 `DSH_HOME` 上、用 npm 的 `0.2.2-alpha.2` CLI，本包的行走完了组合并挂载，门给出的答案与本节所述一致：**十九条**受门控的行全部求值为 **`disabled: false`** —— 九条 lane 行、九条 lane preset 行与 `subagent_fork` 控制行，因为 alpha.2 在集合内。`tool-presentation` 行上的**结构门**求值为 **`true`** ⇒ 该行关闭，组合树里在的是宿主自己的 `tool-executor-native`（启用）与 `tool-executor-ptc`（`disabled: true`）。对启动日志全量扫 `error` / `warn` / `duplicate` / `already registered` / `EEXIST` / `conflict` ⇒ **零条**，也就是没有重复注册 —— 而重复注册正是那道结构门存在的理由。web app 真起来了并服务根页面：**HTTP 200、38,581 bytes**。这一组读数是**上一轮**的测量 —— 它所在的隔离 `DSH_HOME` 没有被保留 —— 因此它不是对「今天任何一台机器上那棵树」的断言。
 
-**这证明了什么、没证明什么。** 挂载并服务是一次真启动，不是论证 —— 但它不是一次对话：没有在它上面跑过 agent 会话，那需要模型 key 与运行时 API 路由。所以「产物在 alpha.2 上挂载、过门、能服务」是**实测**；「某条 lane 在 alpha.2 上完成过一次派发」在这里既未被证明、也未被证伪。至于 rc.3、rc.4、rc.5，证据仍如前述 —— 上面的 rc.3 逐面读数、rc.4/rc.5 的逐字节相同，以及[只有一种 lane 形态](#只有一种-lane-形态以及为什么)里作为历史保留的那次 rc.2 真启动 —— 这三版没有再跑一次真启动。
+**这证明了什么、没证明什么。** 挂载并服务是一次真启动，不是论证 —— 但它不是一次对话：没有在它上面跑过 agent 会话，那需要模型 key 与运行时 API 路由。所以「产物在 alpha.2 上挂载、过门、能服务」是**实测**；「某条 lane 在 alpha.2 上完成过一次派发」在这里既未被证明、也未被证伪。至于 rc.5，证据仍是原来那几份 —— 上面的 rc.3 逐面读数（凭逐字节同一性转移到 rc.5）、逐字节同一性本身，以及[只有一种 lane 形态](#只有一种-lane-形态以及为什么)里作为历史保留的那次 rc.2 真启动 —— **rc.5 上没有跑过真启动**。
 
 **不受支持的宿主上实际会发生什么。** 本 bundle 的九条 lane 行、九条 lane preset 行与 `subagent_fork` 控制行带的都是**同一个** `disabled` 表达式 —— 同一段文本、同一个极性。它解析宿主自己的 `@deepseek-ai/dsh-tool-subagent`，向上找到那个包的 `package.json`，读出 `version`，只问一个问题：**它是否在支持集里？** 任何其它取值 —— 更新、更旧、或另一个构建 —— 都让表达式为 **true**，而 true 就是 `disabled`：
 
 | 宿主 | 十九条受门的行会怎样 |
 |---|---|
-| `0.2.1-rc.3`、`0.2.1-rc.4`、`0.2.1-rc.5` 或 `0.2.2-alpha.2` | **挂载** —— 产物为之而生的四台宿主 |
-| **其余每一个版本**：`0.2.0-rc.2`、`0.2.1-alpha.1` … `0.2.1-alpha.5`、`0.2.1-rc.1`、`0.2.1-rc.2`，以及任何尚未发布的版本 | **什么都不挂**。默认世界里宿主 loader 先按 peers 把整包跳过，十九条表达式**根本不会被求值**；**只有**在你按版本豁免（`dsh plugin allow-version`）之后，这道门才回答 `true`、把十九条全部禁用 |
+| `0.2.1-rc.5` 或 `0.2.2-alpha.2` | **挂载** —— 产物为之而生的两台宿主 |
+| **其余每一个版本**：`0.2.0-rc.2`、`0.2.1-alpha.1` … `0.2.1-alpha.5`、`0.2.1-rc.1`、`0.2.1-rc.2`、`0.2.1-rc.3`、`0.2.1-rc.4`，以及任何尚未发布的版本 | **什么都不挂**。默认世界里宿主 loader 先按 peers 把整包跳过，十九条表达式**根本不会被求值**；**只有**在你按版本豁免（`dsh plugin allow-version`）之后，这道门才回答 `true`、把十九条全部禁用 |
 
-所以有**四个**受支持的宿主，其余一切都只有**一种**失败方式。本 preset **什么都不挂**：没有 lane、没有 lane preset、没有 fork 行，所以**根本没有任何委派路径**。它**不会**退回去挂一批没有收窄的 lane。fork 行在这里之所以关键：它是唯一一条**不经过 lane** 也能创建 child 的行，把这道门加到它身上，才让「完全没有委派」成立，而不只是「没有具名 lane」。这就是「已退役、不兼容」的含义，而它现在是**机械事实**而不是文档声明 —— 产物里的门与这里的文字按构造一致。
+所以有**两个**受支持的宿主，其余一切都只有**一种**失败方式。本 preset **什么都不挂**：没有 lane、没有 lane preset、没有 fork 行，所以**根本没有任何委派路径**。它**不会**退回去挂一批没有收窄的 lane。fork 行在这里之所以关键：它是唯一一条**不经过 lane** 也能创建 child 的行，把这道门加到它身上，才让「完全没有委派」成立，而不只是「没有具名 lane」。这就是「已退役、不兼容」的含义，而它现在是**机械事实**而不是文档声明 —— 产物里的门与这里的文字按构造一致。
 
 **三道屏障，按宿主碰到它们的顺序：加载期的 peers、挂载期的门、以及只有你用它才存在的 `install.sh`。** 值得说清哪道是哪道，因为它们互相重叠，而把「写下来的意图」误当成「被强制的约束」太容易了：
 
@@ -217,7 +217,7 @@ dsh --version          # 低于 0.2.1-rc.3 时 install.sh 拒绝继续
 - 产物自己的 `disabled` 表达式是**挂载期**那道屏障。**当它被求值时** —— 也就是 peers 覆盖了这台宿主、或 peers 已被按版本豁免 —— 它在挂载期读宿主版本，版本落在支持集之外就把每一条 lane 行关掉。默认世界里，peers 覆盖不到的 bundle 早已被 loader 在加载期整包跳过 ⇒ 这道门在那样的宿主上**根本不会运行**。
 - `install.sh` 的版本门会拒绝低于下限的宿主，并会报告「高于下限但不在支持集里」的宿主。它是真的，但**是可选的** —— 只有走 `install.sh` 的人才会跑到它；用 `npm install` 或手写 `link:` 依赖安装的人根本不会执行它。
 
-前两条里的那份清单：两个 dsh 包把支持集原样枚举出来（`0.2.1-rc.3 || 0.2.1-rc.4 || 0.2.1-rc.5 || 0.2.2-alpha.2`）；`cordis` 与 `schemastery` 枚举支持集所横跨的两代（`4.0.5 || 4.0.6-alpha.1`、`3.18.5 || 3.18.6-alpha.1`）。
+前两条里的那份清单：两个 dsh 包把支持集原样枚举出来（`0.2.1-rc.5 || 0.2.2-alpha.2`）；`cordis` 与 `schemastery` 枚举支持集所横跨的两代（`4.0.5 || 4.0.6-alpha.1`、`3.18.5 || 3.18.6-alpha.1`）。
 
 **一处已接受的边界，如实写明。** 这道门并不总能读到版本。如果解析到的包没有可读的 `package.json` `version`（manifest 被改名或缺失），它会退回更早的结构判定：`Config = z.object({…})` 字面量里是否仍然声明了 `persona:`？在这条路径上旧契约宿主仍会被关掉，但一个**新契约**宿主若 manifest 读不出来，就会挂载。这是刻意的，理由在于代价的方向：对一个读不出来的宿主按失败关闭，会连同**受支持**宿主的 lane 一起拿走 —— 而那恰恰发生在安装方式略有不同的情况下，比它规避的残余更糟。所以这条回退是**尽力而为**的网，不是第二重保证 —— 不要把上面那张表读成「对 manifest 被改写过的宿主也密不透风」。它回退所依据的结构事实自 `0.2.1-alpha.3`（`persona` 离开 `Config` 那次）以来从未变过。
 
@@ -249,16 +249,16 @@ dsh --profile <name> --dump-config | grep -n 'disabled:'
 
 | 键 | 它去了哪 | 为什么不算能力降级 |
 |---|---|---|
-| `persona` 行上的 `suffix: 'Your working directory is {{cwd}}.'` | `{{cwd}}` 在 rc.2 与 alpha.1 上曾是已注册的提示词变量，在 **alpha.2 及更新版本上不是**（实测，见下方注），在四个受支持版本上也都不是。`dsh-system-prompt` 对未知变量是**抛错**，所以这不是「少了一句话」，而是**提示词装配期的硬失败，发生在任何模型请求之前**。上游现已直接要求使用者删掉这个子句。字段本身 —— `dsh-persona` 的 `Config` 里的 `suffix` —— **仍然在**；消失的是它引用的那个变量。 | 目录由 `dsh-working-directory` 服务供给 —— 它自 rc.2 起就在 `dsh-base` 骨架里，alpha.2 又通过新增的 `working_directory` 工具把它暴露出来。这个 suffix 在每一个实测过的宿主上都与它重复，而变量不在之后它只能是空的。 |
+| `persona` 行上的 `suffix: 'Your working directory is {{cwd}}.'` | `{{cwd}}` 在 rc.2 与 alpha.1 上曾是已注册的提示词变量，在 **alpha.2 及更新版本上不是**（实测，见下方注），在两个受支持版本上也都不是。`dsh-system-prompt` 对未知变量是**抛错**，所以这不是「少了一句话」，而是**提示词装配期的硬失败，发生在任何模型请求之前**。上游现已直接要求使用者删掉这个子句。字段本身 —— `dsh-persona` 的 `Config` 里的 `suffix` —— **仍然在**；消失的是它引用的那个变量。 | 目录由 `dsh-working-directory` 服务供给 —— 它自 rc.2 起就在 `dsh-base` 骨架里，alpha.2 又通过新增的 `working_directory` 工具把它暴露出来。这个 suffix 在每一个实测过的宿主上都与它重复，而变量不在之后它只能是空的。 |
 | 十条 subagent 行上的 `backgroundMode: continuable` | alpha.2 的 `tool-subagent` `Config` 里**根本没有这个键**（alpha.1 有），alpha.3 与 alpha.4 上同样没有（实测，见下方注）。schemastery 不拒绝未知键，于是它变成一条没人读的死键。 | continuable 现在是**provider 的能力**而非行的设置：`apply()` 读 `subagentProvider.prepareContinuable`，spawn provider 与 rc 线的 fork provider 都实现了它 —— ⚠️ **只在 rc 线上实读；`0.2.2-alpha.2` 未对 `dsh-subagent-fork-in-process` 单独读**。lane 的 durable-id 续话能力保留。 |
 
-这两处删除在四台受支持的宿主上都是安全的，而这正是要点：无子句的 `persona` 行与无 `backgroundMode` 的 lane 行在那里**合法**，而旧写法只在较旧的、本包已不再支持的宿主上合法。`tools/patch-contract.test.mjs` 会在产物里重新出现 `{{cwd}}` 时失败，所以这一条不会再被误加回来。
+这两处删除在两台受支持的宿主上都是安全的，而这正是要点：无子句的 `persona` 行与无 `backgroundMode` 的 lane 行在那里**合法**，而旧写法只在较旧的、本包已不再支持的宿主上合法。`tools/patch-contract.test.mjs` 会在产物里重新出现 `{{cwd}}` 时失败，所以这一条不会再被误加回来。
 
 **上面这两条测量是历史记录，不是支持声明。** 它们之所以点名 alpha.1 与 alpha.2，是因为它们就是在那里测出来的；逐字保留正是为了这一点：它们是两条**至今仍然成立**的决定的证据 —— 为什么 `persona` 行不写 `suffix`（字段还在，变量不在），以及为什么不写 `backgroundMode`。**这两个版本都不受支持**，任何其它 `0.2.1-alpha.*` 也不受支持；这些测量解释的是产物的形状，不是支持的边界。边界就是上面那张表。
 
 ### 只有一种 lane 形态，以及为什么
 
-产物只发出**一种** lane 形态：每条 lane 一条 Agent Preset，由 lane 行用 `agentPreset` 选中，`allowedAgentPresets` 成对写出同一个 id。这里曾经有**两种** —— 一种是在 subagent 行上直接写 `persona` 与 `toolFilter` 的旧形态，另一种是这一种 —— 由同一个宿主门分档渲染。那个矩阵已经不存在了，因为每一台受支持的宿主 —— 整条 rc 线（`0.2.1-rc.3`、`rc.4`、`rc.5`）与 `0.2.2-alpha.2` —— 两个键都没有：`dsh-tool-subagent` 的 `Config` 字面量已不再声明 `persona` 或 `toolFilter`，且 `apply()` 只要见到其中一个就**硬抛**（`lib/index.js`：rc 线 `:355` / alpha.2 `:346` —— 文本逐字相同）：
+产物只发出**一种** lane 形态：每条 lane 一条 Agent Preset，由 lane 行用 `agentPreset` 选中，`allowedAgentPresets` 成对写出同一个 id。这里曾经有**两种** —— 一种是在 subagent 行上直接写 `persona` 与 `toolFilter` 的旧形态，另一种是这一种 —— 由同一个宿主门分档渲染。那个矩阵已经不存在了，因为两台受支持的宿主 —— `0.2.1-rc.5` 与 `0.2.2-alpha.2` —— 两个键都没有：`dsh-tool-subagent` 的 `Config` 字面量已不再声明 `persona` 或 `toolFilter`，且 `apply()` 只要见到其中一个就**硬抛**（`lib/index.js`：rc 线 `:355` / alpha.2 `:346` —— 文本逐字相同）：
 
 ```
 tool-subagent: persona is no longer supported; configure persona and tool plugins
@@ -291,7 +291,7 @@ in an Agent Preset and select it with agentPreset (spawn only)
 
 **第二道 `disabled`，在另一个轴上 —— `tool-presentation` 行。** lane 行按**版本**判，因为它们问的是「这是不是我们测过的宿主」。`tool-presentation` 行（`@deepseek-ai/dsh-agent-tool-presentation`，`mode: 'native'`）按**结构**判，因为它问的是「这一层是不是已经由宿主自己管」。在 `0.2.2-alpha.2` 上，base 骨架自己挂了 `tool-executor-native`（`:497`）与 `tool-executor-ptc`（`:500`），而呈现包的 `apply()` 现在只做一件事：`ctx.plugin(<那个 executor>)` ⇒ 在那里再挂这一行就是**重复注册** native executor。所以这道门的判据是：`@deepseek-ai/dsh-tool-executor-native` 能 `resolve()` ⇒ 本行 disabled。rc 线上根本没有这个包，所以那一行照旧挂载 —— 在 rc 线上它是冗余的（`mode: 'native'` 等于 `dsh-tools` 自己的默认值），但无害。这个不对称如实写明、不作平滑：结构门若按**失败关闭**，会把 rc 线上一条合法的行关掉，所以它在解析不到时按**失败开启**处理，那份残余被接受。
 
-**在真实宿主上实测过，不只是论证 —— 但别把已退出集合的那一版读成受支持宿主。** 受支持宿主上的真启动**只有一次**：`0.2.2-alpha.2`，在一棵隔离的 home 上，十九条受门行在那里全部求值为启用（本节末有读数）。另有一次更早的、作为**历史**保留的测量：在 `0.2.1-rc.2` 上跑真 `dsh --profile web` 启动，每一条 lane 行都挂载，且**没有** `persona is no longer supported`、**没有** `toolFilter is no longer supported`、**没有** `Duplicate agent preset` —— 这条测量作为历史保留，因为 rc.2 此后已退出支持集。探针本身对着已安装的 `dsh-tool-subagent` 跑过，在那台宿主上返回 **false** —— 正是「受支持」的那个取值 —— 所以这些行被启用，与它们合法，依据的是同一个事实。在 `0.2.1-rc.3` 上同一个探针对着已安装的包跑，同样返回 **false**。在 rc.4、rc.5 与 alpha.2 上决定同一件事的仍是同一个成员判断，其输入是各自树上读出的版本串；rc.4 与 rc.5 读到的更是与 rc.3 一模一样的文件。rc.3、rc.4、rc.5 **都没有**再跑一次真启动；alpha.2 **有** —— 在一棵隔离的 home 上，且十九条受门行在那里全部求值为启用。[第 0 节](#0-宿主版本门)逐条写明了每一版的支持依据是哪几条事实。
+**在真实宿主上实测过，不只是论证 —— 但别把已退出集合的那一版读成受支持宿主；受支持宿主上的真启动只有一次，是 alpha.2。** 另有一次更早的、作为**历史**保留的测量：在 `0.2.1-rc.2` 上跑真 `dsh --profile web` 启动，每一条 lane 行都挂载，且**没有** `persona is no longer supported`、**没有** `toolFilter is no longer supported`、**没有** `Duplicate agent preset` —— 这条测量作为历史保留，因为 rc.2 早已退出支持集。探针本身对着已安装的 `dsh-tool-subagent` 跑过，在那台宿主上返回 **false** —— 正是「受支持」的那个取值 —— 所以这些行被启用，与它们合法，依据的是同一个事实。在 `0.2.1-rc.3` 上同一个探针对着已安装的包跑，同样返回 **false** —— 那也是历史，rc.3 已退出支持。在 `0.2.1-rc.5` 上决定同一件事的仍是同一个成员判断，而其输入是从与 rc.3 **逐字节相同**的文件里读出的版本串，所以那个答案随字节一起转移，不需要重跑。rc.5 上**没有**跑过真启动；alpha.2 **有** —— 在一棵隔离的 home 上，十九条受门行在那里全部求值为启用。[第 0 节](#0-宿主版本门)逐条写明了每一版的支持依据是哪几条事实。
 
 ### 1–4. 安装
 
@@ -376,7 +376,7 @@ test -L ~/.dsh/profiles/web/node_modules/@quill507/dsh-orchestrator-preset && ec
 
 两个 profile 必须钉住**同一个** aegis 发布 tag；desktop 不允许浮动。
 
-`install.sh` 刻意停在这一步之前：那两个文件属于活机安装自身，而 `cordis.patch.yml` 被 `dsh-hmr` 实时监视，写它会当场触发运行中宿主的全树重组。脚本只打印这些改动，不代劳 —— 而**它**打印的那段选中片段仍然是上面说的「错行」写法：脚本侧的修正在进行中（`install.sh` 由另一条 lane 负责）。在你手上那份脚本改成打印 registry 行之前，请用上面的 row，不要直接粘贴脚本打印的那段；等它改好，就把这条提示删掉。
+`install.sh` 刻意停在这一步之前：那两个文件属于活机安装自身，而 `cordis.patch.yml` 被 `dsh-hmr` 实时监视，写它会当场触发运行中宿主的全树重组。脚本只打印这些改动，不代劳。
 
 ### 6. 安装 aegis 方法包
 

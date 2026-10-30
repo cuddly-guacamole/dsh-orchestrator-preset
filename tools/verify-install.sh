@@ -1406,8 +1406,8 @@ head_ "check 13 — every lane preset declares the official tool set it may see,
 # WHY THE `unsupported` MACHINE EXISTS (the fail-closed leg). The host axis used to
 # be about picking a lane FORM. It is now a single switch, and the switch reads the
 # VERSION: LANE_FORM_SUPPORTED_EXPR resolves dsh-tool-subagent, walks up to its
-# package.json and returns TRUE when that version is not one of the supported four
-# (0.2.1-rc.3, 0.2.1-rc.4, 0.2.1-rc.5, 0.2.2-alpha.2 — keep in sync with
+# package.json and returns TRUE when that version is not one of the supported two
+# (0.2.1-rc.5, 0.2.2-alpha.2 — keep in sync with
 # SUPPORTED_HOST_VERSIONS in tools/preset-declaration.mjs). The old
 # structural test (`/persona:/` in the Config literal) survives only as the fallback
 # for the case where no version can be read at all.

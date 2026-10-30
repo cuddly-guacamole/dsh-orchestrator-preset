@@ -89,7 +89,7 @@ export const description = 'A thin orchestration preset: aegis method pack for m
 // ── 宿主形态探针：这个宿主的 `tool-subagent` 还在旧契约上吗 ────────────────────
 // ⚠️ **先读名字再读语义**：本常量叫 `LANE_FORM_SUPPORTED_EXPR`，但它为 **true 的含义是
 //    「宿主是旧形态」= 本包**不支持**它**。支持集见下方常量 `SUPPORTED_HOST_VERSIONS`
-//    （四个版本，单一来源 —— 这里不再复述版本号，免得两处漂移），所以这条探针的职责
+//    （版本集见下方常量，单一来源 —— 这里不再复述版本号与版数，免得两处漂移），所以这条探针的职责
 //    已经从「挑一种形态」缩成**一个开关**：**true ⇒ 每一条 lane 行与每一条 preset 行都
 //    `disabled`**，即在这台不受支持的宿主上本 bundle **什么都不挂**；false ⇒ 正常挂载。
 //    极性**没有**反转，也不得反转 —— 它仍然直接取自「`persona` 还在不在 Config 里」这个事实。
@@ -129,13 +129,14 @@ export const description = 'A thin orchestration preset: aegis method pack for m
 //    `ERR_PACKAGE_PATH_NOT_EXPORTED`，于是本判据**永远**返回 true（= 在受支持的宿主上也判错，
 //    而且判错的方向是「整族关闭」，静默地少掉 9 个 lane）。
 // ── 受支持宿主的**版本集**（单一来源）────────────────────────────────────────────
-// 支持集是**四个**版本（升序）：`0.2.1-rc.3` / `0.2.1-rc.4` / `0.2.1-rc.5` / `0.2.2-alpha.2`。
-// 为什么是这四版（三渠道同时真实存在，2026-10-30 用户裁定）：
-//   · `0.2.1-rc.3` —— 桌面 app 的 asar 树，也是本轮之前就在集合里的那一版
-//   · `0.2.1-rc.4` / `0.2.1-rc.5` —— npm `latest` 一侧推进到的版本（rc.5 是当前 latest）
+// 支持集是**两个**版本（升序）：`0.2.1-rc.5` / `0.2.2-alpha.2`。
+// 为什么是这两版（两个渠道，2026-10-30 用户裁定）：
+//   · `0.2.1-rc.5` —— 桌面 app 的 asar 树**已升到这一版**，也是 npm `latest`
 //   · `0.2.2-alpha.2` —— npm `next` / `alpha` 通道（本机 npm 安装树就是这一版）
-//   三条渠道各自都有用户在跑；任一档被判成「不支持」，都会让 19 行全关、九条 lane 静默消失，
-//   所以三条渠道的当前版本都要进集合。`0.2.1-rc.2` **退出**集合（它是上一轮的 latest）。
+//   两个渠道各自都有用户在跑；任一档被判成「不支持」，都会让 19 行全关、九条 lane 静默消失，
+//   所以两个渠道的当前版本都要进集合。
+//   `0.2.1-rc.3` / `0.2.1-rc.4` **退出**集合：官方发了 rc.5 并出了安装包之后，这两版**不再有
+//   任何渠道承载**（asar 里 `0.2.1-rc.5` 标记 4623 处、`0.2.1-rc.3` **0** 处）。
 // 它同时出现在三处，必须同值：
 //   · 本常量（宿主门的判据）
 //   · README / README.zh「Host version gate」那张支持集表（⛔ 不写行数：集合已经变过几轮，写死必漂）
@@ -151,16 +152,18 @@ export const description = 'A thin orchestration preset: aegis method pack for m
 //    alpha.3/4/5 **放进来**。可是 alpha.3 与当时受支持的 `0.2.1-rc.2` 在结构上**无法区分**：
 //    两者的 `Config` 键集相同（`agentPreset` / `allowedAgentPresets`，无 `persona`）、
 //    服务需求相同 —— **只有版本字符串能分开它们**。所以判据必须是版本。
-//    本轮扩到四版后同一条理由仍然成立，而且更清楚：**rc.3 / rc.4 / rc.5 逐字节相同**
-//    （两份 `patch.yml` + 7 个 `lib/index.js` 的 sha256 全同，`E:\dsh-verify` 矩阵实测），
-//    已退出集合的 `0.2.1-rc.2` 也在这条同结构线上 ⇒ 形状把「rc 线」整族判成同一种形态，
-//    既分不开 rc.5 与 rc.2，也分不开 rc.3 与 rc.5。**同一形状、一侧在集合内一侧在集合外
+//    本轮收窄到两版后同一条理由仍然成立，而且更清楚：**rc.5 与本轮退出集合的 rc.3 / rc.4
+//    逐字节相同**（两份 `patch.yml` + 7 个 `lib/index.js` 的 sha256 全同，`E:\dsh-verify`
+//    矩阵实测），更早退出的 `0.2.1-rc.2` 也在这条同结构线上 ⇒ 形状把「rc 线」整族判成同一种
+//    形态，分不开 rc.5 与 rc.4，也分不开 rc.5 与 rc.2。**同一形状、一侧在集合内一侧在集合外
 //    ⇒ 判据只能是版本字符串**。
+//    ⚠️ 这条 sha 测量是 **rc.5 支持依据的来源**（rc.3 当年被真启动过，rc.5 与它逐字节相同）；
+//    它是**历史测量**，**不表示** rc.3 / rc.4 现在受支持。
 //    ⚠️ `0.2.2-alpha.2` 的结构**不同**（矩阵实测），它的差异由另一条**结构**判据承担 ——
 //    见下方 `TOOL_PRESENTATION_RETIRED_EXPR`。两件事别混：**版本判据**管「这是哪一版」，
 //    **结构判据**管「宿主是否已经自己管了这一层」。
 // ⚠️ 每一版进集合的依据是**逐版实测**（矩阵），而**不是**「上一版能用所以这版也能用」。
-export const SUPPORTED_HOST_VERSIONS = ['0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-alpha.2']
+export const SUPPORTED_HOST_VERSIONS = ['0.2.1-rc.5', '0.2.2-alpha.2']
 
 // ── 宿主门：**这台宿主的 `dsh-tool-subagent` 版本不在受支持集里吗** ──────────────────
 // 名字仍然叫 `LANE_FORM_SUPPORTED_EXPR`，而 **true 的含义是「不受支持」**（保持既有极性，
@@ -830,7 +833,7 @@ export const topRows = [
   //       `official` 集都不含这四个名字**（见 `LANE_OFFICIAL`）⇒ `lane-tool-gate` 会把它们
   //       从每条 lane 的工具面上剥掉。**只挂这一行而不看 official = 把提醒能力静默发给所有
   //       lane**，所以「挂在这里」与「不进任何 official」是同一裁决的两半，必须一起改。
-  //    ③ **本行为什么不再带宿主门**：受支持的四个版本**每台都自带**
+  //    ③ **本行为什么不再带宿主门**：受支持的**两版**（`0.2.1-rc.5` 与 `0.2.2-alpha.2`）**都自带**
   //       `@deepseek-ai/dsh-tool-schedule`（rc 线的 `dsh` 与 `0.2.2-alpha.2` 的 `dsh`，其
   //       `dependencies` 里都有它）⇒ 这个包在每一台受支持的机器上都可解析 ⇒ 不需要
   //       「解析不到就禁用」的那条按机器求值的 `disabled`。
@@ -937,14 +940,14 @@ export const groups = [
       // 🔻 **本行不再带任何 `toolFilter` / `disabled`** —— 它就是一行普通声明
       //    （`provider: fork` / `toolName: subagent_fork`），与官方骨架同形。原先那条
       //    「只 deny `schedule_*` 的条件尾巴」是为**旧形态宿主**存在的（alpha.3 之前
-      //    `tool-subagent` 认 `toolFilter`）；而受支持的四个版本（rc 线与 `0.2.2-alpha.2`）的
+      //    `tool-subagent` 认 `toolFilter`）；而受支持的两版（`0.2.1-rc.5` 与 `0.2.2-alpha.2`）的
       //    `tool-subagent` 的 `Config` 里都没有 `toolFilter`，`apply()` 对残留键硬抛
       //    （rc 线在 `lib/index.js:355` 的 `Object.hasOwn`）⇒ 那条尾巴无处可挂。
       //
       //    **被接受的退化**：经 `subagent_fork` 派出的 child **继承父 agent 的 preset 组合**
       //    （fork provider 自报 `capabilities.agentPreset = false` —— ⚠️ **这条只在 rc 线上实读；
       //    `0.2.2-alpha.2` 未单独读**：矩阵的十项与附录 B 的 sha 表都不含
-      //    `dsh-subagent-fork-in-process`，所以不要把它写成「四版都一样」）⇒ 那四个 `schedule_*`
+      //    `dsh-subagent-fork-in-process`，所以不要把它写成「两版都一样」）⇒ 那四个 `schedule_*`
       //    名字**无法**在这条路径上被声明式 deny。0.1.9 声称它能，而那个声称在
       //    alpha.4 / alpha.5 上**已经**是假的；本轮只是把这句话改成真的。
       //    影响面：Lead 主动 fork 出来的 child 会看到提醒工具；9 条**具名** lane 不受影响

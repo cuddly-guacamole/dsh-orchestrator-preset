@@ -303,8 +303,9 @@ export function laneRow(lane, d) {
     ...(common.backgroundMode !== undefined ? { backgroundMode: common.backgroundMode } : {}),
     maxDepth: lane.maxDepth,
     // ⛔ **只有一种形态**：`agentPreset` + `allowedAgentPresets` **成对**写（`:209` 的硬约束：
-    //    只给前者不给后者 ⇒ 挂载期 throw）。受支持的两版 `0.2.1-rc.2` / `0.2.1-rc.3` 的 `tool-subagent` Config
-    //    里有这两个键、且**没有** `persona` / `toolFilter`（后者在 `apply()` 里被硬拒，见下）。
+    //    只给前者不给后者 ⇒ 挂载期 throw）。受支持版本集（见 `SUPPORTED_HOST_VERSIONS`）里
+    //    每一版的 `tool-subagent` Config 都有这两个键、且**没有** `persona` / `toolFilter`
+    //    （后者在 `apply()` 里被硬拒，见下）。
     //    ⇒ 旧形态那条分支（`persona` + `toolFilter`）随支持集收缩一起删除：**没有**宿主需要它。
     agentPreset: lane.presetId,
     allowedAgentPresets: [lane.presetId],
@@ -398,8 +399,9 @@ export function groupEntry(group, d, section) {
 //     ⚠️ 极性**不加 `!`**：`pushDisabled` 自己补 `!!js `，表达式以 `(` 开头 ⇒ 不会被 YAML 当成
 //        第二个 tag。反了就会在**受支持的**宿主上把 fork 能力整个关掉。
 //
-// 🔻 **被接受的退化（写在这里，而不是留给下一个人发现；范围是"受支持的宿主"）**：在两版受支持的宿主
-//    `0.2.1-rc.2` / `0.2.1-rc.3` 上，**经 `subagent_fork` 派出的 child 会继承父 agent 的 preset 组合**
+// 🔻 **被接受的退化（写在这里，而不是留给下一个人发现；范围是"受支持的宿主"）**：在受支持版本集
+//    （见 `SUPPORTED_HOST_VERSIONS`；该能力**rc 线上实读，`0.2.2-alpha.2` 未对该 fork 包单独读**）
+//    上，**经 `subagent_fork` 派出的 child 会继承父 agent 的 preset 组合**
 //    （fork provider 自报 `capabilities.agentPreset = false`，见 `dsh-subagent-fork-in-process`），
 //    因此那四个 `schedule_*` 名字**无法**在这条路径上被声明式 deny ⇒ Lead 主动 fork 出来的
 //    child 仍会看到提醒工具。0.1.9 声称它能，而那个声称在 alpha.4 / alpha.5 上**已经**是假的

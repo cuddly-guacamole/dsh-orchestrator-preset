@@ -8,7 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@quill507%2Fdsh-orchestrator-preset?style=flat-square&label=npm&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
 [![downloads](https://img.shields.io/npm/dm/@quill507%2Fdsh-orchestrator-preset?style=flat-square&labelColor=454a54)](https://www.npmjs.com/package/@quill507/dsh-orchestrator-preset)
-![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.3_%7C_0.2.1--rc.4_%7C_0.2.1--rc.5_%7C_0.2.2--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
+![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.5_%7C_0.2.2--alpha.2-4c6ef5?style=flat-square&labelColor=454a54)
 [![license](https://img.shields.io/badge/license-MIT-3da639?style=flat-square&labelColor=454a54)](https://opensource.org/licenses/MIT)
 
 [中文](README.zh.md) · [Notices](THIRD_PARTY_NOTICES.md) · [Issues](https://github.com/cuddly-guacamole/dsh-orchestrator-preset/issues)
@@ -126,9 +126,10 @@ Being precise about this matters more than it usually does, because a preset is 
 claims about someone else's runtime.
 
 **Read the version numbers in this table as measurement sites, not as support claims.** The
-supported host set is four versions, `0.2.1-rc.3`, `0.2.1-rc.4`, `0.2.1-rc.5` and
+supported host set is two versions, `0.2.1-rc.5` and
 `0.2.2-alpha.2` — see [Host version gate](#0-host-version-gate).
-Several rows below cite `0.2.0-rc.2`, `0.2.1-alpha.1` … `0.2.1-alpha.5`, `0.2.1-rc.2`; each of those is
+Several rows below cite `0.2.0-rc.2`, `0.2.1-alpha.1` … `0.2.1-alpha.5`, `0.2.1-rc.2`,
+`0.2.1-rc.3` and `0.2.1-rc.4`; each of those is
 where a measurement was taken, and every one of them is **out of support**. They are kept
 because they are the evidence for decisions the artifact still embodies — which keys are
 absent, why a gate exists, why the MCP names are computed rather than written. Rows that
@@ -141,10 +142,10 @@ record a fact about the *current* supported host say so.
 | Exact layer order: bundle patches in `dsh.profile.bundles` order, then the profile's own `cordis.patch.yml`, then `$DSH_HOME/cordis.patch.yml`, then each `--patch` overlay. | **Verified on host version 0.2.0-rc.1.** Not confirmed against upstream documentation. |
 | A profile lives at `~/.dsh/profiles/<name>/` containing `cordis.yml`, `cordis.patch.yml` and `package.json`. | **Verified on host version 0.2.0-rc.1.** Not confirmed against upstream documentation. |
 | `config.selectedDefault` is in the preset schema and is the effective value; the schema also carries `config.default`, and `defaultId` resolves `selectedDefault ?? default`. | **Verified on host version 0.2.0-rc.1**, against `@deepseek-ai/dsh-agent-preset-registry`. |
-| `{{cwd}}` is a registered prompt variable; an unknown `{{…}}` reference throws during assembly. | **Version-dependent, and measured on each version** (historical measurement — neither version named is supported). Registered on `0.2.0-rc.2` (`dsh-agent-loop` registers `provider`/`model`/`cwd`), **absent from `0.2.1-alpha.2` onward** (only `provider`/`model` — re-checked on the installed `0.2.1-alpha.5`, and again on all four supported versions, where `dsh-agent-loop`'s variable table is `provider`/`model` at rc. line `:1591-1592` / `0.2.2-alpha.2` `:1345-1346`, with no `cwd`). Reproduced against the installed host's own `renderPrompt`: `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`. Upstream `dsh-system-prompt/README.md` now tells users to remove the clause. The `suffix` field itself is still in `dsh-persona`'s `Config`; what is absent is the variable it referenced, so a suffix can only be empty — which is why the `persona` row is written without one. See [Host version gate](#0-host-version-gate). |
+| `{{cwd}}` is a registered prompt variable; an unknown `{{…}}` reference throws during assembly. | **Version-dependent, and measured on each version** (historical measurement — neither version named is supported). Registered on `0.2.0-rc.2` (`dsh-agent-loop` registers `provider`/`model`/`cwd`), **absent from `0.2.1-alpha.2` onward** (only `provider`/`model` — re-checked on the installed `0.2.1-alpha.5`, and again on both supported versions, where `dsh-agent-loop`'s variable table is `provider`/`model` at rc. line `:1591-1592` / `0.2.2-alpha.2` `:1345-1346`, with no `cwd`). Reproduced against the installed host's own `renderPrompt`: `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"`. Upstream `dsh-system-prompt/README.md` now tells users to remove the clause. The `suffix` field itself is still in `dsh-persona`'s `Config`; what is absent is the variable it referenced, so a suffix can only be empty — which is why the `persona` row is written without one. See [Host version gate](#0-host-version-gate). |
 | `tool-subagent`'s `Config` accepts `backgroundMode`. | **Version-dependent** (historical measurement — neither version named is supported). Present on `0.2.1-alpha.1` (`lib/index.js:257`), **absent from `0.2.1-alpha.2` onward**. schemastery tolerates the unknown key, so the removal is silent — verified by feeding both forms through the installed schema. Continuable is now decided by the provider's `prepareContinuable`: the spawn provider and the rc-line fork provider (`dsh-subagent-fork-in-process`) implement it — **read on the rc line; `0.2.2-alpha.2` was not read separately for that fork package**, which the contract matrix does not cover. The lane rows therefore write no `backgroundMode` at all. |
-| The `standard` preset skeleton is the authority for which rows exist. | **Verified on each version** (historical measurement — none of the versions named is supported). It shrank from 162 lines (`0.2.0-rc.2`, `0.2.1-alpha.1`) to 137 (`0.2.1-alpha.2`), dropping `tool-ralph`, `tool-subagent-codex` and `tool-subagent-claude-code`; `tool-schedule` was added — **on alpha.1, not on rc.2**. Re-measured on the installed `0.2.1-alpha.5`: 128 lines, still carrying `time-context` and `tool-schedule`, still without the three dropped rows. **Read on all four supported versions:** the skeleton that matters is `dsh-web-app/presets/standard.patch.yml` — 128 lines / 33 rows on the rc. line (rc.3, rc.4 and rc.5 are byte-identical) and 127 lines / 32 rows on `0.2.2-alpha.2`, which drops exactly one row, `tool-subagent-list-agents`. `time-context` (`:19`) and `tool-schedule` (`:35`) are rows of *that* file on all four; `dsh-base/cordis.patch.yml` carries neither of them, and the pair it does carry is `working-directory` (`:166`) and `tool-working-directory` (`:169`). |
-| `@deepseek-ai/dsh-tool-schedule` exists on every supported host. | **True, now that the supported set is the rc.3 + rc.4 + rc.5 + alpha.2 set.** Every supported host ships it, as an exact lockstep pin: `dsh@0.2.1-rc.3` depends on `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.3`, and `dsh` at rc.4, rc.5 and `0.2.2-alpha.2` pin the matching `0.2.1-rc.4`, `0.2.1-rc.5` and `0.2.2-alpha.2`. This was **false** under the old three-version set — npm published it only at `0.0.1-rc.2` (a different generation) and `0.2.1-alpha.1` … `0.2.1-alpha.5`, and `dsh@0.2.0-rc.2` did not depend on it (rc.2's reminder tools were the optional, off-by-default `dsh-experimental-schedule-bundle`, which inserts `time-context`/`schedule`/`ui-schedule` and **not** `tool-schedule`). That history is why the four names used to be behind a conditional and are now static. |
+| The `standard` preset skeleton is the authority for which rows exist. | **Verified on each version** (historical measurement — none of the versions named is supported). It shrank from 162 lines (`0.2.0-rc.2`, `0.2.1-alpha.1`) to 137 (`0.2.1-alpha.2`), dropping `tool-ralph`, `tool-subagent-codex` and `tool-subagent-claude-code`; `tool-schedule` was added — **on alpha.1, not on rc.2**. Re-measured on the installed `0.2.1-alpha.5`: 128 lines, still carrying `time-context` and `tool-schedule`, still without the three dropped rows. **Read on both supported versions:** the skeleton that matters is `dsh-web-app/presets/standard.patch.yml` — 128 lines / 33 rows on the rc. line (`0.2.1-rc.5`; `rc.3` and `rc.4`, both out of the set now, are byte-identical to it) and 127 lines / 32 rows on `0.2.2-alpha.2`, which drops exactly one row, `tool-subagent-list-agents`. `time-context` (`:19`) and `tool-schedule` (`:35`) are rows of *that* file on both; `dsh-base/cordis.patch.yml` carries neither of them, and the pair it does carry is `working-directory` (`:166`) and `tool-working-directory` (`:169`). |
+| `@deepseek-ai/dsh-tool-schedule` exists on every supported host. | **True, now that the supported set is the rc.5 + alpha.2 set.** Every supported host ships it, as an exact lockstep pin: `dsh@0.2.1-rc.5` depends on `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.5`, and `dsh@0.2.2-alpha.2` on `0.2.2-alpha.2`. This was **false** under the old three-version set — npm published it only at `0.0.1-rc.2` (a different generation) and `0.2.1-alpha.1` … `0.2.1-alpha.5`, and `dsh@0.2.0-rc.2` did not depend on it (rc.2's reminder tools were the optional, off-by-default `dsh-experimental-schedule-bundle`, which inserts `time-context`/`schedule`/`ui-schedule` and **not** `tool-schedule`). That history is why the four names used to be behind a conditional and are now static. |
 | A deny name the host does not register fails loudly at delegation, not at mount. | **Verified on `0.2.0-rc.2` and `0.2.1-alpha.2`, identical behaviour** (historical measurement — neither version is supported). `tools.restrict()` throws `names unknown global tool` (rc. line `dsh-tools/lib/index.js:2991-3004` / `0.2.2-alpha.2` `:453-466` — same method body, same message text, different line), and `dsh-subagent` calls it unguarded when a child is composed (`lib/index.js`: rc. line `:401` / alpha.2 `:396`). This is why the `mcp_*` names are **computed per machine** rather than written as literals: a hardcoded list would break every delegation on a machine that lacks one of those servers. The `schedule_*` names are now static precisely because every supported host always has them. The class that owns `restrict()` was renamed `ToolRuntime` → `ToolsService` on alpha.2, but the service key it registers is still `"tools"`, so call sites that go through `ctx.tools` are unaffected. |
 | `tool-subagent`'s row `Config` still accepts `persona` and `toolFilter`. | **False on every supported host.** `dsh-tool-subagent`'s `Config` literal declares neither key (rc. line `lib/index.js:311-324` / `0.2.2-alpha.2` `:301-315`), and `apply()` hard-throws on both at mount (rc. line `:355` / alpha.2 `:346` — the text is verbatim the same, only the line moved). The `Config` **key set** is not the same across the set either: alpha.2 replaces `modelSelectionSettings` with `modelSelection` + `modelDiscovery`, and a key the schema does not know is silently dropped rather than rejected — which is the whole reason the gate tests the version and not the `Config` shape. The bundle writes neither. It therefore emits **one** lane form, the Agent-Preset form — see [One lane form, and why](#one-lane-form-and-why). |
 | An Agent Preset can express a tool **exclusion**. | **False, and it is why the bundle ships `lane-tool-gate.mjs`.** A preset's `plugins[]` can only ADD. Measured on `0.2.1-alpha.3` (historical measurement; that version is not supported): a persona-only preset gave the child **25** tools including `edit`/`bash`/`send_message`/`interrupt_agent`, and marking `tool-bash` `disabled: true` inside the preset left `bash` present (23 tools). `toolFilter` is also unreachable on that path: fresh dispatch sends `composition: { agentPreset }` only (`dsh-subagent/lib/index.js:1452`), and the single consumer at `:395` reads the field the **resume** path restores from a persisted descriptor (`:2177`). |
@@ -204,16 +205,16 @@ written down without any install being able to fail over it:
 
 | Package | Pinned version | Why |
 |---|---|---|
-| `@deepseek-ai/dsh-skill-filesystem` | `0.2.1-rc.3 \|\| 0.2.1-rc.4 \|\| 0.2.1-rc.5 \|\| 0.2.2-alpha.2` | the provider this bundle mounts |
-| `@deepseek-ai/dsh-tools` | `0.2.1-rc.3 \|\| 0.2.1-rc.4 \|\| 0.2.1-rc.5 \|\| 0.2.2-alpha.2` | `defineTool`, used by `lane-composition.mjs` |
+| `@deepseek-ai/dsh-skill-filesystem` | `0.2.1-rc.5 \|\| 0.2.2-alpha.2` | the provider this bundle mounts |
+| `@deepseek-ai/dsh-tools` | `0.2.1-rc.5 \|\| 0.2.2-alpha.2` | `defineTool`, used by `lane-composition.mjs` |
 | `@deepseek-ai/cordis` | `4.0.5 \|\| 4.0.6-alpha.1` | the plugin contract |
 | `@deepseek-ai/schemastery` | `3.18.5 \|\| 3.18.6-alpha.1` | the `Config` schema the settings card is built from |
 
 Neither column is a range. The two dsh packages enumerate the supported set itself — the same
-four names, in the same order, as [Host version gate](#0-host-version-gate) and as `install.sh`'s
+two names, in the same order, as [Host version gate](#0-host-version-gate) and as `install.sh`'s
 own copy. `cordis` and `schemastery` enumerate **two** values rather than one, because the set
 straddles two generations of them: `4.0.5` / `3.18.5` on the rc. line, `4.0.6-alpha.1` /
-`3.18.6-alpha.1` on `0.2.2-alpha.2`, and no single value is true of all four. `||` is still an
+`3.18.6-alpha.1` on `0.2.2-alpha.2`, and no single value is true of both members. `||` is still an
 **enumeration, not a range** — it names exactly the versions written down, and an install against
 any other host is **out of contract by construction**: there is no band left for it to fall
 inside. The earlier wording said the lower bounds named the oldest supported host
@@ -260,13 +261,15 @@ the member test gates *mounting*. `install.sh`'s version gate is a third copy of
 and it stays **opt-in** — anyone installing by `npm install` or by hand-writing a `link:`
 dependency never runs it.
 
-**That is what makes this round's peer change load-bearing rather than bookkeeping.** The old
+**That is what makes a peer change load-bearing rather than bookkeeping.** The old
 enumeration stopped at `0.2.1-rc.2 || 0.2.1-rc.3` while npm `latest` had moved to `0.2.1-rc.5` and
-the `next` / `alpha` channel to `0.2.2-alpha.2` — so on those two channels the bundle was not
+the `alpha` channel to `0.2.2-alpha.2` — so on those channels the bundle was not
 "switched off at mount", it was never loaded, and the nineteen expressions were never given a
-chance to answer. Widening the enumeration to the four names is what lets those users reach the
-`disabled` expression at all; with it, that same host composes the bundle and the gate answers
-false — the tree the [§5 snippet](#5-wire-it-into-a-profile) was measured on.
+chance to answer. Widening the enumeration to the versions the channels actually carry is what lets
+those users reach the `disabled` expression at all; with it, that same host composes the bundle and
+the gate answers false — the tree the [§5 snippet](#5-wire-it-into-a-profile) was measured on.
+Today that means exactly the two names in the table above: npm's `latest` and `next` both point at
+`0.2.1-rc.5`, and its `alpha` tag at `0.2.2-alpha.2`.
 
 **Why the artifact carries a host gate at all — the historical record.** Two host releases
 broke something this preset relied on, in two different ways, and that is the whole reason a
@@ -295,8 +298,8 @@ on its newest host *while appearing to load* is worse than one that fails.
 **The reminder tools are the Lead's alone, and that is now a grant-shaped claim.** The durable
 reminders (`schedule_create` / `schedule_list` / `schedule_update` / `schedule_delete`) come
 from `@deepseek-ai/dsh-tool-schedule`. Every supported host **ships it itself**, as an exact
-lockstep pin — `dsh@0.2.1-rc.3` depends on `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.3`, and rc.4,
-rc.5 and `0.2.2-alpha.2` pin their own matching versions — so the row that
+lockstep pin — `dsh@0.2.1-rc.5` depends on `@deepseek-ai/dsh-tool-schedule@0.2.1-rc.5`, and
+`dsh@0.2.2-alpha.2` on `0.2.2-alpha.2` — so the row that
 mounts it is a **bare row**, the same shape the official skeleton uses, with no `disabled`
 expression. The four names reach the Lead because that row sits in the preset's own
 `plugins[]`, and they reach **no lane** because none of the nine `official` sets names them —
@@ -335,12 +338,12 @@ grant fails loudly rather than at the next delegation.
 ### 0. Host version gate
 
 ```sh
-dsh --version          # install.sh refuses anything below 0.2.1-rc.3
+dsh --version          # install.sh refuses anything below 0.2.1-rc.5
 ```
 
 This is a hard check inside `install.sh`. The supported set and the floor are no longer the same
 value, and that is a deliberate return to a distinction this file used to argue against: the
-floor is the **lowest** supported version, `0.2.1-rc.3`, while the supported set is the four
+floor is the **lowest** supported version, `0.2.1-rc.5`, while the supported set is the two
 versions in the table below. A host above the floor but outside the set also ends up mounting
 nothing, but **in the default world it never even composes**: the host's own loader sees that its
 `peerDependencies` do not cover that version and skips the bundle whole, so the artifact's
@@ -350,33 +353,61 @@ nineteen rows. Two stages, one outcome; `install.sh` names the case out loud ins
 the absence be discovered later, and what it decides is the **floor**, not the set.
 
 The gate is a **floor**, not an equality check — `install.sh` refuses anything *older* than
-`0.2.1-rc.3` and lets a newer host through, because a future host is not something a floor
+`0.2.1-rc.5` and lets a newer host through, because a future host is not something a floor
 can adjudicate. What actually decides whether the bundle works there is, in order, the host's own
 loader (the peers) and then the artifact's `disabled` expression — described next — not this gate.
 
-**The supported set is exactly four host versions:**
+**The supported set is exactly two host versions:**
 
 | Host version | npm dist-tag | What you get |
 |---|---|---|
-| `0.2.1-rc.3` | `next` when the previous table was written; the tree the desktop app ships at the time of writing | supported — carried over from the previous set, and measured on its own facets (below) |
-| `0.2.1-rc.4` | published between rc.3 and rc.5, no dist-tag of its own | supported — **byte-identical to rc.3**: same sha256 for both skeletons and every host `lib/index.js` this preset reads (below) |
-| `0.2.1-rc.5` | `latest` at the time of writing | supported — **byte-identical to rc.3**, same evidence |
-| `0.2.2-alpha.2` | `next` / `alpha` at the time of writing | supported — a **different structure**, not a different label: ten contract items read off it one at a time, and then mounted for real (below) |
+| `0.2.1-rc.5` | `latest` and `next` at the time of writing | supported — **byte-identical to rc.3 / rc.4** on every surface this preset reads (sha256, below), **and** the tree the desktop app actually ships: its asar carries `0.2.1-rc.5` markers and no `rc.3` marker at all |
+| `0.2.2-alpha.2` | `alpha` at the time of writing | supported — a **different structure**, not a different label: ten contract items read off it one at a time, and then mounted for real (below) |
 
-Four versions, not a band: every one is named exactly, and the artifact's gate is a membership
+Two versions, not a band: both are named exactly, and the artifact's gate is a membership
 test against that list rather than a semver range. That is on purpose — a range would also admit
 whatever sits *between* two named versions, and what sits between them is precisely the thing
-nobody measured. The three rc names are the clearest case: they are byte-identical, which is why
-one set of measurements can back all three, and *not* a reason a `>=` would be safe — the same
-range would also readmit `0.2.1-rc.2`, which has left the set.
+nobody measured. The rc. line is the clearest case: rc.3, rc.4 and rc.5 are byte-identical, which
+is why one set of measurements backs the member this file names — and *not* a reason a `>=` would
+be safe, since the same range would also readmit every earlier rc, `0.2.1-rc.2` included.
 
 Everything else is out of support **and not compatible** — not merely untested. That covers
-every `0.2.1-alpha.*`, `0.2.1-rc.1`, `0.2.0-rc.2`, `0.2.1-rc.2` (it left the set when the floor
-moved to rc.3), and anything newer than `0.2.2-alpha.2`. There is no
-"probably fine" tier and no partial credit: four versions, and the boundary is a contract.
+every `0.2.1-alpha.*`, `0.2.1-rc.1`, `0.2.0-rc.2`, `0.2.1-rc.2` (out since the floor moved to rc.3),
+`0.2.1-rc.3` and `0.2.1-rc.4` (out since the floor moved to rc.5), and anything newer than
+`0.2.2-alpha.2`. There is no
+"probably fine" tier and no partial credit: two versions, and the boundary is a contract.
 
-**Why rc.3 is on that list, and what "measured" means here.** The claim is not "rc.2 worked, so
-rc.3 will". Four facts were read off a real `0.2.1-rc.3` install (2026-10-24): every official
+**Why rc.5 is on that list — two independent facts, and the second is the one that decided it.**
+The first is byte identity: on every surface this preset reads, rc.5 **is** rc.3 and rc.4. The
+evidence is not a second pass over the same facets — convenient, but it is
+also the strongest form the evidence can take. The two skeletons (`dsh-base/cordis.patch.yml`,
+`dsh-web-app/presets/standard.patch.yml`) and the seven host `lib/index.js` files this preset
+reads (`dsh-tool-subagent`, `dsh-tools`, `dsh-agent-loop`, `dsh-agent-tool-presentation`,
+`dsh-experimental-tool-agent-team`, `dsh-harness-dev-context`, `dsh-web-app`) have the same
+sha256 on rc.3, rc.4 and rc.5. **Provenance, because it matters here:** those sha256 readings are
+the **previous round's** contract-matrix measurement, recorded — and still readable — in
+`.dsh/tmp-diag/host-matrix/matrix.md` (appendix B). This round did **not** re-hash anything: the
+isolated install trees the readings were taken on were deleted afterwards, so what is on this page
+is a **quotation of a recorded measurement**, not a fresh one. The manifests are **not** part of
+that identity and are not
+claimed to be: their `package.json` files differ, and have to, because they carry the version
+string and the lockstep dependency pins. The claim is exactly the one above — the code and
+skeleton files this preset reads are identical — and byte
+identity means identical line numbers and identical text, which is why the numbers quoted in this
+file are given once for "the rc. line" rather than three times.
+
+The second fact is which rc the channels actually carry. `rc.3` and `rc.4` were measurement
+points, not destinations: the desktop app's asar is `0.2.1-rc.5` (its mtime is 2026-10-29 22:02,
+it contains **4,623** `0.2.1-rc.5` markers and **zero** `0.2.1-rc.3` markers), and npm's `latest`
+and `next` tags both resolve to `0.2.1-rc.5`. Nothing ships rc.3 or rc.4 any more, so keeping them
+in the set would have named hosts no channel delivers — while dropping them costs nothing, because
+rc.5 is the same bytes. **Their measurements are kept as history below**, since they are what
+makes the rc. line's line numbers and the byte-identity claim legible; they are not support claims
+any more.
+
+**The rc.3 facet readings, kept as history — they are what the byte-identity claim above rests on.**
+`0.2.1-rc.3` is **out of support** (it left the set with rc.4), and this block is a measurement, not
+a support claim. Four facts were read off a real `0.2.1-rc.3` install (2026-10-24): every official
 plugin row the artifact names — twenty-two `@deepseek-ai/*` packages, `dsh-tool-schedule` and
 the `dsh-tool-subagent-control/list-agents` subpath included — resolves at `0.2.1-rc.3`;
 `dsh-tool-subagent@0.2.1-rc.3` still declares `agentPreset` / `allowedAgentPresets` and still
@@ -385,21 +416,9 @@ artifact loads through the host's own patch loader, which keeps all nineteen gat
 intact as expressions; and all nineteen evaluate **false** on that host, so the rows mount.
 What this is **not** is a full session driven on rc.3 as the author's own working host: the
 evidence is resolution, structure, and gate evaluation, and the README says so rather than
-rounding it up.
-
-**Why rc.4 and rc.5 are on that list: on every surface this bundle leans on, they *are* rc.3.**
-The evidence is byte identity, not a second pass over the same facets — convenient, but it is
-also the strongest form the evidence can take. The two skeletons (`dsh-base/cordis.patch.yml`,
-`dsh-web-app/presets/standard.patch.yml`) and the seven host `lib/index.js` files this preset
-reads (`dsh-tool-subagent`, `dsh-tools`, `dsh-agent-loop`, `dsh-agent-tool-presentation`,
-`dsh-experimental-tool-agent-team`, `dsh-harness-dev-context`, `dsh-web-app`) have the same
-sha256 on rc.3, rc.4 and rc.5. The manifests are **not** part of that identity and are not
-claimed to be: their `package.json` files differ, and have to, because they carry the version
-string and the lockstep dependency pins. The claim is exactly the one above — the code and
-skeleton files this preset reads are identical. Byte
-identical means identical line numbers and identical text, so three names rest on one set of
-readings — which is exactly why the numbers quoted in this file are given once for "the rc.
-line" rather than three times.
+rounding it up. It is kept because rc.5 is the same bytes as rc.3 — so the readings transfer to
+the supported member — and because the line numbers this file quotes are the rc. line's, which is
+rc.3's file.
 
 **Why alpha.2 is on that list: ten contract items were read off it, one at a time.** It is the
 one member that is not the same file under a different name, so it was compared against the rc.
@@ -440,29 +459,31 @@ that row is off and the host's own `tool-executor-native` (enabled) and `tool-ex
 (`disabled: true`) rows are the ones in the tree. A full scan of the boot log for `error`,
 `warn`, `duplicate`, `already registered`, `EEXIST` and `conflict` returned **zero** lines — no
 double registration, which is precisely what that structural gate exists to prevent. The web app
-came up and served its root page: **HTTP 200, 38,581 bytes**.
+came up and served its root page: **HTTP 200, 38,581 bytes**. This is the **previous round's**
+measurement — the isolated `DSH_HOME` it ran in was not kept — and it is not a claim about the
+tree on any particular machine today.
 
 **What that establishes, and what it does not.** Mounted and served is a real boot, not an
 argument — but it is not a conversation: no agent session was driven on it, which needs a model
 key and the runtime API route. So "the artifact mounts, gates and serves on alpha.2" is
-measured; "a lane delegated a task on alpha.2" is neither proven nor disproven here. For rc.3,
-rc.4 and rc.5 the evidence stays what it was — the rc.3 facet readings above, byte identity for
-rc.4/rc.5, and the real boot on rc.2 kept as history in
-[One lane form, and why](#one-lane-form-and-why) — no boot was re-driven on those three.
+measured; "a lane delegated a task on alpha.2" is neither proven nor disproven here. For rc.5 the
+evidence stays what it was — the rc.3 facet readings above (which transfer to rc.5 by byte
+identity), byte identity itself, and the real boot on rc.2 kept as history in
+[One lane form, and why](#one-lane-form-and-why) — **no boot was driven on rc.5**.
 
 **What an unsupported host actually does.** The bundle's nine lane rows, its nine lane preset
 rows and the `subagent_fork` control row all carry the **same** `disabled` expression — the same
 text, the same polarity. It resolves the host's own `@deepseek-ai/dsh-tool-subagent`, walks up
 to that package's `package.json`, reads `version`, and asks one question: **is this one of the
-four?** Anything else — newer, older, or a different build — leaves the expression
+two?** Anything else — newer, older, or a different build — leaves the expression
 **true**, and true means `disabled`:
 
 | Host | What the nineteen gated rows do |
 |---|---|
-| `0.2.1-rc.3`, `0.2.1-rc.4`, `0.2.1-rc.5` or `0.2.2-alpha.2` | **mount** — the four hosts the artifact is built for |
-| **every other version**: `0.2.0-rc.2`, `0.2.1-alpha.1` … `0.2.1-alpha.5`, `0.2.1-rc.1`, `0.2.1-rc.2` and anything not yet published | **nothing mounts.** In the default world the loader skips the bundle on the peers first, so none of the nineteen expressions is ever evaluated; **only after** a version exemption (`dsh plugin allow-version`) does this gate answer `true` and disable all nineteen rows |
+| `0.2.1-rc.5` or `0.2.2-alpha.2` | **mount** — the two hosts the artifact is built for |
+| **every other version**: `0.2.0-rc.2`, `0.2.1-alpha.1` … `0.2.1-alpha.5`, `0.2.1-rc.1`, `0.2.1-rc.2`, `0.2.1-rc.3`, `0.2.1-rc.4` and anything not yet published | **nothing mounts.** In the default world the loader skips the bundle on the peers first, so none of the nineteen expressions is ever evaluated; **only after** a version exemption (`dsh plugin allow-version`) does this gate answer `true` and disable all nineteen rows |
 
-So there are **four** supported hosts and **one** failure mode for everything else. The preset
+So there are **two** supported hosts and **one** failure mode for everything else. The preset
 mounts **nothing**: no lanes, no lane presets, no fork row, so there is no way to delegate at
 all. It does not fall back to mounting lanes with no narrowing. The fork row matters here
 specifically: it is the one row through which a child could be created *without* going through
@@ -489,7 +510,7 @@ overlap and it is easy to mistake a written-down intention for an enforced one:
   a `link:` dependency never executes it.
 
 The versions inside those first two bullets: the two dsh packages enumerate the supported set
-(`0.2.1-rc.3 || 0.2.1-rc.4 || 0.2.1-rc.5 || 0.2.2-alpha.2`); `cordis` and `schemastery` enumerate
+(`0.2.1-rc.5 || 0.2.2-alpha.2`); `cordis` and `schemastery` enumerate
 the two generations the set straddles (`4.0.5 || 4.0.6-alpha.1`, `3.18.5 || 3.18.6-alpha.1`).
 
 **One accepted edge, stated plainly.** The gate cannot always read a version. If the resolved
@@ -509,7 +530,7 @@ problem — you notice immediately that delegation does not work, and the artifa
 can be inspected. The thing it is chosen over is worse: nine lanes that mount on a host this
 bundle was never measured against, carrying the Lead's full tool surface, with nothing in a
 normal session looking wrong. When the choice is between a loud absence and a quiet over-grant,
-the artifact fails loudly — on **every** version but the four, not just on the older ones.
+the artifact fails loudly — on **every** version but the two, not just on the older ones.
 
 The same expression fails closed when it cannot resolve the package at all, for the same reason:
 an unreadable host is not a supported host. Note that this and the fallback in the paragraph
@@ -566,10 +587,10 @@ every supported host:
 
 | Key | Where it went | Why it is not a downgrade |
 |---|---|---|
-| `suffix: 'Your working directory is {{cwd}}.'` on the `persona` row | `{{cwd}}` was a registered prompt variable on rc.2 and alpha.1, and **is not one on alpha.2 or anything newer** (measured; see the note below), nor on any of the four supported versions. `dsh-system-prompt` throws on an unknown variable, so this was not a missing clause — it was a **hard failure during prompt assembly, before any model request**. Upstream now instructs users to delete the clause outright. The field itself — `suffix` in `dsh-persona`'s `Config` — is still there; it is the variable it referenced that is gone. | The directory is supplied by the `dsh-working-directory` service, which has been in the `dsh-base` skeleton since rc.2 and which alpha.2 exposes through the new `working_directory` tool. The suffix was redundant with it on every host measured, and with the variable gone it can only be empty. |
+| `suffix: 'Your working directory is {{cwd}}.'` on the `persona` row | `{{cwd}}` was a registered prompt variable on rc.2 and alpha.1, and **is not one on alpha.2 or anything newer** (measured; see the note below), nor on either supported version. `dsh-system-prompt` throws on an unknown variable, so this was not a missing clause — it was a **hard failure during prompt assembly, before any model request**. Upstream now instructs users to delete the clause outright. The field itself — `suffix` in `dsh-persona`'s `Config` — is still there; it is the variable it referenced that is gone. | The directory is supplied by the `dsh-working-directory` service, which has been in the `dsh-base` skeleton since rc.2 and which alpha.2 exposes through the new `working_directory` tool. The suffix was redundant with it on every host measured, and with the variable gone it can only be empty. |
 | `backgroundMode: continuable` on the ten subagent rows | alpha.2's `tool-subagent` `Config` no longer has the key at all (alpha.1's did), and it is absent on alpha.3 and alpha.4 too (measured; see the note below). schemastery does not reject unknown keys, so it became a dead key that nothing read. | Continuable is now a **provider capability**, not a row setting: `apply()` reads `subagentProvider.prepareContinuable`, and the spawn provider and the rc-line fork provider implement it — **read on the rc line; `0.2.2-alpha.2` was not read separately for `dsh-subagent-fork-in-process`**. The lanes keep their durable-id continuation. |
 
-Both removals are safe on all four supported hosts, and that is the point: the clause-free
+Both removals are safe on both supported hosts, and that is the point: the clause-free
 `persona` row and the `backgroundMode`-free lane row are legal there, whereas the old forms
 were legal only on the older hosts this bundle no longer supports.
 `tools/patch-contract.test.mjs` fails if `{{cwd}}` reappears in the artifact, so this one
@@ -588,8 +609,8 @@ of support. The boundary is the table above.
 The artifact emits **one** lane form: an Agent Preset per lane, selected from the lane row by
 `agentPreset`, with `allowedAgentPresets` naming that same id. There used to be two — a
 legacy form that set `persona` and `toolFilter` directly on the subagent row, and this one —
-rendered behind a host gate. That matrix is gone, because every supported host — the whole rc.
-line (`0.2.1-rc.3`, `rc.4`, `rc.5`) and `0.2.2-alpha.2` — has neither key:
+rendered behind a host gate. That matrix is gone, because both supported hosts — `0.2.1-rc.5`
+and `0.2.2-alpha.2` — have neither key:
 `dsh-tool-subagent`'s `Config` literal no
 longer declares `persona` or `toolFilter`, and `apply()` **hard-throws** if either is present
 (`lib/index.js`: rc. line `:355` / alpha.2 `:346` — the text is verbatim the same):
@@ -680,16 +701,18 @@ keeps mounting exactly as before — where it is redundant (its `mode: 'native'`
 structural gate that failed **closed** would take a legal row away from the rc. line, so this one
 fails **open** when the package cannot be resolved, and that residual is accepted.
 
-**Verified on a real host, not only argued.** A real `dsh --profile web` boot on
+**Verified on a real host, not only argued — and the only real boot on a supported host is
+alpha.2's.** A real `dsh --profile web` boot on
 `0.2.1-rc.2` mounts every lane row and reports no `persona is no longer supported`, no
 `toolFilter is no longer supported` and no `Duplicate agent preset` — a measurement kept as
-history, because rc.2 has since left the supported set. The probe itself was run
+history, because rc.2 has long left the supported set. The probe itself was run
 against the installed `dsh-tool-subagent` and returns **false** on that host, which is the
 value that means "supported" — so the rows are enabled by the same fact that makes them
 legal. On `0.2.1-rc.3` the same probe was run against the installed package and returns
-**false** as well. On rc.4, rc.5 and alpha.2 the same membership test decides, over a version
-string that was read off each of them; for rc.4 and rc.5 that string is read off the very same
-files as rc.3. The boot was re-driven on none of rc.3, rc.4 and rc.5; on alpha.2 it was, on an
+**false** as well — history too, since rc.3 is out of support. On `0.2.1-rc.5` the same
+membership test decides, over a version string read off files that are byte-identical to rc.3's,
+so that answer transfers with the bytes rather than with a fresh run. The boot was **not**
+driven on rc.5; on alpha.2 it was, on an
 isolated home, and all nineteen gated rows evaluate enabled there. [Section
 0](#0-host-version-gate) names exactly which facts each entry rests on.
 
@@ -828,11 +851,7 @@ aegis; desktop must not float.
 
 `install.sh` deliberately stops before this step: those are the live installation's own
 files, and `cordis.patch.yml` is watched by `dsh-hmr`, so writing it triggers an immediate
-full re-assembly of the running host. The script prints the edits instead of making them —
-and the selection snippet **it** prints is still the wrong-row form described above: the
-script-side fix is in flight (another lane owns `install.sh`). Until the script you have prints
-the registry row, apply the row above rather than pasting the printed one — and delete this
-caveat once it does.
+full re-assembly of the running host. The script prints the edits instead of making them.
 
 ### 6. Install the aegis methodology pack
 

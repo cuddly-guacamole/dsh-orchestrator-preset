@@ -250,9 +250,9 @@ function makeHostStub(kind, version, declaresPersona) {
 // · OLD_BASE  ：0.2.0-rc.2，结构是旧契约（声明 persona:）⇒ 门 true ⇒ 全关
 // · ALPHA5_BASE：0.2.1-alpha.5，结构**与受支持版本完全相同**、只有版本不同 ⇒ 门 true ⇒ 全关
 //               （这正是旧形状探针漏掉的那一档，也是这条断言存在的理由）
-// · RC2_EXITED_BASE：0.2.1-rc.2，形状同样**与受支持版本完全相同**，但本轮**退出了支持集**
-//               ⇒ 门 true ⇒ 全关。这一根锁的是「集合边界是逐字成员」：rc.2 → rc.3 只差一个
-//               字符，形状分不开，`0.2.1` 这一族也不足以放行它。
+// · RC4_EXITED_BASE：0.2.1-rc.4，形状**与受支持版本完全相同**（rc.4 与 rc.5 逐字节相同），
+//               但它本轮**退出了支持集** ⇒ 门 true ⇒ 全关。这一根锁的是「集合边界是逐字成员」：
+//               rc.4 → rc.5 只差一个字符，形状分不开，`0.2.1` 这一族也不足以放行它。
 // · UNRESOLVABLE_BASE：版本读不到 + 旧契约 ⇒ 门仍必须 true（fail-closed 方向）
 const SUPPORTED = d.SUPPORTED_HOST_VERSIONS
 const SUPPORTED_BASES = SUPPORTED.map((v) => [v, makeHostStub('sup-' + v.replace(/[^A-Za-z0-9]+/g, '-'), v, false)])
@@ -260,7 +260,7 @@ const NEW_BASE = SUPPORTED_BASES[0][1]
 const NEWER_BASE = SUPPORTED_BASES[SUPPORTED_BASES.length - 1][1]
 const OLD_BASE = makeHostStub('rc2', '0.2.0-rc.2', true)
 const ALPHA5_BASE = makeHostStub('alpha5', '0.2.1-alpha.5', false)
-const RC2_EXITED_BASE = makeHostStub('rc2-exited', '0.2.1-rc.2', false)
+const RC4_EXITED_BASE = makeHostStub('rc4-exited', '0.2.1-rc.4', false)
 const UNRESOLVABLE_BASE = makeHostStub('unresolvable', 'not-a-version-' + process.pid, true)
 
 /**
@@ -948,8 +948,8 @@ test('tool-schedule 行是裸一行（无 disabled），且四个名字不在任
   //
   // ⚠️ **这一条在 T1 之后换了承重点**。旧版断言「本行带宿主门 disabled」与「lane 的 deny
   //    按同一判据**条件**带上那 4 个名字」——两者都依赖「支持集含 0.2.0-rc.2，而 rc.2 没有
-  //    这个包」这个前提。集合收缩**再扩张**之后前提仍不成立：受支持的四个版本**每台都自带**
-  //    `@deepseek-ai/dsh-tool-schedule`（rc 线与 `0.2.2-alpha.2` 的 `dsh` 的 dependencies 里都有它）
+  //    这个包」这个前提。集合收缩**再扩张再收缩**之后前提仍不成立：受支持的**两版**都**自带**
+  //    `@deepseek-ai/dsh-tool-schedule`（`0.2.1-rc.5` 与 `0.2.2-alpha.2` 的 `dsh` 的 dependencies 里都有它）
   //    ⇒ 这个包在每台受支持机器上都可解析 ⇒ 那 4 个名字是**无条件**的，
   //    `disabled` 门与条件尾巴一起退休。
   //    旧断言若原样保留，会在一个已经不存在的世界里要求一个已被删除的字段。
@@ -961,7 +961,7 @@ test('tool-schedule 行是裸一行（无 disabled），且四个名字不在任
   // 裸一行：没有 disabled（受支持的宿主一定装得上这个包），也没有 config。
   const disabledLine = block.find((l) => /^\s*disabled:/.test(l))
   assert.equal(disabledLine, undefined,
-    'tool-schedule 行仍带 disabled —— 受支持的四个版本每台都自带这个包，这条门已无对象')
+    'tool-schedule 行仍带 disabled —— 受支持的两版都自带这个包，这条门已无对象')
   const configLine = block.find((l) => /^\s*config:/.test(l))
   assert.equal(configLine, undefined,
     'tool-schedule 行带了 config —— 官方骨架那一行是裸的，本行应当同形')
@@ -1137,15 +1137,15 @@ test('没有任何官方集授予写面之外的危险名字（寻址 / fork / s
 // ============================================================================
 // 7c. 宿主门按**版本**判，不是按 Config 形状判
 //     实测（`E:\dsh-verify` 矩阵）：rc.3 / rc.4 / rc.5 **逐字节相同**（两份 patch.yml + 7 个
-//     lib/index.js 的 sha256 全同），已退出集合的 0.2.1-rc.2 也在同一条结构线上：它们同样是
-//     agentPreset/allowedAgentPresets、没有 persona ⇒ 形状探针**分不开** rc.2 与 rc.5，也分不开
-//     rc.3 与 rc.5。本组断言锁的正是「版本是唯一把它们分开的事实」：集合内（rc.5 那一侧）⇒ 挂载，
-//     集合外（rc.2 那一侧）⇒ 关闭。
+//     lib/index.js 的 sha256 全同；这是**历史测量**，rc.3 与 rc.4 本轮已退出集合），更早退出的
+//     0.2.1-rc.2 也在同一条结构线上：它们同样是 agentPreset/allowedAgentPresets、没有 persona
+//     ⇒ 形状探针**分不开** rc.4 与 rc.5，也分不开 rc.2 与 rc.5。本组断言锁的正是「版本是唯一
+//     把它们分开的事实」：集合内（rc.5 那一侧）⇒ 挂载，集合外（rc.4 那一侧）⇒ 关闭。
 //     ⚠️ 0.2.2-alpha.2 **不在**这条同结构线上（矩阵实测结构不同），它的那一处真实破坏由
 //     `tool-presentation` 的**结构**判据承担（见文件末尾那条测试）⇒ 不要拿 alpha.2 当
 //     「结构相同」的样本。
 // ============================================================================
-test('宿主门：支持集四版全开；同结构、已退出集合的 0.2.1-rc.2 关闭（rc.2 ↔ rc.5 只差版本）', () => {
+test('宿主门：支持集两版全开；同结构、已退出集合的 0.2.1-rc.4 关闭（rc.4 ↔ rc.5 只差版本）', () => {
   const gateOf = (block) => {
     const line = block.split('\n').find((l) => /^\s*disabled: !!js /.test(l))
     assert.notEqual(line, undefined, '该行没有 disabled 门')
@@ -1167,10 +1167,10 @@ test('宿主门：支持集四版全开；同结构、已退出集合的 0.2.1-r
     // 旧契约 ⇒ true（禁用）
     assert.equal(evalJs(gate, OLD_BASE), true,
       `${label}：0.2.0-rc.2（声明 persona:）上没有被禁用`)
-    // 刚退出集合的那一版 ⇒ true。它与集合内版本形状完全相同，只有版本把它划在外面，
-    // 所以这一根同时锁住「集合边界是逐字成员」与「rc 线不等于集合」。
-    assert.equal(evalJs(gate, RC2_EXITED_BASE), true,
-      `${label}：0.2.1-rc.2 上没有被禁用 —— 它已退出支持集、形状与集合内版本相同；按形状判会放它进来`)
+    // 刚退出集合的那一版 ⇒ true。它与集合内版本形状完全相同（rc.4 与 rc.5 逐字节相同），
+    // 只有版本把它划在外面，所以这一根同时锁住「集合边界是逐字成员」与「rc 线不等于集合」。
+    assert.equal(evalJs(gate, RC4_EXITED_BASE), true,
+      `${label}：0.2.1-rc.4 上没有被禁用 —— 它已退出支持集、形状与集合内版本相同；按形状判会放它进来`)
     // ⛔ 关键一档：结构与受支持版本相同、**只有版本不同** ⇒ 必须 true。
     //    旧形状探针在这里返回 false，于是 alpha.3/4/5 会挂载 —— 那正是被修掉的行为。
     assert.equal(evalJs(gate, ALPHA5_BASE), true,
@@ -1201,8 +1201,8 @@ test('支持集五处同值同序：决策清单 = 声明常量 = peers 枚举 =
   const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 
   // ⓐ 决策清单本身（字面量）。改它 = 改决策，必须同时改 ADR 与文档。
-  const DECIDED = ['0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-alpha.2']
-  assert.deepEqual(DECIDED, ['0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.2-alpha.2'],
+  const DECIDED = ['0.2.1-rc.5', '0.2.2-alpha.2']
+  assert.deepEqual(DECIDED, ['0.2.1-rc.5', '0.2.2-alpha.2'],
     '决策清单被改动了 —— 这一行是决策本身；改动必须是有意的，并同步 ADR 与三份文档')
 
   // ⓑ 声明常量 == 决策清单（**顺序**也是判据：升序）
@@ -1435,7 +1435,7 @@ test('`ops-integration` 行：specifier 是 dsh-ops 的子路径、落在 plugin
 //       ⇒ 本行照挂（`mode: 'native'` 与 schema 默认值相同：冗余，但无行为差异）。
 //     · 0.2.2-alpha.2：树里**有**它，且宿主 base 骨架**自己**挂了 native executor（ptc 那个是
 //       `disabled: true`）⇒ 本行若照挂，`dsh-agent-tool-presentation` 会按 `mode` 再
-//       `ctx.plugin(Native)` 一次 = **重复注册**。这是四版支持集里唯一一处真实破坏点。
+//       `ctx.plugin(Native)` 一次 = **重复注册**。这是本支持集（两版）里唯一一处真实破坏点。
 //   ⚠️ 版本判据在这里是**盲的**：alpha.2 在支持集内，宿主门对它返回 false（= 挂载），所以这条
 //      破坏只能由结构判据承担 —— 这也是「结构判据」与「版本判据」并存的原因，不是两层冗余。
 // ============================================================================
